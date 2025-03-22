@@ -78,4 +78,4 @@ class Sentinel2(AbstractSatellite):
             partial(ee_map_bands_and_doy, ee_geometry=ee_geometry, ee_feature=ee_feature, scale=10, round_int_16=True)
         )
 
-        return ee.FeatureCollection(features)
+        return features

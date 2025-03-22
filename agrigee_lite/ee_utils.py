@@ -1,4 +1,10 @@
+import json
+import os
+import random
+import string
+
 import ee
+import geopandas as gpd
 
 
 def ee_map_bands_and_doy(
@@ -50,3 +56,29 @@ def ee_cloud_probability_mask(img: ee.Image, threshold: float, invert: bool = Fa
     mask = img.select(["cloud"]).gte(threshold) if invert else img.select(["cloud"]).lt(threshold)
 
     return img.updateMask(mask).select(img.bandNames().remove("cloud"))
+
+
+def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame) -> ee.FeatureCollection:
+    gdf = gdf.copy()
+    gdf = gdf[["geometry", "start_date", "end_date"]]
+
+    gdf["index_num"] = gdf.index.values.astype(int)
+    gdf["start_date"] = gdf["start_date"].dt.strftime("%Y-%m-%d")
+    gdf["end_date"] = gdf["end_date"].dt.strftime("%Y-%m-%d")
+
+    geo_json = os.path.join(os.getcwd(), "".join(random.choice(string.ascii_lowercase) for i in range(6)) + ".geojson")  # noqa: S311
+    gdf = gdf.to_crs(4326)
+    gdf.to_file(geo_json, driver="GeoJSON")
+
+    with open(os.path.abspath(geo_json), encoding="utf-8") as f:
+        json_dict = json.load(f)
+
+    if json_dict["type"] == "FeatureCollection":
+        for feature in json_dict["features"]:
+            if feature["geometry"]["type"] != "Point":
+                feature["geometry"]["geodesic"] = True
+        features = ee.FeatureCollection(json_dict)
+
+    os.remove(geo_json)
+
+    return features
