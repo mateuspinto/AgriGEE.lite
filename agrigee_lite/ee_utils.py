@@ -27,9 +27,9 @@ def ee_map_bands_and_doy(
     if round_int_16:
         stats = stats.map(lambda _, value: ee.Number(value).round())
 
-    stats = stats.set(
-        "frac_year", ee_img.date().get("year").add(ee_img.date().getRelative("day", "year").add(1).divide(366)).float()
-    ).set("index_num", ee_feature.get("index_num"))
+    stats = stats.set("doy", ee_img.date().getRelative("day", "year").add(1)).set(
+        "index_num", ee_feature.get("index_num")
+    )
 
     return ee.Feature(None, stats)
 
