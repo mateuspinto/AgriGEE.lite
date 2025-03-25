@@ -52,7 +52,7 @@ class Sentinel2(AbstractSatellite):
             .filter(ee_filter)
             .select(
                 self.originalBands,
-                self.renamedBands,
+                [f"{n}_{band}" for n, band in enumerate(self.renamedBands)],
             )
         )
 
@@ -75,7 +75,7 @@ class Sentinel2(AbstractSatellite):
             .distinct("ZZ_USER_TIME_DUMMY")
         )
 
-        return s2_img
+        return ee.ImageCollection(s2_img)
 
     def compute(self, ee_feature: ee.Feature) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()

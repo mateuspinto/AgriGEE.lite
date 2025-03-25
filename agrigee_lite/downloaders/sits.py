@@ -40,7 +40,7 @@ def download_multiple_sits(gdf: gpd.GeoDataFrame, satellite: AbstractSatellite) 
 
 
 def download_multiple_sits_multithread(
-    gdf: pd.DataFrame,
+    gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     chunksize: int = 10,
     num_threads_rush: int = 30,
