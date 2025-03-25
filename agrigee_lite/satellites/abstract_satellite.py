@@ -5,6 +5,7 @@ class AbstractSatellite:
     def __init__(self) -> None:
         self.startDate = ""
         self.endDate = ""
+        self.shortName = "IDoNotExist"
         self.originalBands: list[str] = []
         self.renamed_bands: list[str] = []
         self.imageCollectionName = ""

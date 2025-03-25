@@ -13,6 +13,7 @@ class Sentinel2(AbstractSatellite):
         self.imageCollectionName = "COPERNICUS/S2_SR_HARMONIZED" if use_sr else "COPERNICUS/S2_HARMONIZED"
         self.startDate: str = "2015-06-23"
         self.endDate: str = ""
+        self.shortName: str = "s2"
         self.originalBands: list[str] = [
             "B2",
             "B3",
