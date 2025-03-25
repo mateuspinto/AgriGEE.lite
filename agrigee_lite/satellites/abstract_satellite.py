@@ -10,5 +10,8 @@ class AbstractSatellite:
         self.renamed_bands: list[str] = []
         self.imageCollectionName = ""
 
-    def compute(self, ee_feature: ee.Feature) -> ee.ImageCollection:
+    def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         return ee.ImageCollection()
+
+    def compute(self, ee_feature: ee.Feature) -> ee.FeatureCollection:
+        return ee.FeatureCollection()

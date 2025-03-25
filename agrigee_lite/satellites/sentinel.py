@@ -39,7 +39,7 @@ class Sentinel2(AbstractSatellite):
             "swir2",
         ]
 
-    def compute(self, ee_feature: ee.Feature) -> ee.ImageCollection:
+    def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()
 
         ee_start_date = ee_feature.get("start_date")
@@ -74,6 +74,13 @@ class Sentinel2(AbstractSatellite):
             .sort("ZZ_USER_TIME_DUMMY")
             .distinct("ZZ_USER_TIME_DUMMY")
         )
+
+        return s2_img
+
+    def compute(self, ee_feature: ee.Feature) -> ee.FeatureCollection:
+        ee_geometry = ee_feature.geometry()
+
+        s2_img = self.imageCollection(ee_feature)
 
         features = s2_img.map(
             partial(ee_map_bands_and_doy, ee_geometry=ee_geometry, ee_feature=ee_feature, scale=10, round_int_16=True)
