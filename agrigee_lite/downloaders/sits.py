@@ -1,6 +1,7 @@
 import concurrent.futures
 import logging
 import logging.handlers
+import pathlib
 import queue
 from functools import partial
 
@@ -12,6 +13,7 @@ from shapely import Polygon
 from tqdm.std import tqdm
 
 from agrigee_lite.ee_utils import ee_gdf_to_feature_collection
+from agrigee_lite.misc import create_gdf_hash, quadtree_clustering
 from agrigee_lite.satellites.abstract_satellite import AbstractSatellite
 
 
@@ -42,7 +44,7 @@ def download_multiple_sits(gdf: gpd.GeoDataFrame, satellite: AbstractSatellite) 
 def download_multiple_sits_multithread(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
-    chunksize: int = 10,
+    mini_chunksize: int = 10,
     num_threads_rush: int = 30,
     num_threads_retry: int = 10,
 ) -> pd.DataFrame:
@@ -63,7 +65,7 @@ def download_multiple_sits_multithread(
 
     indexes_with_errors: list[int] = []
     whole_result_df = pd.DataFrame()
-    num_chunks = (len(gdf) + chunksize - 1) // chunksize
+    num_chunks = (len(gdf) + mini_chunksize - 1) // mini_chunksize
     all_chunk_ids = list(range(num_chunks))
 
     def process_download(gdf_chunk: gpd.GeoDataFrame, i: int) -> tuple[pd.DataFrame, int]:
@@ -82,7 +84,11 @@ def download_multiple_sits_multithread(
         with concurrent.futures.ThreadPoolExecutor(num_threads) as executor:
             futures = [
                 executor.submit(
-                    partial(process_download, gdf.iloc[i * chunksize : (i + 1) * chunksize].reset_index(drop=True), i)
+                    partial(
+                        process_download,
+                        gdf.iloc[i * mini_chunksize : (i + 1) * mini_chunksize].reset_index(drop=True),
+                        i,
+                    )
                 )
                 for i in chunk_ids
             ]
@@ -118,7 +124,7 @@ def download_multiple_sits_multithread(
 async def download_multiple_sits_anyio(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
-    chunksize: int = 10,
+    mini_chunksize: int = 10,
     initial_concurrency: int = 30,
     retry_concurrency: int = 10,
     initial_timeout: float = 20,
@@ -139,7 +145,7 @@ async def download_multiple_sits_anyio(
     logger.addHandler(queue_handler)
     logger.propagate = False
 
-    num_chunks = (len(gdf) + chunksize - 1) // chunksize
+    num_chunks = (len(gdf) + mini_chunksize - 1) // mini_chunksize
     all_chunk_ids = list(range(num_chunks))
     whole_result_df = pd.DataFrame()
     indexes_with_errors: list[int] = []
@@ -151,8 +157,8 @@ async def download_multiple_sits_anyio(
             nonlocal whole_result_df
 
             async with sem:
-                start_idx = chunk_id * chunksize
-                end_idx = min(start_idx + chunksize, len(gdf))
+                start_idx = chunk_id * mini_chunksize
+                end_idx = min(start_idx + mini_chunksize, len(gdf))
 
                 gdf_chunk = gdf.iloc[start_idx:end_idx].reset_index(drop=True)
 
@@ -187,3 +193,51 @@ async def download_multiple_sits_anyio(
     whole_result_df = whole_result_df.sort_values("index_num", kind="stable").reset_index(drop=True)
 
     return whole_result_df
+
+
+def download_large_gdf_in_chunks(
+    gdf: gpd.GeoDataFrame,
+    satellite: AbstractSatellite,
+    chunksize: int = 10000,
+    mini_chunksize: int = 10,
+    initial_concurrency: int = 30,
+    retry_concurrency: int = 10,
+) -> gpd.GeoDataFrame:
+    if len(gdf) == 0:
+        print("Empty GeoDataFrame, nothing to download")
+        return pd.DataFrame()
+
+    # schema = pa.DataFrameSchema({
+    #     "geometry": pa.Column("geometry", nullable=False),
+    #     "start_date": pa.Column(pa.DateTime, nullable=False),
+    #     "end_date": pa.Column(pa.DateTime, nullable=False),
+    #     **{col: pa.Column() for col in save_columns},
+    # })
+
+    # schema.validate(gdf, lazy=True)
+
+    hashlib_gdf = create_gdf_hash(gdf)
+    output_path = pathlib.Path("data/temp") / f"{satellite.shortName}_{hashlib_gdf}_{chunksize}"
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    existing_chunks = {int(f.stem) for f in output_path.glob("*.parquet") if f.stem.isdigit()}
+
+    gdf = quadtree_clustering(gdf, max_size=chunksize)
+
+    for idx, chunk in enumerate(sorted(gdf.cluster_id.unique().tolist())):
+        if idx in existing_chunks:
+            continue
+
+        output_filestem = str(output_path) + "/" + f"{idx}"
+
+        chunk_df = download_multiple_sits_multithread(
+            gdf[gdf.cluster_id == chunk],
+            satellite,
+            mini_chunksize=mini_chunksize,
+            num_threads_rush=initial_concurrency,
+            num_threads_retry=retry_concurrency,
+        )
+
+        chunk_df.to_parquet(f"{output_filestem}.parquet")
+
+    return pd.DataFrame()

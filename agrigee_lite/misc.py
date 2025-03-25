@@ -1,7 +1,10 @@
+import hashlib
+import warnings
 from collections import deque
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 
 
 def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> list[int]:
@@ -67,3 +70,17 @@ def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoD
     gdf["cluster_id"] = cluster_id
 
     return gdf
+
+
+def create_gdf_hash(gdf: gpd.GeoDataFrame) -> str:
+    gdf_copy = gdf[["geometry", "start_date", "end_date"]].copy()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        gdf_copy["centroid_x"] = gdf_copy.geometry.centroid.x
+        gdf_copy["centroid_y"] = gdf_copy.geometry.centroid.y
+
+    gdf_copy = gdf_copy.drop(columns=["geometry"])
+
+    hash = pd.util.hash_pandas_object(gdf_copy)
+    return hashlib.sha1(hash.values).hexdigest()
