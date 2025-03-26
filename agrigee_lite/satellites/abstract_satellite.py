@@ -8,6 +8,7 @@ class AbstractSatellite:
         self.shortName = "IDoNotExist"
         self.originalBands: list[str] = []
         self.renamed_bands: list[str] = []
+        self.selectedBands: list[str] = []
         self.imageCollectionName = ""
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:

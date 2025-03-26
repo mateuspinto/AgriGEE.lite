@@ -122,6 +122,31 @@ def download_multiple_sits_multithread(
     return whole_result_df
 
 
+def download_multiple_sits_task_gdrive(
+    gdf: gpd.GeoDataFrame,
+    satellite: AbstractSatellite,
+    file_stem: str,
+    taskname: str = "",
+    gee_save_folder: str = "GEE_EXPORTS",
+) -> None:
+    fc = ee_gdf_to_feature_collection(gdf)
+    ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
+
+    if taskname == "":
+        taskname = file_stem
+
+    task = ee.batch.Export.table.toDrive(
+        collection=ee_expression,
+        description=taskname,
+        fileNamePrefix=file_stem,
+        fileFormat="CSV",
+        folder=gee_save_folder,
+        selectors=[*satellite.selectedBands, "doy", "index_num"],
+    )
+
+    task.start()
+
+
 async def download_multiple_sits_anyio(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
