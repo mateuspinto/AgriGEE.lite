@@ -39,6 +39,8 @@ class Sentinel2(AbstractSatellite):
             "swir2",
         ]
 
+        self.selectedBands: list[str] = [f"{n}_{band}" for n, band in enumerate(self.renamedBands)]
+
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()
 
@@ -52,7 +54,7 @@ class Sentinel2(AbstractSatellite):
             .filter(ee_filter)
             .select(
                 self.originalBands,
-                [f"{n}_{band}" for n, band in enumerate(self.renamedBands)],
+                self.selectedBands,
             )
         )
 
