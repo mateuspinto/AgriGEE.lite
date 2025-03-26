@@ -9,6 +9,7 @@ import anyio
 import ee
 import geopandas as gpd
 import pandas as pd
+import pandera as pa
 from shapely import Polygon
 from tqdm.std import tqdm
 
@@ -207,14 +208,13 @@ def download_large_gdf_in_chunks(
         print("Empty GeoDataFrame, nothing to download")
         return pd.DataFrame()
 
-    # schema = pa.DataFrameSchema({
-    #     "geometry": pa.Column("geometry", nullable=False),
-    #     "start_date": pa.Column(pa.DateTime, nullable=False),
-    #     "end_date": pa.Column(pa.DateTime, nullable=False),
-    #     **{col: pa.Column() for col in save_columns},
-    # })
+    schema = pa.DataFrameSchema({
+        "geometry": pa.Column("geometry", nullable=False),
+        "start_date": pa.Column(pa.DateTime, nullable=False),
+        "end_date": pa.Column(pa.DateTime, nullable=False),
+    })
 
-    # schema.validate(gdf, lazy=True)
+    schema.validate(gdf, lazy=True)
 
     hashlib_gdf = create_gdf_hash(gdf)
     output_path = pathlib.Path("data/temp") / f"{satellite.shortName}_{hashlib_gdf}_{chunksize}"
@@ -240,4 +240,18 @@ def download_large_gdf_in_chunks(
 
         chunk_df.to_parquet(f"{output_filestem}.parquet")
 
-    return pd.DataFrame()
+    whole_result_df = pd.DataFrame()
+
+    for f in output_path.glob("*.parquet"):
+        chunk_id = int(f.stem)
+        chunk_df = pd.read_parquet(f)
+        chunk_df["chunk_id"] = chunk_id
+        whole_result_df = pd.concat([whole_result_df, chunk_df], ignore_index=True)
+
+    whole_result_df["index_num"] = (
+        whole_result_df["chunk_id"] * (whole_result_df["index_num"].max() + 1) + whole_result_df["index_num"]
+    )
+    whole_result_df.drop(columns=["chunk_id"], inplace=True)
+    whole_result_df = whole_result_df.sort_values("index_num", kind="stable").reset_index(drop=True)
+
+    return whole_result_df

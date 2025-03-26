@@ -13,6 +13,8 @@ dependencies = [
     "tqdm>=4.67.1",
     "anyio>=4.9.0",
     "uvloop>=0.21.0",
+    "smart_open>=7.1.0",
+    "pandera>=0.23.1",
 ]
 classifiers = [
     "Intended Audience :: Developers",

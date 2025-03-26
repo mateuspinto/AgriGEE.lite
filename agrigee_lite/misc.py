@@ -58,8 +58,10 @@ def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) 
 def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoDataFrame:
     gdf = gdf.copy()
 
-    gdf["centroid_x"] = gdf.geometry.centroid.x
-    gdf["centroid_y"] = gdf.geometry.centroid.y
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        gdf["centroid_x"] = gdf.geometry.centroid.x
+        gdf["centroid_y"] = gdf.geometry.centroid.y
 
     clusters = build_quadtree_iterative(gdf, max_size=max_size)
 
