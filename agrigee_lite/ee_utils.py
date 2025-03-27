@@ -27,10 +27,10 @@ def ee_map_bands_and_doy(
     ).map(lambda _, value: ee.Number(ee.Algorithms.If(ee.Algorithms.IsEqual(value, None), 0, value)))
 
     if round_int_16:
-        stats = stats.map(lambda _, value: ee.Number(value).round())
+        stats = stats.map(lambda _, value: ee.Number(value).round().int16())
 
-    stats = stats.set("doy", ee_img.date().getRelative("day", "year").add(1)).set(
-        "index_num", ee_feature.get("index_num")
+    stats = stats.set("01_doy", ee_img.date().getRelative("day", "year").add(1)).set(
+        "00_indexnum", ee_feature.get("00_indexnum")
     )
 
     return ee.Feature(None, stats)
@@ -64,7 +64,7 @@ def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame) -> ee.FeatureCollection:
     gdf = gdf.copy()
     gdf = gdf[["geometry", "start_date", "end_date"]]
 
-    gdf["index_num"] = gdf.index.values.astype(int)
+    gdf["00_indexnum"] = gdf.index.values.astype(int)
     gdf["start_date"] = gdf["start_date"].dt.strftime("%Y-%m-%d")
     gdf["end_date"] = gdf["end_date"].dt.strftime("%Y-%m-%d")
 

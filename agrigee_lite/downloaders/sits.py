@@ -26,11 +26,11 @@ def download_single_sits(
 
     ee_feature = ee.Feature(
         ee.Geometry(geometry.__geo_interface__),
-        {"start_date": start_date, "end_date": end_date, "index_num": 1},
+        {"start_date": start_date, "end_date": end_date, "00_indexnum": 1},
     )
     ee_expression = satellite.compute(ee_feature)
     return ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
-        columns=["geo", "index_num"]
+        columns=["geo", "00_indexnum"]
     )
 
 
@@ -113,11 +113,11 @@ def download_multiple_sits_multithread(
             desc="Re-running failed downloads",
         )
 
-    whole_result_df["index_num"] = (
-        whole_result_df["chunk_id"] * (whole_result_df["index_num"].max() + 1) + whole_result_df["index_num"]
+    whole_result_df["00_indexnum"] = (
+        whole_result_df["chunk_id"] * (whole_result_df["00_indexnum"].max() + 1) + whole_result_df["00_indexnum"]
     )
     whole_result_df.drop(columns=["chunk_id"], inplace=True)
-    whole_result_df = whole_result_df.sort_values("index_num", kind="stable").reset_index(drop=True)
+    whole_result_df = whole_result_df.sort_values("00_indexnum", kind="stable").reset_index(drop=True)
 
     return whole_result_df
 
@@ -129,19 +129,44 @@ def download_multiple_sits_task_gdrive(
     taskname: str = "",
     gee_save_folder: str = "GEE_EXPORTS",
 ) -> None:
-    fc = ee_gdf_to_feature_collection(gdf)
-    ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
-
     if taskname == "":
         taskname = file_stem
+
+    fc = ee_gdf_to_feature_collection(gdf)
+    ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
 
     task = ee.batch.Export.table.toDrive(
         collection=ee_expression,
         description=taskname,
-        fileNamePrefix=file_stem,
         fileFormat="CSV",
+        fileNamePrefix=file_stem,
         folder=gee_save_folder,
-        selectors=[*satellite.selectedBands, "doy", "index_num"],
+        selectors=["00_indexnum", "01_doy", *satellite.selectedBands],
+    )
+
+    task.start()
+
+
+def download_multiple_sits_task_gcs(
+    gdf: gpd.GeoDataFrame,
+    satellite: AbstractSatellite,
+    bucket_name: str,
+    file_path: str,
+    taskname: str = "",
+) -> None:
+    if taskname == "":
+        taskname = file_path
+
+    fc = ee_gdf_to_feature_collection(gdf)
+    ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
+
+    task = ee.batch.Export.table.toCloudStorage(
+        bucket=bucket_name,
+        collection=ee_expression,
+        description=taskname,
+        fileFormat="CSV",
+        fileNamePrefix=file_path,
+        selectors=["00_indexnum", "01_doy", *satellite.selectedBands],
     )
 
     task.start()
@@ -212,11 +237,11 @@ async def download_multiple_sits_anyio(
 
     queue_listener.stop()
 
-    whole_result_df["index_num"] = (
-        whole_result_df["chunk_id"] * (whole_result_df["index_num"].max() + 1) + whole_result_df["index_num"]
+    whole_result_df["00_indexnum"] = (
+        whole_result_df["chunk_id"] * (whole_result_df["00_indexnum"].max() + 1) + whole_result_df["00_indexnum"]
     )
     whole_result_df.drop(columns=["chunk_id"], inplace=True)
-    whole_result_df = whole_result_df.sort_values("index_num", kind="stable").reset_index(drop=True)
+    whole_result_df = whole_result_df.sort_values("00_indexnum", kind="stable").reset_index(drop=True)
 
     return whole_result_df
 
@@ -273,10 +298,10 @@ def download_large_gdf_in_chunks(
         chunk_df["chunk_id"] = chunk_id
         whole_result_df = pd.concat([whole_result_df, chunk_df], ignore_index=True)
 
-    whole_result_df["index_num"] = (
-        whole_result_df["chunk_id"] * (whole_result_df["index_num"].max() + 1) + whole_result_df["index_num"]
+    whole_result_df["00_indexnum"] = (
+        whole_result_df["chunk_id"] * (whole_result_df["00_indexnum"].max() + 1) + whole_result_df["00_indexnum"]
     )
     whole_result_df.drop(columns=["chunk_id"], inplace=True)
-    whole_result_df = whole_result_df.sort_values("index_num", kind="stable").reset_index(drop=True)
+    whole_result_df = whole_result_df.sort_values("00_indexnum", kind="stable").reset_index(drop=True)
 
     return whole_result_df

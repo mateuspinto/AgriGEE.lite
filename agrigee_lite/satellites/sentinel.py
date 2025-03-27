@@ -4,16 +4,26 @@ import ee
 
 from agrigee_lite.ee_utils import ee_cloud_probability_mask, ee_map_bands_and_doy, ee_map_valid_pixels
 from agrigee_lite.satellites.abstract_satellite import AbstractSatellite
+from agrigee_lite.constants import ALL_BANDS
 
 
 class Sentinel2(AbstractSatellite):
-    def __init__(self, use_sr: bool = False):
+    def __init__(
+        self,
+        use_sr: bool = False,
+        selected_bands: list[str] | None = None,
+    ):
+        if selected_bands is None:
+            selected_bands = ["blue", "green", "red", "re1", "re2", "re3", "nir", "re4", "swir1", "swir2"]
+
         super().__init__()
         self.useSr = use_sr
         self.imageCollectionName = "COPERNICUS/S2_SR_HARMONIZED" if use_sr else "COPERNICUS/S2_HARMONIZED"
-        self.startDate: str = "2015-06-23"
+
+        self.startDate: str = "2019-01-01" if use_sr else "2016-01-01"
         self.endDate: str = ""
         self.shortName: str = "s2"
+
         self.originalBands: list[str] = [
             "B2",
             "B3",
@@ -26,20 +36,8 @@ class Sentinel2(AbstractSatellite):
             "B11",
             "B12",
         ]
-        self.renamedBands: list[str] = [
-            "blue",
-            "green",
-            "red",
-            "re1",
-            "re2",
-            "re3",
-            "nir",
-            "re4",
-            "swir1",
-            "swir2",
-        ]
 
-        self.selectedBands: list[str] = [f"{n}_{band}" for n, band in enumerate(self.renamedBands)]
+        self.selectedBands: list[str] = sorted([ALL_BANDS[selected_band] for selected_band in selected_bands])
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()
