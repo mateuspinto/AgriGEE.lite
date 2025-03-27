@@ -1,6 +1,9 @@
 import hashlib
 import warnings
 from collections import deque
+from collections.abc import Callable
+from functools import lru_cache, wraps
+from typing import ParamSpec, TypeVar
 
 import geopandas as gpd
 import numpy as np
@@ -86,3 +89,17 @@ def create_gdf_hash(gdf: gpd.GeoDataFrame) -> str:
 
     hash = pd.util.hash_pandas_object(gdf_copy)
     return hashlib.sha1(hash.values).hexdigest()
+
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def cached(func: Callable[P, R]) -> Callable[P, R]:
+    cached_func = lru_cache()(func)
+
+    @wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        return cached_func(*args, **kwargs)  # type: ignore  # noqa: PGH003
+
+    return wrapper

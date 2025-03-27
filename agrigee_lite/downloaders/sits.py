@@ -14,10 +14,11 @@ from shapely import Polygon
 from tqdm.std import tqdm
 
 from agrigee_lite.ee_utils import ee_gdf_to_feature_collection
-from agrigee_lite.misc import create_gdf_hash, quadtree_clustering
+from agrigee_lite.misc import cached, create_gdf_hash, quadtree_clustering
 from agrigee_lite.satellites.abstract_satellite import AbstractSatellite
 
 
+@cached
 def download_single_sits(
     geometry: Polygon, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str, satellite: AbstractSatellite
 ) -> pd.DataFrame:
