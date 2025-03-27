@@ -6,6 +6,7 @@ import string
 import ee
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 
 
 def ee_map_bands_and_doy(
@@ -123,3 +124,41 @@ def ee_img_to_numpy(ee_img: ee.Image, ee_geometry: ee.Geometry, scale: int) -> n
     img_in_array[np.isnan(img_in_array)] = 0
 
     return img_in_array
+
+
+def ee_get_tasks_status() -> pd.DataFrame:
+    tasks = ee.data.listOperations()
+    records = []
+    for op in tasks:
+        metadata = op.get("metadata", {})
+
+        record = {
+            "attempt": metadata.get("attempt"),
+            "create_time": metadata.get("createTime"),
+            "description": metadata.get("description"),
+            "destination_uris": metadata.get("destinationUris", [None])[0],
+            "done": op.get("done"),
+            "end_time": metadata.get("endTime"),
+            "name": op.get("name"),
+            "priority": metadata.get("priority"),
+            "progress": metadata.get("progress"),
+            "script_uri": metadata.get("scriptUri"),
+            "start_time": metadata.get("startTime"),
+            "state": metadata.get("state"),
+            "total_batch_eecu_usage_seconds": metadata.get("batchEecuUsageSeconds", 0.0),
+            "type": metadata.get("type"),
+            "update_time": metadata.get("updateTime"),
+        }
+        records.append(record)
+
+    df = pd.DataFrame(records)
+    df["create_time"] = pd.to_datetime(df.create_time)
+    df["end_time"] = pd.to_datetime(df.end_time)
+    df["start_time"] = pd.to_datetime(df.start_time)
+    df["update_time"] = pd.to_datetime(df.update_time)
+
+    df["estimated_cost_usd_tier_1"] = (df.total_batch_eecu_usage_seconds / (60 * 60)) * 0.40
+    df["estimated_cost_usd_tier_2"] = (df.total_batch_eecu_usage_seconds / (60 * 60)) * 0.28
+    df["estimated_cost_usd_tier_3"] = (df.total_batch_eecu_usage_seconds / (60 * 60)) * 0.16
+
+    return df
