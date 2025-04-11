@@ -152,10 +152,10 @@ def ee_get_tasks_status() -> pd.DataFrame:
         records.append(record)
 
     df = pd.DataFrame(records)
-    df["create_time"] = pd.to_datetime(df.create_time)
-    df["end_time"] = pd.to_datetime(df.end_time)
-    df["start_time"] = pd.to_datetime(df.start_time)
-    df["update_time"] = pd.to_datetime(df.update_time)
+    df["create_time"] = pd.to_datetime(df.create_time, format="mixed")
+    df["end_time"] = pd.to_datetime(df.end_time, format="mixed")
+    df["start_time"] = pd.to_datetime(df.start_time, format="mixed")
+    df["update_time"] = pd.to_datetime(df.update_time, format="mixed")
 
     df["estimated_cost_usd_tier_1"] = (df.total_batch_eecu_usage_seconds / (60 * 60)) * 0.40
     df["estimated_cost_usd_tier_2"] = (df.total_batch_eecu_usage_seconds / (60 * 60)) * 0.28

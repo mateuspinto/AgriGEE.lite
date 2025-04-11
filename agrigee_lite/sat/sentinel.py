@@ -2,9 +2,9 @@ from functools import partial
 
 import ee
 
-from agrigee_lite.ee_utils import ee_cloud_probability_mask, ee_map_bands_and_doy, ee_map_valid_pixels
-from agrigee_lite.satellites.abstract_satellite import AbstractSatellite
 from agrigee_lite.constants import ALL_BANDS
+from agrigee_lite.ee_utils import ee_cloud_probability_mask, ee_map_bands_and_doy, ee_map_valid_pixels
+from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
 class Sentinel2(AbstractSatellite):

@@ -15,11 +15,11 @@ from tqdm.std import tqdm
 
 from agrigee_lite.ee_utils import ee_gdf_to_feature_collection
 from agrigee_lite.misc import cached, create_gdf_hash, quadtree_clustering
-from agrigee_lite.satellites.abstract_satellite import AbstractSatellite
+from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
 @cached
-def download_single_sits(
+def single_sits(
     geometry: Polygon, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str, satellite: AbstractSatellite
 ) -> pd.DataFrame:
     start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
@@ -35,7 +35,7 @@ def download_single_sits(
     )
 
 
-def download_multiple_sits(gdf: gpd.GeoDataFrame, satellite: AbstractSatellite) -> pd.DataFrame:
+def multiple_sits(gdf: gpd.GeoDataFrame, satellite: AbstractSatellite) -> pd.DataFrame:
     fc = ee_gdf_to_feature_collection(gdf)
     ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
     return ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
@@ -43,7 +43,7 @@ def download_multiple_sits(gdf: gpd.GeoDataFrame, satellite: AbstractSatellite) 
     )
 
 
-def download_multiple_sits_multithread(
+def multiple_sits_multithread(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     mini_chunksize: int = 10,
@@ -72,7 +72,7 @@ def download_multiple_sits_multithread(
 
     def process_download(gdf_chunk: gpd.GeoDataFrame, i: int) -> tuple[pd.DataFrame, int]:
         try:
-            result_chunk = download_multiple_sits(gdf_chunk, satellite)
+            result_chunk = multiple_sits(gdf_chunk, satellite)
             result_chunk["chunk_id"] = i
             return result_chunk, i  # noqa: TRY300
         except Exception as e:
@@ -123,7 +123,7 @@ def download_multiple_sits_multithread(
     return whole_result_df
 
 
-def download_multiple_sits_task_gdrive(
+def multiple_sits_task_gdrive(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     file_stem: str,
@@ -148,7 +148,7 @@ def download_multiple_sits_task_gdrive(
     task.start()
 
 
-def download_multiple_sits_task_gcs(
+def multiple_sits_task_gcs(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     bucket_name: str,
@@ -173,7 +173,7 @@ def download_multiple_sits_task_gcs(
     task.start()
 
 
-async def download_multiple_sits_anyio(
+async def multiple_sits_async(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     mini_chunksize: int = 10,
@@ -216,9 +216,7 @@ async def download_multiple_sits_anyio(
 
                 try:
                     with anyio.fail_after(timeout):
-                        chunk_result_df = await anyio.to_thread.run_sync(
-                            partial(download_multiple_sits, gdf_chunk, satellite)
-                        )
+                        chunk_result_df = await anyio.to_thread.run_sync(partial(multiple_sits, gdf_chunk, satellite))
                         chunk_result_df["chunk_id"] = chunk_id
 
                     whole_result_df = pd.concat([whole_result_df, chunk_result_df])
@@ -247,7 +245,7 @@ async def download_multiple_sits_anyio(
     return whole_result_df
 
 
-def download_large_gdf_in_chunks(
+def multiple_sits_chunks_multithread(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     chunksize: int = 10000,
@@ -281,7 +279,7 @@ def download_large_gdf_in_chunks(
 
         output_filestem = str(output_path) + "/" + f"{idx}"
 
-        chunk_df = download_multiple_sits_multithread(
+        chunk_df = multiple_sits_multithread(
             gdf[gdf.cluster_id == chunk],
             satellite,
             mini_chunksize=mini_chunksize,
