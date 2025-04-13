@@ -14,7 +14,7 @@ from shapely import Polygon
 from tqdm.std import tqdm
 
 from agrigee_lite.ee_utils import ee_gdf_to_feature_collection
-from agrigee_lite.misc import cached, create_gdf_hash, quadtree_clustering
+from agrigee_lite.misc import cached, create_gdf_hash, quadtree_clustering, remove_underscore_in_df
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
@@ -30,17 +30,26 @@ def single_sits(
         {"start_date": start_date, "end_date": end_date, "00_indexnum": 1},
     )
     ee_expression = satellite.compute(ee_feature)
-    return ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
+
+    sits_df = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
         columns=["geo", "00_indexnum"]
     )
+
+    remove_underscore_in_df(sits_df)
+
+    return sits_df
 
 
 def multiple_sits(gdf: gpd.GeoDataFrame, satellite: AbstractSatellite) -> pd.DataFrame:
     fc = ee_gdf_to_feature_collection(gdf)
     ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
-    return ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
+    sits_df = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
         columns=["geo"]
     )
+
+    remove_underscore_in_df(sits_df)
+
+    return sits_df
 
 
 def multiple_sits_multithread(
