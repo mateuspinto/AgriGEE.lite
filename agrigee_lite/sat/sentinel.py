@@ -2,7 +2,6 @@ from functools import partial
 
 import ee
 
-from agrigee_lite.constants import ALL_BANDS
 from agrigee_lite.ee_utils import ee_cloud_probability_mask, ee_map_bands_and_doy, ee_map_valid_pixels
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
@@ -10,11 +9,22 @@ from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 class Sentinel2(AbstractSatellite):
     def __init__(
         self,
-        use_sr: bool = False,
         selected_bands: list[str] | None = None,
+        use_sr: bool = False,
     ):
         if selected_bands is None:
-            selected_bands = ["blue", "green", "red", "re1", "re2", "re3", "nir", "re4", "swir1", "swir2"]
+            selected_bands = [
+                "blue",
+                "green",
+                "red",
+                "re1",
+                "re2",
+                "re3",
+                "nir",
+                "re4",
+                "swir1",
+                "swir2",
+            ]
 
         super().__init__()
         self.useSr = use_sr
@@ -22,22 +32,26 @@ class Sentinel2(AbstractSatellite):
 
         self.startDate: str = "2019-01-01" if use_sr else "2016-01-01"
         self.endDate: str = ""
-        self.shortName: str = "s2"
+        self.shortName: str = "s2sr" if use_sr else "s2"
 
-        self.originalBands: list[str] = [
-            "B2",
-            "B3",
-            "B4",
-            "B5",
-            "B6",
-            "B7",
-            "B8",
-            "B8A",
-            "B11",
-            "B12",
-        ]
+        self.availableBands: dict[str, str] = {
+            "blue": "B2",
+            "green": "B3",
+            "red": "B4",
+            "re1": "B5",
+            "re2": "B6",
+            "re3": "B7",
+            "nir": "B8",
+            "re4": "B8A",
+            "swir1": "B11",
+            "swir2": "B12",
+        }
 
-        self.selectedBands: list[str] = sorted([ALL_BANDS[selected_band] for selected_band in selected_bands])
+        remap_bands = {s: f"{(n + 10):02}_{s}" for n, s in enumerate(selected_bands)}
+
+        self.selectedBands: dict[str, str] = {
+            remap_bands[band]: self.availableBands[band] for band in selected_bands if band in self.availableBands
+        }
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()
@@ -51,8 +65,8 @@ class Sentinel2(AbstractSatellite):
             ee.ImageCollection(self.imageCollectionName)
             .filter(ee_filter)
             .select(
-                self.originalBands,
-                self.selectedBands,
+                list(self.selectedBands.values()),
+                list(self.selectedBands.keys()),
             )
         )
 

@@ -87,8 +87,8 @@ def create_gdf_hash(gdf: gpd.GeoDataFrame) -> str:
 
     gdf_copy = gdf_copy.drop(columns=["geometry"])
 
-    hash = pd.util.hash_pandas_object(gdf_copy)
-    return hashlib.sha1(hash.values).hexdigest()
+    hash_values = pd.util.hash_pandas_object(gdf_copy).values
+    return hashlib.sha1(hash_values).hexdigest()  # type: ignore # noqa: S324
 
 
 P = ParamSpec("P")
@@ -103,3 +103,7 @@ def cached(func: Callable[P, R]) -> Callable[P, R]:
         return cached_func(*args, **kwargs)  # type: ignore  # noqa: PGH003
 
     return wrapper
+
+
+def remove_underscore_in_df(df: pd.DataFrame | gpd.GeoDataFrame) -> None:
+    df.columns = [column.split("_", 1)[1] for column in df.columns.tolist()]
