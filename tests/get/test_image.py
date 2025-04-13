@@ -10,7 +10,7 @@ all_satellites = get_all_satellites_for_test()
 
 
 @pytest.mark.parametrize("satellite", all_satellites)
-def test_download_images_s2sr(satellite: AbstractSatellite) -> None:
+def test_download_images(satellite: AbstractSatellite) -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
     row = gdf.iloc[0]
 
