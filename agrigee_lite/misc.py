@@ -107,3 +107,20 @@ def cached(func: Callable[P, R]) -> Callable[P, R]:
 
 def remove_underscore_in_df(df: pd.DataFrame | gpd.GeoDataFrame) -> None:
     df.columns = [column.split("_", 1)[1] for column in df.columns.tolist()]
+
+
+def long_to_wide_dataframe(df: pd.DataFrame, prefix: str = "", group_col: str = "indexnum") -> pd.DataFrame:
+    original_dtypes = df.drop(columns=[group_col]).dtypes.to_dict()
+    df["__seq__"] = df.groupby(group_col).cumcount()
+    df_wide = df.pivot(index=group_col, columns="__seq__")
+    df_wide.columns = [f"{prefix}_{col}_{seq}" for col, seq in df_wide.columns]
+
+    df_wide = df_wide.fillna(0).copy()
+
+    for col in df_wide.columns:
+        for orig_col in original_dtypes:
+            if col.startswith(f"{prefix}_{orig_col}_"):
+                df_wide[col] = df_wide[col].astype(original_dtypes[orig_col])
+                break
+
+    return df_wide.reset_index()

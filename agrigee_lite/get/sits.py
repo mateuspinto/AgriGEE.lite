@@ -1,4 +1,5 @@
 import concurrent.futures
+import getpass
 import logging
 import logging.handlers
 import pathlib
@@ -14,7 +15,13 @@ from shapely import Polygon
 from tqdm.std import tqdm
 
 from agrigee_lite.ee_utils import ee_gdf_to_feature_collection
-from agrigee_lite.misc import cached, create_gdf_hash, quadtree_clustering, remove_underscore_in_df
+from agrigee_lite.misc import (
+    cached,
+    create_gdf_hash,
+    long_to_wide_dataframe,
+    quadtree_clustering,
+    remove_underscore_in_df,
+)
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
@@ -27,15 +34,16 @@ def single_sits(
 
     ee_feature = ee.Feature(
         ee.Geometry(geometry.__geo_interface__),
-        {"start_date": start_date, "end_date": end_date, "00_indexnum": 1},
+        {"start_date": start_date, "end_date": end_date, "00_indexnum": 0},
     )
     ee_expression = satellite.compute(ee_feature)
 
     sits_df = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
-        columns=["geo", "00_indexnum"]
+        columns=["geo"]
     )
 
     remove_underscore_in_df(sits_df)
+    sits_df = long_to_wide_dataframe(sits_df, satellite.shortName)
 
     return sits_df
 
@@ -48,6 +56,7 @@ def multiple_sits(gdf: gpd.GeoDataFrame, satellite: AbstractSatellite) -> pd.Dat
     )
 
     remove_underscore_in_df(sits_df)
+    sits_df = long_to_wide_dataframe(sits_df, satellite.shortName)
 
     return sits_df
 
@@ -129,57 +138,10 @@ def multiple_sits_multithread(
     whole_result_df.drop(columns=["chunk_id"], inplace=True)
     whole_result_df = whole_result_df.sort_values("00_indexnum", kind="stable").reset_index(drop=True)
 
+    remove_underscore_in_df(whole_result_df)
+    whole_result_df = long_to_wide_dataframe(whole_result_df)
+
     return whole_result_df
-
-
-def multiple_sits_task_gdrive(
-    gdf: gpd.GeoDataFrame,
-    satellite: AbstractSatellite,
-    file_stem: str,
-    taskname: str = "",
-    gee_save_folder: str = "GEE_EXPORTS",
-) -> None:
-    if taskname == "":
-        taskname = file_stem
-
-    fc = ee_gdf_to_feature_collection(gdf)
-    ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
-
-    task = ee.batch.Export.table.toDrive(
-        collection=ee_expression,
-        description=taskname,
-        fileFormat="CSV",
-        fileNamePrefix=file_stem,
-        folder=gee_save_folder,
-        selectors=["00_indexnum", "01_doy", *satellite.selectedBands],
-    )
-
-    task.start()
-
-
-def multiple_sits_task_gcs(
-    gdf: gpd.GeoDataFrame,
-    satellite: AbstractSatellite,
-    bucket_name: str,
-    file_path: str,
-    taskname: str = "",
-) -> None:
-    if taskname == "":
-        taskname = file_path
-
-    fc = ee_gdf_to_feature_collection(gdf)
-    ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
-
-    task = ee.batch.Export.table.toCloudStorage(
-        bucket=bucket_name,
-        collection=ee_expression,
-        description=taskname,
-        fileFormat="CSV",
-        fileNamePrefix=file_path,
-        selectors=["00_indexnum", "01_doy", *satellite.selectedBands],
-    )
-
-    task.start()
 
 
 async def multiple_sits_async(
@@ -251,6 +213,9 @@ async def multiple_sits_async(
     whole_result_df.drop(columns=["chunk_id"], inplace=True)
     whole_result_df = whole_result_df.sort_values("00_indexnum", kind="stable").reset_index(drop=True)
 
+    remove_underscore_in_df(whole_result_df)
+    whole_result_df = long_to_wide_dataframe(whole_result_df)
+
     return whole_result_df
 
 
@@ -312,4 +277,93 @@ def multiple_sits_chunks_multithread(
     whole_result_df.drop(columns=["chunk_id"], inplace=True)
     whole_result_df = whole_result_df.sort_values("00_indexnum", kind="stable").reset_index(drop=True)
 
+    remove_underscore_in_df(whole_result_df)
+    whole_result_df = long_to_wide_dataframe(whole_result_df)
+
     return whole_result_df
+
+
+def multiple_sits_task_gdrive(
+    gdf: gpd.GeoDataFrame,
+    satellite: AbstractSatellite,
+    file_stem: str,
+    taskname: str = "",
+    gee_save_folder: str = "GEE_EXPORTS",
+) -> None:
+    if taskname == "":
+        taskname = file_stem
+
+    fc = ee_gdf_to_feature_collection(gdf)
+    ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
+
+    task = ee.batch.Export.table.toDrive(
+        collection=ee_expression,
+        description=taskname,
+        fileFormat="CSV",
+        fileNamePrefix=file_stem,
+        folder=gee_save_folder,
+        selectors=["00_indexnum", "01_doy", *satellite.selectedBands],
+    )
+
+    task.start()
+
+
+def multiple_sits_task_gcs(
+    gdf: gpd.GeoDataFrame,
+    satellite: AbstractSatellite,
+    bucket_name: str,
+    file_path: str,
+    taskname: str = "",
+) -> None:
+    if taskname == "":
+        taskname = file_path
+
+    fc = ee_gdf_to_feature_collection(gdf)
+    ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
+
+    task = ee.batch.Export.table.toCloudStorage(
+        bucket=bucket_name,
+        collection=ee_expression,
+        description=taskname,
+        fileFormat="CSV",
+        fileNamePrefix=file_path,
+        selectors=["00_indexnum", "01_doy", *satellite.selectedBands],
+    )
+
+    task.start()
+
+
+def multiple_sits_chunks_gdrive(
+    gdf: gpd.GeoDataFrame, satellite: AbstractSatellite, cluster_size: int = 500, gee_save_folder: str = "GEE_EXPORTS"
+) -> None:
+    gdf = quadtree_clustering(gdf, cluster_size)
+    username = getpass.getuser()
+    hashname = create_gdf_hash(gdf)
+
+    for cluster_id in tqdm(sorted(gdf.cluster_id.unique())):
+        cluster_id = int(cluster_id)
+        multiple_sits_task_gdrive(
+            gdf[gdf.cluster_id == cluster_id],
+            satellite,
+            f"{satellite.shortName}_{hashname}_{cluster_id}",
+            f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
+            gee_save_folder,
+        )
+
+
+def multiple_sits_chunks_gcs(
+    gdf: gpd.GeoDataFrame, satellite: AbstractSatellite, bucket_name: str, cluster_size: int = 500
+) -> None:
+    gdf = quadtree_clustering(gdf, cluster_size)
+    username = getpass.getuser()
+    hashname = create_gdf_hash(gdf)
+
+    for cluster_id in tqdm(sorted(gdf.cluster_id.unique())):
+        cluster_id = int(cluster_id)
+        multiple_sits_task_gcs(
+            gdf[gdf.cluster_id == cluster_id],
+            satellite,
+            bucket_name,
+            f"{satellite.shortName}_{hashname}/{cluster_id}",
+            f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
+        )
