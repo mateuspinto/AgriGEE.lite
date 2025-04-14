@@ -1,4 +1,5 @@
 import hashlib
+import inspect
 import warnings
 from collections import deque
 from collections.abc import Callable
@@ -124,3 +125,39 @@ def long_to_wide_dataframe(df: pd.DataFrame, prefix: str = "", group_col: str = 
                 break
 
     return df_wide.reset_index()
+
+
+def wide_to_long_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df_long = df.melt(id_vars=["indexnum"], var_name="band_time", value_name="value")
+
+    df_long[["prefix", "band", "idx"]] = df_long["band_time"].str.extract(r"([^_]+)_(\w+)_(\d+)")
+
+    df_long["idx"] = df_long["idx"].astype(int)
+    df_long["value"] = pd.to_numeric(df_long["value"], errors="coerce")  # <- aqui!
+
+    df_pivot = df_long.pivot(index=["indexnum", "idx"], columns="band", values="value").reset_index()
+    df_pivot.sort_values(by=["indexnum", "idx"], inplace=True)
+    df_pivot = df_pivot.drop(columns=["idx"])
+    df_pivot.columns.name = None
+
+    return df_pivot
+
+
+def compute_index_from_df(df: pd.DataFrame, np_function: Callable) -> np.ndarray:
+    sig = inspect.signature(np_function)
+    kwargs = {}
+
+    for param_name, param in sig.parameters.items():
+        if param_name in df.columns:
+            kwargs[param_name] = df[param_name].values
+        else:
+            if param.default is not inspect._empty:
+                kwargs[param_name] = param.default
+            else:
+                raise ValueError(  # noqa: TRY003
+                    f"DataFrame is missing a column '{param_name}', "
+                    f"required by {np_function.__name__}, and there's no default."
+                )
+
+    return np_function(**kwargs)

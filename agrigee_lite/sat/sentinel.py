@@ -53,6 +53,8 @@ class Sentinel2(AbstractSatellite):
             remap_bands[band]: self.availableBands[band] for band in selected_bands if band in self.availableBands
         }
 
+        self.scaleBands = lambda x: x / 10000
+
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()
 

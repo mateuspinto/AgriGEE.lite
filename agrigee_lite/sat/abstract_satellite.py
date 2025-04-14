@@ -10,6 +10,7 @@ class AbstractSatellite:
         self.renamed_bands: list[str] = []
         self.selectedBands: dict[str, str] = {}
         self.imageCollectionName = ""
+        self.scaleBands = lambda x: x
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         return ee.ImageCollection()
