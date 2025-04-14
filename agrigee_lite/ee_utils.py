@@ -7,6 +7,7 @@ import ee
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from topojson import Topology
 
 
 def ee_map_bands_and_doy(
@@ -60,13 +61,18 @@ def ee_cloud_probability_mask(img: ee.Image, threshold: float, invert: bool = Fa
     return img.updateMask(mask).select(img.bandNames().remove("cloud"))
 
 
-def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame) -> ee.FeatureCollection:
+def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame, simplify: bool = True) -> ee.FeatureCollection:
     gdf = gdf.copy()
     gdf = gdf[["geometry", "start_date", "end_date"]]
 
     gdf["00_indexnum"] = gdf.index.values.astype(int)
     gdf["start_date"] = gdf["start_date"].dt.strftime("%Y-%m-%d")
     gdf["end_date"] = gdf["end_date"].dt.strftime("%Y-%m-%d")
+
+    if simplify:
+        topo = Topology(gdf, prequantize=False)
+        topo = topo.toposimplify(0.001, prevent_oversimplify=True)
+        gdf = topo.to_gdf()
 
     geo_json = os.path.join(os.getcwd(), "".join(random.choice(string.ascii_lowercase) for i in range(6)) + ".geojson")  # noqa: S311
     gdf = gdf.to_crs(4326)

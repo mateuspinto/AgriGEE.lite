@@ -15,6 +15,7 @@ dependencies = [
     "uvloop>=0.21.0",
     "smart_open>=7.1.0",
     "pandera>=0.23.1",
+    "topojson>=1.9",
 ]
 classifiers = [
     "Intended Audience :: Developers",
