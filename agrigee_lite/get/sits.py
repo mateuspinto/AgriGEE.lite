@@ -14,7 +14,7 @@ import pandera as pa
 from shapely import Polygon
 from tqdm.std import tqdm
 
-from agrigee_lite.ee_utils import ee_gdf_to_feature_collection
+from agrigee_lite.ee_utils import ee_gdf_to_feature_collection, ee_get_tasks_status
 from agrigee_lite.misc import (
     cached,
     create_gdf_hash,
@@ -336,34 +336,49 @@ def multiple_sits_task_gcs(
 def multiple_sits_chunks_gdrive(
     gdf: gpd.GeoDataFrame, satellite: AbstractSatellite, cluster_size: int = 500, gee_save_folder: str = "GEE_EXPORTS"
 ) -> None:
+    tasks_df = ee_get_tasks_status()
+    completed_or_running_tasks = set(
+        tasks_df.description.apply(lambda x: x.split("_", 1)[0] + "_" + x.split("_", 2)[2]).tolist()
+    )  # The task is the same, no matter who started it
+
     gdf = quadtree_clustering(gdf, cluster_size)
-    username = getpass.getuser()
+    username = getpass.getuser().replace("_", "")
     hashname = create_gdf_hash(gdf)
 
     for cluster_id in tqdm(sorted(gdf.cluster_id.unique())):
         cluster_id = int(cluster_id)
-        multiple_sits_task_gdrive(
-            gdf[gdf.cluster_id == cluster_id],
-            satellite,
-            f"{satellite.shortName}_{hashname}_{cluster_id}",
-            f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
-            gee_save_folder,
-        )
+
+        if f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks:
+            multiple_sits_task_gdrive(
+                gdf[gdf.cluster_id == cluster_id],
+                satellite,
+                f"{satellite.shortName}_{hashname}_{cluster_id}",
+                f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
+                gee_save_folder,
+            )
 
 
 def multiple_sits_chunks_gcs(
     gdf: gpd.GeoDataFrame, satellite: AbstractSatellite, bucket_name: str, cluster_size: int = 500
 ) -> None:
+    tasks_df = ee_get_tasks_status()
+    completed_or_running_tasks = set(
+        tasks_df.description.apply(lambda x: x.split("_", 1)[0] + "_" + x.split("_", 2)[2]).tolist()
+    )  # The task is the same, no matter who started it
+
     gdf = quadtree_clustering(gdf, cluster_size)
-    username = getpass.getuser()
+    username = getpass.getuser().replace("_", "")
     hashname = create_gdf_hash(gdf)
 
     for cluster_id in tqdm(sorted(gdf.cluster_id.unique())):
         cluster_id = int(cluster_id)
-        multiple_sits_task_gcs(
-            gdf[gdf.cluster_id == cluster_id],
-            satellite,
-            bucket_name,
-            f"{satellite.shortName}_{hashname}/{cluster_id}",
-            f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
-        )
+
+        if f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks:
+            # TODO: Also skip if the file already exists in GCS
+            multiple_sits_task_gcs(
+                gdf[gdf.cluster_id == cluster_id],
+                satellite,
+                bucket_name,
+                f"{satellite.shortName}_{hashname}/{cluster_id}",
+                f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
+            )
