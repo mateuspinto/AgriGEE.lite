@@ -89,7 +89,7 @@ def create_gdf_hash(gdf: gpd.GeoDataFrame) -> str:
     gdf_copy = gdf_copy.drop(columns=["geometry"])
 
     hash_values = pd.util.hash_pandas_object(gdf_copy).values
-    return hashlib.sha1(hash_values).hexdigest()  # type: ignore # noqa: S324
+    return hashlib.sha1(hash_values).hexdigest()  # type: ignore  # noqa: PGH003, S324
 
 
 P = ParamSpec("P")
@@ -114,7 +114,7 @@ def long_to_wide_dataframe(df: pd.DataFrame, prefix: str = "", group_col: str = 
     original_dtypes = df.drop(columns=[group_col]).dtypes.to_dict()
     df["__seq__"] = df.groupby(group_col).cumcount()
     df_wide = df.pivot(index=group_col, columns="__seq__")
-    df_wide.columns = [f"{prefix}_{col}_{seq}" for col, seq in df_wide.columns]
+    df_wide.columns = [f"{prefix}_{col}_{seq}" for col, seq in df_wide.columns]  # type: ignore  # noqa: PGH003
 
     df_wide = df_wide.fillna(0).copy()
 
@@ -134,7 +134,7 @@ def wide_to_long_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df_long[["prefix", "band", "idx"]] = df_long["band_time"].str.extract(r"([^_]+)_(\w+)_(\d+)")
 
     df_long["idx"] = df_long["idx"].astype(int)
-    df_long["value"] = pd.to_numeric(df_long["value"], errors="coerce")  # <- aqui!
+    df_long["value"] = pd.to_numeric(df_long["value"], errors="coerce")
 
     df_pivot = df_long.pivot(index=["indexnum", "idx"], columns="band", values="value").reset_index()
     df_pivot.sort_values(by=["indexnum", "idx"], inplace=True)

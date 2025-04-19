@@ -15,5 +15,5 @@ class AbstractSatellite:
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         return ee.ImageCollection()
 
-    def compute(self, ee_feature: ee.Feature) -> ee.FeatureCollection:
+    def compute(self, ee_feature: ee.Feature, reducers: list[str] | None = None) -> ee.FeatureCollection:
         return ee.FeatureCollection()

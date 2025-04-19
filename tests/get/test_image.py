@@ -4,7 +4,7 @@ import pytest
 
 import agrigee_lite as agl
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
-from tests.utils import check_np_array_equivalence, get_all_satellites_for_test
+from tests.utils import assert_np_array_equivalence, get_all_satellites_for_test
 
 all_satellites = get_all_satellites_for_test()
 
@@ -16,4 +16,4 @@ def test_download_images(satellite: AbstractSatellite) -> None:
 
     imgs = agl.get.images(row.geometry, row.start_date, row.end_date, satellite)
     original_imgs = np.load(f"tests/data/imgs/0_{satellite.shortName}.npz")
-    assert check_np_array_equivalence(imgs, original_imgs["data"], 0)
+    assert_np_array_equivalence(imgs, original_imgs["data"], 0)

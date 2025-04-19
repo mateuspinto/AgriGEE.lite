@@ -14,15 +14,16 @@ def ee_map_bands_and_doy(
     ee_img: ee.Image,
     ee_geometry: ee.Geometry,
     ee_feature: ee.Feature,
-    scale: int,
+    pixel_size: int,
+    reducer: ee.Reducer,
     round_int_16: bool = False,
     max_pixels: int = 1000,
 ) -> ee.Feature:
     ee_img = ee.Image(ee_img)
     stats = ee_img.reduceRegion(
-        reducer=ee.Reducer.median(),
+        reducer=reducer,
         geometry=ee_geometry,
-        scale=scale,
+        scale=pixel_size,
         maxPixels=max_pixels,
         bestEffort=True,
     ).map(lambda _, value: ee.Number(ee.Algorithms.If(ee.Algorithms.IsEqual(value, None), 0, value)))
@@ -37,7 +38,7 @@ def ee_map_bands_and_doy(
     return ee.Feature(None, stats)
 
 
-def ee_map_valid_pixels(img: ee.Image, ee_geometry: ee.Geometry, scale: float) -> ee.Image:
+def ee_map_valid_pixels(img: ee.Image, ee_geometry: ee.Geometry, pixel_size: int) -> ee.Image:
     mask = ee.Image(img).select([0]).gt(0)
 
     valid_pixels = ee.Number(
@@ -45,7 +46,7 @@ def ee_map_valid_pixels(img: ee.Image, ee_geometry: ee.Geometry, scale: float) -
         .reduceRegion(
             reducer=ee.Reducer.count(),
             geometry=ee_geometry,
-            scale=scale,
+            scale=pixel_size,
             maxPixels=1e8,
             bestEffort=True,
         )
@@ -168,3 +169,44 @@ def ee_get_tasks_status() -> pd.DataFrame:
     df["estimated_cost_usd_tier_3"] = (df.total_batch_eecu_usage_seconds / (60 * 60)) * 0.16
 
     return df
+
+
+def ee_get_reducers(reducer_names: list[str] | None = None) -> ee.Reducer:  # noqa: C901
+    if reducer_names is None:
+        reducer_names = ["median"]
+
+    names = [n.lower() for n in reducer_names]
+
+    pct_vals = sorted({int(n[1:]) for n in names if n.startswith("p")})
+
+    reducers = []
+    for n in names:
+        if n == "min":
+            reducers.append(ee.Reducer.min())
+        elif n == "max":
+            reducers.append(ee.Reducer.max())
+        elif n == "mean":
+            reducers.append(ee.Reducer.mean())
+        elif n == "median":
+            reducers.append(ee.Reducer.median())
+        elif n == "kurt":
+            reducers.append(ee.Reducer.kurtosis())
+        elif n == "skew":
+            reducers.append(ee.Reducer.skew())
+        elif n == "std":
+            reducers.append(ee.Reducer.stdDev())
+        elif n == "var":
+            reducers.append(ee.Reducer.variance())
+        elif n.startswith("p"):
+            continue
+        else:
+            raise ValueError(f"Unknown reducer: '{n}'")  # noqa: TRY003
+
+    if pct_vals:
+        reducers.append(ee.Reducer.percentile(pct_vals))
+
+    reducer = reducers[0]
+    for r in reducers[1:]:
+        reducer = reducer.combine(r, None, True)
+
+    return reducer

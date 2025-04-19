@@ -2,7 +2,7 @@ from functools import partial
 
 import ee
 
-from agrigee_lite.ee_utils import ee_cloud_probability_mask, ee_map_bands_and_doy, ee_map_valid_pixels
+from agrigee_lite.ee_utils import ee_cloud_probability_mask, ee_get_reducers, ee_map_bands_and_doy, ee_map_valid_pixels
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
@@ -93,13 +93,30 @@ class Sentinel2(AbstractSatellite):
 
         return ee.ImageCollection(s2_img)
 
-    def compute(self, ee_feature: ee.Feature) -> ee.FeatureCollection:
+    def compute(self, ee_feature: ee.Feature, reducers: list[str] | None = None) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
 
         s2_img = self.imageCollection(ee_feature)
 
+        # round_int_16 is True only if reducers are None or contain exclusively 'mean' and/or 'median'
+        allowed_reducers = {"mean", "median"}
+        round_int_16 = reducers is None or set(reducers).issubset(allowed_reducers)
+
         features = s2_img.map(
-            partial(ee_map_bands_and_doy, ee_geometry=ee_geometry, ee_feature=ee_feature, scale=10, round_int_16=True)
+            partial(
+                ee_map_bands_and_doy,
+                ee_geometry=ee_geometry,
+                ee_feature=ee_feature,
+                pixel_size=10,
+                reducer=ee_get_reducers(reducers),
+                round_int_16=round_int_16,
+            )
         )
 
         return features
+
+    def __str__(self) -> str:
+        return self.shortName
+
+    def __repr__(self) -> str:
+        return self.shortName

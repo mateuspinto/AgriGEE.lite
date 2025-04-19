@@ -25,9 +25,13 @@ from agrigee_lite.misc import (
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
-@cached
+# @cached # Doesn't work with lists as parameters :(
 def single_sits(
-    geometry: Polygon, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str, satellite: AbstractSatellite
+    geometry: Polygon,
+    start_date: pd.Timestamp | str,
+    end_date: pd.Timestamp | str,
+    satellite: AbstractSatellite,
+    reducers: list[str] | None = None,
 ) -> pd.DataFrame:
     start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
     end_date = end_date.strftime("%Y-%m-%d") if isinstance(end_date, pd.Timestamp) else end_date
@@ -36,7 +40,7 @@ def single_sits(
         ee.Geometry(geometry.__geo_interface__),
         {"start_date": start_date, "end_date": end_date, "00_indexnum": 0},
     )
-    ee_expression = satellite.compute(ee_feature)
+    ee_expression = satellite.compute(ee_feature, reducers=reducers)
 
     sits_df = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
         columns=["geo"]
@@ -48,9 +52,11 @@ def single_sits(
     return sits_df
 
 
-def multiple_sits(gdf: gpd.GeoDataFrame, satellite: AbstractSatellite) -> pd.DataFrame:
+def multiple_sits(
+    gdf: gpd.GeoDataFrame, satellite: AbstractSatellite, reducers: list[str] | None = None
+) -> pd.DataFrame:
     fc = ee_gdf_to_feature_collection(gdf)
-    ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
+    ee_expression = ee.FeatureCollection(fc.map(partial(satellite.compute, reducers=reducers))).flatten()
     sits_df = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
         columns=["geo"]
     )
@@ -64,6 +70,7 @@ def multiple_sits(gdf: gpd.GeoDataFrame, satellite: AbstractSatellite) -> pd.Dat
 def multiple_sits_multithread(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
+    reducers: list[str] | None = None,
     mini_chunksize: int = 10,
     num_threads_rush: int = 30,
     num_threads_retry: int = 10,
@@ -90,7 +97,7 @@ def multiple_sits_multithread(
 
     def process_download(gdf_chunk: gpd.GeoDataFrame, i: int) -> tuple[pd.DataFrame, int]:
         try:
-            result_chunk = multiple_sits(gdf_chunk, satellite)
+            result_chunk = multiple_sits(gdf_chunk, satellite, reducers=reducers)
             result_chunk["chunk_id"] = i
             return result_chunk, i  # noqa: TRY300
         except Exception as e:
@@ -147,6 +154,7 @@ def multiple_sits_multithread(
 async def multiple_sits_async(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
+    reducers: list[str] | None = None,
     mini_chunksize: int = 10,
     initial_concurrency: int = 30,
     retry_concurrency: int = 10,
@@ -187,7 +195,9 @@ async def multiple_sits_async(
 
                 try:
                     with anyio.fail_after(timeout):
-                        chunk_result_df = await anyio.to_thread.run_sync(partial(multiple_sits, gdf_chunk, satellite))
+                        chunk_result_df = await anyio.to_thread.run_sync(
+                            partial(multiple_sits, gdf_chunk, satellite, reducers=reducers)
+                        )
                         chunk_result_df["chunk_id"] = chunk_id
 
                     whole_result_df = pd.concat([whole_result_df, chunk_result_df])
@@ -222,6 +232,7 @@ async def multiple_sits_async(
 def multiple_sits_chunks_multithread(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
+    reducers: list[str] | None = None,
     chunksize: int = 10000,
     mini_chunksize: int = 10,
     initial_concurrency: int = 30,
@@ -256,6 +267,7 @@ def multiple_sits_chunks_multithread(
         chunk_df = multiple_sits_multithread(
             gdf[gdf.cluster_id == chunk],
             satellite,
+            reducers=reducers,
             mini_chunksize=mini_chunksize,
             num_threads_rush=initial_concurrency,
             num_threads_retry=retry_concurrency,
@@ -287,6 +299,7 @@ def multiple_sits_task_gdrive(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     file_stem: str,
+    reducers: list[str] | None = None,
     taskname: str = "",
     gee_save_folder: str = "GEE_EXPORTS",
 ) -> None:
@@ -294,7 +307,7 @@ def multiple_sits_task_gdrive(
         taskname = file_stem
 
     fc = ee_gdf_to_feature_collection(gdf)
-    ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
+    ee_expression = ee.FeatureCollection(fc.map(partial(satellite.compute, reducers=reducers))).flatten()
 
     task = ee.batch.Export.table.toDrive(
         collection=ee_expression,
@@ -313,13 +326,14 @@ def multiple_sits_task_gcs(
     satellite: AbstractSatellite,
     bucket_name: str,
     file_path: str,
+    reducers: list[str] | None = None,
     taskname: str = "",
 ) -> None:
     if taskname == "":
         taskname = file_path
 
     fc = ee_gdf_to_feature_collection(gdf)
-    ee_expression = ee.FeatureCollection(fc.map(satellite.compute)).flatten()
+    ee_expression = ee.FeatureCollection(fc.map(partial(satellite.compute, reducers=reducers))).flatten()
 
     task = ee.batch.Export.table.toCloudStorage(
         bucket=bucket_name,
@@ -334,7 +348,11 @@ def multiple_sits_task_gcs(
 
 
 def multiple_sits_chunks_gdrive(
-    gdf: gpd.GeoDataFrame, satellite: AbstractSatellite, cluster_size: int = 500, gee_save_folder: str = "GEE_EXPORTS"
+    gdf: gpd.GeoDataFrame,
+    satellite: AbstractSatellite,
+    reducers: list[str] | None = None,
+    cluster_size: int = 500,
+    gee_save_folder: str = "GEE_EXPORTS",
 ) -> None:
     tasks_df = ee_get_tasks_status()
     completed_or_running_tasks = set(
@@ -353,13 +371,18 @@ def multiple_sits_chunks_gdrive(
                 gdf[gdf.cluster_id == cluster_id],
                 satellite,
                 f"{satellite.shortName}_{hashname}_{cluster_id}",
-                f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
-                gee_save_folder,
+                reducers=reducers,
+                taskname=f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
+                gee_save_folder=gee_save_folder,
             )
 
 
 def multiple_sits_chunks_gcs(
-    gdf: gpd.GeoDataFrame, satellite: AbstractSatellite, bucket_name: str, cluster_size: int = 500
+    gdf: gpd.GeoDataFrame,
+    satellite: AbstractSatellite,
+    bucket_name: str,
+    reducers: list[str] | None = None,
+    cluster_size: int = 500,
 ) -> None:
     tasks_df = ee_get_tasks_status()
     completed_or_running_tasks = set(
@@ -378,7 +401,8 @@ def multiple_sits_chunks_gcs(
             multiple_sits_task_gcs(
                 gdf[gdf.cluster_id == cluster_id],
                 satellite,
-                bucket_name,
-                f"{satellite.shortName}_{hashname}/{cluster_id}",
-                f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
+                reducers=reducers,
+                bucket_name=bucket_name,
+                file_path=f"{satellite.shortName}_{hashname}/{cluster_id}",
+                taskname=f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
             )

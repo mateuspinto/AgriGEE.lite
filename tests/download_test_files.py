@@ -6,6 +6,8 @@ import agrigee_lite as agl
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 from tests.utils import get_all_satellites_for_test
 
+all_reducers = ["min", "max", "mean", "median", "std", "var", "p2", "p98", "kurt", "skew"]
+
 
 def download_img_for_test(satellite: AbstractSatellite) -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
@@ -23,6 +25,15 @@ def download_sits_for_test(satellite: AbstractSatellite) -> None:
     sits.to_parquet(f"tests/data/sits/0_{satellite.shortName}.parquet")
 
 
+def download_sits_for_test_with_reducers(satellite: AbstractSatellite) -> None:
+    gdf = gpd.read_parquet("tests/data/gdf.parquet")
+    row = gdf.iloc[0]
+
+    for reducer in all_reducers:
+        sits = agl.get.sits(row.geometry, row.start_date, row.end_date, satellite, reducers=[reducer])
+        sits.to_parquet(f"tests/data/sits/0_{satellite.shortName}_{reducer}.parquet")
+
+
 if __name__ == "__main__":
     ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project="ee-paulagibrim")
 
@@ -31,3 +42,4 @@ if __name__ == "__main__":
         print("Downloading satellite", satellite.shortName, "...")
         download_img_for_test(satellite)
         download_sits_for_test(satellite)
+        download_sits_for_test_with_reducers(satellite)
