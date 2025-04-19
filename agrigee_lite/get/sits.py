@@ -16,7 +16,6 @@ from tqdm.std import tqdm
 
 from agrigee_lite.ee_utils import ee_gdf_to_feature_collection, ee_get_tasks_status
 from agrigee_lite.misc import (
-    cached,
     create_gdf_hash,
     long_to_wide_dataframe,
     quadtree_clustering,
@@ -148,14 +147,11 @@ def multiple_sits_multithread(
             desc="Re-running failed downloads",
         )
 
-    whole_result_df["00_indexnum"] = (
-        whole_result_df["chunk_id"] * (whole_result_df["00_indexnum"].max() + 1) + whole_result_df["00_indexnum"]
+    whole_result_df["indexnum"] = (
+        whole_result_df["chunk_id"] * (whole_result_df["indexnum"].max() + 1) + whole_result_df["indexnum"]
     )
     whole_result_df.drop(columns=["chunk_id"], inplace=True)
-    whole_result_df = whole_result_df.sort_values("00_indexnum", kind="stable").reset_index(drop=True)
-
-    remove_underscore_in_df(whole_result_df)
-    whole_result_df = long_to_wide_dataframe(whole_result_df)
+    whole_result_df = whole_result_df.sort_values("indexnum", kind="stable").reset_index(drop=True)
 
     return whole_result_df
 
@@ -233,14 +229,11 @@ async def multiple_sits_async(
 
     queue_listener.stop()
 
-    whole_result_df["00_indexnum"] = (
-        whole_result_df["chunk_id"] * (whole_result_df["00_indexnum"].max() + 1) + whole_result_df["00_indexnum"]
+    whole_result_df["indexnum"] = (
+        whole_result_df["chunk_id"] * (whole_result_df["indexnum"].max() + 1) + whole_result_df["indexnum"]
     )
     whole_result_df.drop(columns=["chunk_id"], inplace=True)
-    whole_result_df = whole_result_df.sort_values("00_indexnum", kind="stable").reset_index(drop=True)
-
-    remove_underscore_in_df(whole_result_df)
-    whole_result_df = long_to_wide_dataframe(whole_result_df)
+    whole_result_df = whole_result_df.sort_values("indexnum", kind="stable").reset_index(drop=True)
 
     return whole_result_df
 
@@ -301,14 +294,11 @@ def multiple_sits_chunks_multithread(
         chunk_df["chunk_id"] = chunk_id
         whole_result_df = pd.concat([whole_result_df, chunk_df], ignore_index=True)
 
-    whole_result_df["00_indexnum"] = (
-        whole_result_df["chunk_id"] * (whole_result_df["00_indexnum"].max() + 1) + whole_result_df["00_indexnum"]
+    whole_result_df["indexnum"] = (
+        whole_result_df["chunk_id"] * (whole_result_df["indexnum"].max() + 1) + whole_result_df["indexnum"]
     )
     whole_result_df.drop(columns=["chunk_id"], inplace=True)
-    whole_result_df = whole_result_df.sort_values("00_indexnum", kind="stable").reset_index(drop=True)
-
-    remove_underscore_in_df(whole_result_df)
-    whole_result_df = long_to_wide_dataframe(whole_result_df)
+    whole_result_df = whole_result_df.sort_values("indexnum", kind="stable").reset_index(drop=True)
 
     return whole_result_df
 
