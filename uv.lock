@@ -10,7 +10,7 @@ resolution-markers = [
 
 [[package]]
 name = "agrigee-lite"
-version = "0.0.5"
+version = "0.0.7"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },

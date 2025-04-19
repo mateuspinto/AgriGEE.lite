@@ -15,16 +15,16 @@ def ee_map_bands_and_doy(
     ee_geometry: ee.Geometry,
     ee_feature: ee.Feature,
     pixel_size: int,
+    subsampling_max_pixels: ee.Number,
     reducer: ee.Reducer,
     round_int_16: bool = False,
-    max_pixels: int = 1000,
 ) -> ee.Feature:
     ee_img = ee.Image(ee_img)
     stats = ee_img.reduceRegion(
         reducer=reducer,
         geometry=ee_geometry,
         scale=pixel_size,
-        maxPixels=max_pixels,
+        maxPixels=subsampling_max_pixels,
         bestEffort=True,
     ).map(lambda _, value: ee.Number(ee.Algorithms.If(ee.Algorithms.IsEqual(value, None), 0, value)))
 

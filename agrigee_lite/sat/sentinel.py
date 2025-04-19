@@ -29,6 +29,7 @@ class Sentinel2(AbstractSatellite):
         super().__init__()
         self.useSr = use_sr
         self.imageCollectionName = "COPERNICUS/S2_SR_HARMONIZED" if use_sr else "COPERNICUS/S2_HARMONIZED"
+        self.pixelSize: int = 10
 
         self.startDate: str = "2019-01-01" if use_sr else "2016-01-01"
         self.endDate: str = ""
@@ -93,7 +94,9 @@ class Sentinel2(AbstractSatellite):
 
         return ee.ImageCollection(s2_img)
 
-    def compute(self, ee_feature: ee.Feature, reducers: list[str] | None = None) -> ee.FeatureCollection:
+    def compute(
+        self, ee_feature: ee.Feature, reducers: list[str] | None = None, subsampling_max_pixels: float = 1000
+    ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
 
         s2_img = self.imageCollection(ee_feature)
@@ -102,12 +105,23 @@ class Sentinel2(AbstractSatellite):
         allowed_reducers = {"mean", "median"}
         round_int_16 = reducers is None or set(reducers).issubset(allowed_reducers)
 
+        # ─── here: determine max_pixels. ────────────────────────────────────────────────
+        if subsampling_max_pixels > 1:
+            ee_subsampling_max_pixels = ee.Number(subsampling_max_pixels)
+        else:
+            # geometry area (m²) ÷ (pixelSize²) = total pixel count → take fraction
+            pixel_area = ee.Number(self.pixelSize).pow(2)
+            total_pixels = ee_geometry.area().divide(pixel_area)
+            ee_subsampling_max_pixels = total_pixels.multiply(subsampling_max_pixels).toInt()
+        # ────────────────────────────────────────────────────────────────────────────────
+
         features = s2_img.map(
             partial(
                 ee_map_bands_and_doy,
                 ee_geometry=ee_geometry,
                 ee_feature=ee_feature,
-                pixel_size=10,
+                pixel_size=self.pixelSize,
+                subsampling_max_pixels=ee_subsampling_max_pixels,
                 reducer=ee_get_reducers(reducers),
                 round_int_16=round_int_16,
             )
