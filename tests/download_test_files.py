@@ -1,3 +1,6 @@
+from functools import partial
+
+import anyio
 import ee
 import geopandas as gpd
 import numpy as np
@@ -34,8 +37,36 @@ def download_sits_for_test_with_reducers(satellite: AbstractSatellite) -> None:
         sits.to_parquet(f"tests/data/sits/0_{satellite.shortName}_{reducer}.parquet")
 
 
+def download_for_test_download_multiple_sits() -> None:
+    gdf = gpd.read_parquet("tests/data/gdf.parquet")
+    satellite = agl.sat.Sentinel2(selected_bands=["red"])
+    sits = agl.get.multiple_sits(gdf.iloc[0:2], satellite, ["kurt", "median"], 0.7)
+    sits.to_parquet("tests/data/sits/multiplesits.parquet")
+
+
+def download_for_test_download_multiple_sits_multithread() -> None:
+    gdf = gpd.read_parquet("tests/data/gdf.parquet")
+    satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
+    sits = agl.get.multiple_sits_multithread(gdf.iloc[0:2], satellite, ["skew", "p13"], 0.3)
+    sits.to_parquet("tests/data/sits/multithread.parquet")
+
+
+def download_for_test_download_multiple_sits_async() -> None:
+    gdf = gpd.read_parquet("tests/data/gdf.parquet")
+    satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
+    sits = anyio.run(
+        partial(agl.get.multiple_sits_async, gdf.iloc[0:2], satellite, ["skew", "p13"], 0.3),
+        backend_options={"use_uvloop": True},
+    )
+    sits.to_parquet("tests/data/sits/async.parquet")
+
+
 if __name__ == "__main__":
     ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project="ee-paulagibrim")
+
+    download_for_test_download_multiple_sits()
+    download_for_test_download_multiple_sits_multithread()
+    download_for_test_download_multiple_sits_async()
 
     all_satellites = get_all_satellites_for_test()
     for satellite in all_satellites:
