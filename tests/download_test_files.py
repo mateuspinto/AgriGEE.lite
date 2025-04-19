@@ -7,7 +7,7 @@ import numpy as np
 
 import agrigee_lite as agl
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
-from tests.utils import get_all_satellites_for_test
+from tests.utils import get_all_date_types_for_test, get_all_satellites_for_test
 
 all_reducers = ["min", "max", "mean", "median", "std", "var", "p2", "p98", "kurt", "skew"]
 
@@ -40,14 +40,14 @@ def download_sits_for_test_with_reducers(satellite: AbstractSatellite) -> None:
 def download_for_test_download_multiple_sits() -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
     satellite = agl.sat.Sentinel2(selected_bands=["red"])
-    sits = agl.get.multiple_sits(gdf.iloc[0:2], satellite, ["kurt", "median"], 0.7)
-    sits.to_parquet("tests/data/sits/multiplesits.parquet")
+    sits = agl.get.multiple_sits(gdf.iloc[0:2], satellite, ["kurt", "median"], ["doy"], 0.7)
+    sits.to_parquet("tests/data/sits/multiple_sits.parquet")
 
 
 def download_for_test_download_multiple_sits_multithread() -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
     satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
-    sits = agl.get.multiple_sits_multithread(gdf.iloc[0:2], satellite, ["skew", "p13"], 0.3)
+    sits = agl.get.multiple_sits_multithread(gdf.iloc[0:2], satellite, ["skew", "p13"], ["doy"], 0.3)
     sits.to_parquet("tests/data/sits/multithread.parquet")
 
 
@@ -55,20 +55,56 @@ def download_for_test_download_multiple_sits_async() -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
     satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
     sits = anyio.run(
-        partial(agl.get.multiple_sits_async, gdf.iloc[0:2], satellite, ["skew", "p13"], 0.3),
+        partial(agl.get.multiple_sits_async, gdf.iloc[0:2], satellite, ["skew", "p13"], ["doy"], 0.3),
         backend_options={"use_uvloop": True},
     )
     sits.to_parquet("tests/data/sits/async.parquet")
 
 
+def download_for_test_multiple_reducers() -> None:
+    gdf = gpd.read_parquet("tests/data/gdf.parquet")
+    satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
+    row = gdf.iloc[0]
+
+    sits = agl.get.sits(
+        row.geometry, row.start_date, row.end_date, satellite, ["mode", "p95", "p5", "var"], ["doy"], 0.3
+    )
+    sits.to_parquet("tests/data/sits/multiple_reducers.parquet")
+
+
+def download_for_test_date_type(date_type: str) -> None:
+    gdf = gpd.read_parquet("tests/data/gdf.parquet")
+    satellite = agl.sat.Sentinel2(selected_bands=["nir", "green"])
+    row = gdf.iloc[0]
+
+    sits = agl.get.sits(row.geometry, row.start_date, row.end_date, satellite, ["kurt", "mode"], [date_type], 100)
+    sits.to_parquet(f"tests/data/sits/datetype_{date_type}.parquet")
+
+
+def test_all_date_types(all_date_types: list[str]) -> None:
+    gdf = gpd.read_parquet("tests/data/gdf.parquet")
+    satellite = agl.sat.Sentinel2(selected_bands=["swir1", "swir2", "re4"])
+    row = gdf.iloc[0]
+
+    sits = agl.get.sits(row.geometry, row.start_date, row.end_date, satellite, ["kurt", "mode"], all_date_types, 200)
+    sits.to_parquet("tests/data/sits/all_date_types.parquet")
+
+
 if __name__ == "__main__":
     ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project="ee-paulagibrim")
+    all_satellites = get_all_satellites_for_test()
+    all_date_types = get_all_date_types_for_test()
 
+    for date_type in all_date_types:
+        print("Downloading date type", date_type, "...")
+        download_for_test_date_type(date_type)
+
+    test_all_date_types(all_date_types)
     download_for_test_download_multiple_sits()
     download_for_test_download_multiple_sits_multithread()
     download_for_test_download_multiple_sits_async()
+    download_for_test_multiple_reducers()
 
-    all_satellites = get_all_satellites_for_test()
     for satellite in all_satellites:
         print("Downloading satellite", satellite.shortName, "...")
         download_img_for_test(satellite)

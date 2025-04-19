@@ -95,7 +95,11 @@ class Sentinel2(AbstractSatellite):
         return ee.ImageCollection(s2_img)
 
     def compute(
-        self, ee_feature: ee.Feature, reducers: list[str] | None = None, subsampling_max_pixels: float = 1000
+        self,
+        ee_feature: ee.Feature,
+        reducers: list[str] | None = None,
+        date_types: list[str] | None = None,
+        subsampling_max_pixels: float = 1000,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
 
@@ -123,6 +127,7 @@ class Sentinel2(AbstractSatellite):
                 pixel_size=self.pixelSize,
                 subsampling_max_pixels=ee_subsampling_max_pixels,
                 reducer=ee_get_reducers(reducers),
+                date_types=date_types,
                 round_int_16=round_int_16,
             )
         )

@@ -10,6 +10,23 @@ import pandas as pd
 from topojson import Topology
 
 
+def ee_get_date_value(stats: ee.Dictionary, ee_img: ee.Image, date_types: list[str] | None = None) -> ee.Dictionary:
+    if date_types is None:
+        date_types = ["doy"]
+
+    for n, date_type in enumerate(date_types):
+        if date_type == "doy":
+            stats = stats.set(f"{n + 1:02}_doy", ee_img.date().getRelative("day", "year").add(1))
+        elif date_type == "year":
+            stats = stats.set(f"{n + 2:02}_year", ee_img.date().get("year"))
+        elif date_type == "fyear":
+            stats = stats.set(f"{n + 3:02}_fyear", ee_img.date().getFraction("year").add(ee_img.date().get("year")))
+        else:
+            raise ValueError(f"Unknown date_type: '{date_type}'")
+
+    return stats
+
+
 def ee_map_bands_and_doy(
     ee_img: ee.Image,
     ee_geometry: ee.Geometry,
@@ -17,10 +34,11 @@ def ee_map_bands_and_doy(
     pixel_size: int,
     subsampling_max_pixels: ee.Number,
     reducer: ee.Reducer,
+    date_types: list[str] | None,
     round_int_16: bool = False,
 ) -> ee.Feature:
     ee_img = ee.Image(ee_img)
-    stats = ee_img.reduceRegion(
+    ee_stats = ee_img.reduceRegion(
         reducer=reducer,
         geometry=ee_geometry,
         scale=pixel_size,
@@ -29,13 +47,12 @@ def ee_map_bands_and_doy(
     ).map(lambda _, value: ee.Number(ee.Algorithms.If(ee.Algorithms.IsEqual(value, None), 0, value)))
 
     if round_int_16:
-        stats = stats.map(lambda _, value: ee.Number(value).round().int16())
+        ee_stats = ee_stats.map(lambda _, value: ee.Number(value).round().int16())
 
-    stats = stats.set("01_doy", ee_img.date().getRelative("day", "year").add(1)).set(
-        "00_indexnum", ee_feature.get("00_indexnum")
-    )
+    ee_stats = ee_get_date_value(ee_stats, ee_img, date_types)
+    ee_stats = ee_stats.set("00_indexnum", ee_feature.get("00_indexnum"))
 
-    return ee.Feature(None, stats)
+    return ee.Feature(None, ee_stats)
 
 
 def ee_map_valid_pixels(img: ee.Image, ee_geometry: ee.Geometry, pixel_size: int) -> ee.Image:
@@ -197,6 +214,8 @@ def ee_get_reducers(reducer_names: list[str] | None = None) -> ee.Reducer:  # no
             reducers.append(ee.Reducer.stdDev())
         elif n == "var":
             reducers.append(ee.Reducer.variance())
+        elif n == "mode":
+            reducers.append(ee.Reducer.mode())
         elif n.startswith("p"):
             continue
         else:

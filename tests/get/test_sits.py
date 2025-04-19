@@ -11,6 +11,7 @@ from tests.utils import assert_np_array_equivalence, get_all_satellites_for_test
 
 all_satellites = get_all_satellites_for_test()
 all_reducers = ["min", "max", "mean", "median", "std", "var", "p2", "p98", "kurt", "skew"]
+all_date_types = ["doy", "year", "fyear"]
 
 
 @pytest.mark.parametrize("satellite", all_satellites)
@@ -34,11 +35,24 @@ def test_reducers_of_all_satellites_in_single_sits(satellite: AbstractSatellite,
     assert_np_array_equivalence(sits.squeeze(), original_sits.squeeze())
 
 
+def test_multiple_reducers() -> None:
+    gdf = gpd.read_parquet("tests/data/gdf.parquet")
+    satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
+    row = gdf.iloc[0]
+
+    sits = agl.get.sits(
+        row.geometry, row.start_date, row.end_date, satellite, ["mode", "p95", "p5", "var"], ["doy"], 0.3
+    ).to_numpy()
+    original_sits = pd.read_parquet("tests/data/sits/multiple_reducers.parquet").to_numpy()
+
+    assert_np_array_equivalence(sits.squeeze(), original_sits.squeeze())
+
+
 def test_download_multiple_sits() -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
     satellite = agl.sat.Sentinel2(selected_bands=["red"])
-    sits = agl.get.multiple_sits(gdf.iloc[0:2], satellite, ["kurt", "median"], 0.7).to_numpy()
-    original_sits = pd.read_parquet("tests/data/sits/multiplesits.parquet").to_numpy()
+    sits = agl.get.multiple_sits(gdf.iloc[0:2], satellite, ["kurt", "median"], ["doy"], 0.7).to_numpy()
+    original_sits = pd.read_parquet("tests/data/sits/multiple_sits.parquet").to_numpy()
 
     assert_np_array_equivalence(sits.squeeze(), original_sits.squeeze())
 
@@ -46,8 +60,35 @@ def test_download_multiple_sits() -> None:
 def test_download_multiple_sits_multithread() -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
     satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
-    sits = agl.get.multiple_sits_multithread(gdf.iloc[0:2], satellite, ["skew", "p13"], 0.3).to_numpy()
+    sits = agl.get.multiple_sits_multithread(gdf.iloc[0:2], satellite, ["skew", "p13"], ["doy"], 0.3).to_numpy()
     original_sits = pd.read_parquet("tests/data/sits/multithread.parquet").to_numpy()
+
+    assert_np_array_equivalence(sits.squeeze(), original_sits.squeeze())
+
+
+@pytest.mark.parametrize("date_type", all_date_types)
+def test_date_type(date_type: str) -> None:
+    gdf = gpd.read_parquet("tests/data/gdf.parquet")
+    satellite = agl.sat.Sentinel2(selected_bands=["nir", "green"])
+    row = gdf.iloc[0]
+
+    sits = agl.get.sits(
+        row.geometry, row.start_date, row.end_date, satellite, ["kurt", "mode"], [date_type], 100
+    ).to_numpy()
+    original_sits = pd.read_parquet(f"tests/data/sits/datetype_{date_type}.parquet").to_numpy()
+
+    assert_np_array_equivalence(sits.squeeze(), original_sits.squeeze())
+
+
+def test_all_date_types() -> None:
+    gdf = gpd.read_parquet("tests/data/gdf.parquet")
+    satellite = agl.sat.Sentinel2(selected_bands=["swir1", "swir2", "re4"])
+    row = gdf.iloc[0]
+
+    sits = agl.get.sits(
+        row.geometry, row.start_date, row.end_date, satellite, ["kurt", "mode"], all_date_types, 200
+    ).to_numpy()
+    original_sits = pd.read_parquet("tests/data/sits/all_date_types.parquet").to_numpy()
 
     assert_np_array_equivalence(sits.squeeze(), original_sits.squeeze())
 
@@ -56,7 +97,7 @@ def test_download_multiple_sits_async() -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
     satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
     sits = anyio.run(
-        partial(agl.get.multiple_sits_async, gdf.iloc[0:2], satellite, ["skew", "p13"], 0.3),
+        partial(agl.get.multiple_sits_async, gdf.iloc[0:2], satellite, ["skew", "p13"], ["doy"], 0.3),
         backend_options={"use_uvloop": True},
     ).to_numpy()
     original_sits = pd.read_parquet("tests/data/sits/async.parquet").to_numpy()

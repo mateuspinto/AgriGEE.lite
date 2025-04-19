@@ -31,6 +31,7 @@ def single_sits(
     end_date: pd.Timestamp | str,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
+    date_types: list[str] | None = None,
     subsampling_max_pixels: float = 1000,
 ) -> pd.DataFrame:
     start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
@@ -40,7 +41,9 @@ def single_sits(
         ee.Geometry(geometry.__geo_interface__),
         {"start_date": start_date, "end_date": end_date, "00_indexnum": 0},
     )
-    ee_expression = satellite.compute(ee_feature, reducers=reducers, subsampling_max_pixels=subsampling_max_pixels)
+    ee_expression = satellite.compute(
+        ee_feature, reducers=reducers, date_types=date_types, subsampling_max_pixels=subsampling_max_pixels
+    )
 
     sits_df = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
         columns=["geo"]
@@ -56,11 +59,19 @@ def multiple_sits(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
+    date_types: list[str] | None = None,
     subsampling_max_pixels: float = 1000,
 ) -> pd.DataFrame:
     fc = ee_gdf_to_feature_collection(gdf)
     ee_expression = ee.FeatureCollection(
-        fc.map(partial(satellite.compute, reducers=reducers, subsampling_max_pixels=subsampling_max_pixels))
+        fc.map(
+            partial(
+                satellite.compute,
+                reducers=reducers,
+                date_types=date_types,
+                subsampling_max_pixels=subsampling_max_pixels,
+            )
+        )
     ).flatten()
     sits_df = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
         columns=["geo"]
@@ -76,6 +87,7 @@ def multiple_sits_multithread(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
+    date_types: list[str] | None = None,
     subsampling_max_pixels: float = 1000,
     mini_chunksize: int = 10,
     num_threads_rush: int = 30,
@@ -104,7 +116,11 @@ def multiple_sits_multithread(
     def process_download(gdf_chunk: gpd.GeoDataFrame, i: int) -> tuple[pd.DataFrame, int]:
         try:
             result_chunk = multiple_sits(
-                gdf_chunk, satellite, reducers=reducers, subsampling_max_pixels=subsampling_max_pixels
+                gdf_chunk,
+                satellite,
+                reducers=reducers,
+                date_types=date_types,
+                subsampling_max_pixels=subsampling_max_pixels,
             )
             result_chunk["chunk_id"] = i
             return result_chunk, i  # noqa: TRY300
@@ -160,6 +176,7 @@ async def multiple_sits_async(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
+    date_types: list[str] | None = None,
     subsampling_max_pixels: float = 1000,
     mini_chunksize: int = 10,
     initial_concurrency: int = 30,
@@ -207,6 +224,7 @@ async def multiple_sits_async(
                                 gdf_chunk,
                                 satellite,
                                 reducers=reducers,
+                                date_types=date_types,
                                 subsampling_max_pixels=subsampling_max_pixels,
                             )
                         )
@@ -242,6 +260,7 @@ def multiple_sits_chunks_multithread(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
+    date_types: list[str] | None = None,
     subsampling_max_pixels: float = 1000,
     chunksize: int = 10000,
     mini_chunksize: int = 10,
@@ -278,6 +297,7 @@ def multiple_sits_chunks_multithread(
             gdf[gdf.cluster_id == chunk],
             satellite,
             reducers=reducers,
+            date_types=date_types,
             subsampling_max_pixels=subsampling_max_pixels,
             mini_chunksize=mini_chunksize,
             num_threads_rush=initial_concurrency,
@@ -308,6 +328,7 @@ def multiple_sits_task_gdrive(
     satellite: AbstractSatellite,
     file_stem: str,
     reducers: list[str] | None = None,
+    date_types: list[str] | None = None,
     subsampling_max_pixels: float = 1000,
     taskname: str = "",
     gee_save_folder: str = "GEE_EXPORTS",
@@ -317,7 +338,14 @@ def multiple_sits_task_gdrive(
 
     fc = ee_gdf_to_feature_collection(gdf)
     ee_expression = ee.FeatureCollection(
-        fc.map(partial(satellite.compute, reducers=reducers, subsampling_max_pixels=subsampling_max_pixels))
+        fc.map(
+            partial(
+                satellite.compute,
+                reducers=reducers,
+                date_types=date_types,
+                subsampling_max_pixels=subsampling_max_pixels,
+            )
+        )
     ).flatten()
 
     task = ee.batch.Export.table.toDrive(
@@ -338,6 +366,7 @@ def multiple_sits_task_gcs(
     bucket_name: str,
     file_path: str,
     reducers: list[str] | None = None,
+    date_types: list[str] | None = None,
     subsampling_max_pixels: float = 1000,
     taskname: str = "",
 ) -> None:
@@ -346,7 +375,14 @@ def multiple_sits_task_gcs(
 
     fc = ee_gdf_to_feature_collection(gdf)
     ee_expression = ee.FeatureCollection(
-        fc.map(partial(satellite.compute, reducers=reducers, subsampling_max_pixels=subsampling_max_pixels))
+        fc.map(
+            partial(
+                satellite.compute,
+                reducers=reducers,
+                date_types=date_types,
+                subsampling_max_pixels=subsampling_max_pixels,
+            )
+        )
     ).flatten()
 
     task = ee.batch.Export.table.toCloudStorage(
@@ -365,6 +401,7 @@ def multiple_sits_chunks_gdrive(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
+    date_types: list[str] | None = None,
     subsampling_max_pixels: float = 1000,
     cluster_size: int = 500,
     gee_save_folder: str = "GEE_EXPORTS",
@@ -387,6 +424,7 @@ def multiple_sits_chunks_gdrive(
                 satellite,
                 f"{satellite.shortName}_{hashname}_{cluster_id}",
                 reducers=reducers,
+                date_types=date_types,
                 subsampling_max_pixels=subsampling_max_pixels,
                 taskname=f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
                 gee_save_folder=gee_save_folder,
@@ -398,6 +436,7 @@ def multiple_sits_chunks_gcs(
     satellite: AbstractSatellite,
     bucket_name: str,
     reducers: list[str] | None = None,
+    date_types: list[str] | None = None,
     subsampling_max_pixels: float = 1000,
     cluster_size: int = 500,
 ) -> None:
@@ -419,6 +458,7 @@ def multiple_sits_chunks_gcs(
                 gdf[gdf.cluster_id == cluster_id],
                 satellite,
                 reducers=reducers,
+                date_types=date_types,
                 subsampling_max_pixels=subsampling_max_pixels,
                 bucket_name=bucket_name,
                 file_path=f"{satellite.shortName}_{hashname}/{cluster_id}",

@@ -37,3 +37,7 @@ def assert_np_array_equivalence(arr1: np.ndarray, arr2: np.ndarray, threshold: f
 
 def get_all_satellites_for_test() -> list[AbstractSatellite]:
     return [agl.sat.Sentinel2(), agl.sat.Sentinel2(use_sr=True)]
+
+
+def get_all_date_types_for_test() -> list[str]:
+    return ["doy", "year", "fyear"]
