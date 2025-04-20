@@ -73,8 +73,9 @@ show_error_codes = true
 module = ["untyped_package.*"]
 follow_untyped_imports = true
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+[[tool.mypy.overrides]]
+module = ["geopandas.*", "topojson.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 target-version = "py311"

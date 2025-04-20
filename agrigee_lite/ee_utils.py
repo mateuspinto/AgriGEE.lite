@@ -80,10 +80,8 @@ def ee_cloud_probability_mask(img: ee.Image, threshold: float, invert: bool = Fa
 
 
 def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame, simplify: bool = True) -> ee.FeatureCollection:
-    gdf = gdf.copy()
-    gdf = gdf[["geometry", "start_date", "end_date"]]
+    gdf = gdf[["00_indexnum", "geometry", "start_date", "end_date"]]
 
-    gdf["00_indexnum"] = gdf.index.values.astype(int)
     gdf["start_date"] = gdf["start_date"].dt.strftime("%Y-%m-%d")
     gdf["end_date"] = gdf["end_date"].dt.strftime("%Y-%m-%d")
 
@@ -115,15 +113,15 @@ def ee_img_to_numpy(ee_img: ee.Image, ee_geometry: ee.Geometry, scale: int) -> n
     ee_geometry = ee.Geometry(ee_geometry).bounds()
 
     projection = ee.Projection("EPSG:4326").atScale(scale).getInfo()
-    chip_size = round(ee_geometry.perimeter(0.1).getInfo() / (4 * scale))
+    chip_size = round(ee_geometry.perimeter(0.1).getInfo() / (4 * scale))  # type: ignore  # noqa: PGH003
 
-    scale_y = -projection["transform"][0]
-    scale_x = projection["transform"][4]
+    scale_y = -projection["transform"][0]  # type: ignore  # noqa: PGH003
+    scale_x = projection["transform"][4]  # type: ignore  # noqa: PGH003
 
     list_of_coordinates = ee.Array.cat(ee_geometry.coordinates(), 1).getInfo()
 
-    x_min = list_of_coordinates[0][0]
-    y_max = list_of_coordinates[2][1]
+    x_min = list_of_coordinates[0][0]  # type: ignore  # noqa: PGH003
+    y_max = list_of_coordinates[2][1]  # type: ignore  # noqa: PGH003
     coordinates = [x_min, y_max]
 
     chip_size = 1 if chip_size == 0 else chip_size
@@ -139,7 +137,7 @@ def ee_img_to_numpy(ee_img: ee.Image, ee_geometry: ee.Geometry, scale: int) -> n
                 "translateX": coordinates[0],
                 "translateY": coordinates[1],
             },
-            "crsCode": projection["crs"],
+            "crsCode": projection["crs"],  # type: ignore  # noqa: PGH003
         },
     })
 

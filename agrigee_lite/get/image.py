@@ -16,7 +16,7 @@ from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
 @cached
-def multiple_images_multithread(
+def download_download_single_sits(
     geometry: Polygon,
     start_date: pd.Timestamp | str,
     end_date: pd.Timestamp | str,

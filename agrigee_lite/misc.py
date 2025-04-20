@@ -9,6 +9,7 @@ from typing import ParamSpec, TypeVar
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from topojson import Topology
 
 
 def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> list[int]:
@@ -59,6 +60,14 @@ def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) 
     return left_clusters + right_clusters
 
 
+def simplify_gdf(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    topo = Topology(gdf, prequantize=False)
+    topo = topo.toposimplify(0.001, prevent_oversimplify=True)
+    gdf = topo.to_gdf()
+
+    return gdf
+
+
 def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoDataFrame:
     gdf = gdf.copy()
 
@@ -74,6 +83,8 @@ def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoD
         cluster_id[cluster_indexes] = i
 
     gdf["cluster_id"] = cluster_id
+
+    gdf = gdf.sort_values(by=["cluster_id", "centroid_x"]).reset_index(drop=True)
 
     return gdf
 
@@ -161,3 +172,13 @@ def compute_index_from_df(df: pd.DataFrame, np_function: Callable) -> np.ndarray
                 )
 
     return np_function(**kwargs)
+
+
+def add_indexnum_column(df: pd.DataFrame) -> None:
+    if "00_indexnum" not in df.columns:
+        if not (df.index.to_numpy() == np.arange(len(df))).all():
+            raise ValueError(
+                "The index must be sequential from 0 to N-1. To do this, use gdf.reset_index(drop=True) before executing this function."
+            )
+        df["00_indexnum"] = range(len(df))
+        print(f"Added '00_indexnum' column to DataFrame with {len(df)} rows.")
