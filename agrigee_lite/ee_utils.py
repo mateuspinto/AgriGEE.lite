@@ -7,7 +7,6 @@ import ee
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from topojson import Topology
 
 
 def ee_get_date_value(stats: ee.Dictionary, ee_img: ee.Image, date_types: list[str] | None = None) -> ee.Dictionary:
@@ -79,16 +78,11 @@ def ee_cloud_probability_mask(img: ee.Image, threshold: float, invert: bool = Fa
     return img.updateMask(mask).select(img.bandNames().remove("cloud"))
 
 
-def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame, simplify: bool = True) -> ee.FeatureCollection:
+def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame) -> ee.FeatureCollection:
     gdf = gdf[["00_indexnum", "geometry", "start_date", "end_date"]]
 
     gdf["start_date"] = gdf["start_date"].dt.strftime("%Y-%m-%d")
     gdf["end_date"] = gdf["end_date"].dt.strftime("%Y-%m-%d")
-
-    if simplify:
-        topo = Topology(gdf, prequantize=False)
-        topo = topo.toposimplify(0.001, prevent_oversimplify=True)
-        gdf = topo.to_gdf()
 
     geo_json = os.path.join(os.getcwd(), "".join(random.choice(string.ascii_lowercase) for i in range(6)) + ".geojson")  # noqa: S311
     gdf = gdf.to_crs(4326)

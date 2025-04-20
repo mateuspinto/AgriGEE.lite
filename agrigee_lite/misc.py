@@ -10,6 +10,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from topojson import Topology
+from tqdm.std import tqdm
 
 
 def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> list[int]:
@@ -60,12 +61,41 @@ def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) 
     return left_clusters + right_clusters
 
 
-def simplify_gdf(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    topo = Topology(gdf, prequantize=False)
-    topo = topo.toposimplify(0.001, prevent_oversimplify=True)
-    gdf = topo.to_gdf()
+def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:
+    """
+    1. Detect duplicate geometries once, using WKB-hex as a stable key.
+    2. Run TopoJSON simplification only on the unique geometries.
+    3. Propagate the simplified result back to every original row.
+    """
+    gdf = gdf.copy()
 
-    return gdf
+    # ------------------------------------------------------------------
+    # 1.  Build a geometry-only frame and keep just the unique geometries
+    # ------------------------------------------------------------------
+    gdf["_geom_key"] = gdf.geometry.apply(lambda g: g.wkb_hex)  # fast, deterministic
+    unique_gdf = gdf[["_geom_key", "geometry"]].drop_duplicates("_geom_key")
+
+    # ---------------------------------------------------------------
+    # 2.  Simplify the unique geometries once with Topology.toposimplify
+    # ---------------------------------------------------------------
+    topo = Topology(unique_gdf[["geometry"]], prequantize=False)
+    topo = topo.toposimplify(tol, prevent_oversimplify=True)
+    simplified_unique = topo.to_gdf()
+
+    # topo.to_gdf() returns rows in the same order, so align keys back
+    simplified_unique["_geom_key"] = unique_gdf["_geom_key"].values
+
+    # -------------------------------------------------------
+    # 3.  Merge the simplified geometries back to the original
+    # -------------------------------------------------------
+    out = (
+        gdf.drop(columns="geometry")
+        .merge(simplified_unique[["_geom_key", "geometry"]], on="_geom_key", how="left")
+        .drop(columns="_geom_key")
+        .set_geometry("geometry")
+    )
+    out.index = gdf.index  # keep the original ordering
+    return out
 
 
 def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoDataFrame:
@@ -85,6 +115,12 @@ def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoD
     gdf["cluster_id"] = cluster_id
 
     gdf = gdf.sort_values(by=["cluster_id", "centroid_x"]).reset_index(drop=True)
+
+    # Simplifying the geometries in each cluster
+    for cluster in tqdm(gdf["cluster_id"].unique(), total=gdf.cluster_id.nunique(), desc="Simplifying clusters"):
+        cluster_gdf = gdf[gdf["cluster_id"] == cluster]
+        simplified_gdf = simplify_gdf(cluster_gdf)
+        gdf.loc[gdf["cluster_id"] == cluster, "geometry"] = simplified_gdf.geometry.values
 
     return gdf
 
