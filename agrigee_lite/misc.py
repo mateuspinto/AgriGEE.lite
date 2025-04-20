@@ -128,7 +128,7 @@ def quadtree_clustering(
 
     unique_cluster_ids = gdf["cluster_id"].unique()
 
-    with concurrent.futures.ProcessPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ProcessPoolExecutor() as executor:
         futures = {
             executor.submit(_simplify_cluster, gdf[gdf.cluster_id == cluster_id][["geometry"]], cluster_id): cluster_id
             for cluster_id in unique_cluster_ids
