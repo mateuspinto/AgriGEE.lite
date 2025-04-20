@@ -1,3 +1,4 @@
+import concurrent.futures
 import hashlib
 import inspect
 import warnings
@@ -98,29 +99,49 @@ def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:
     return out
 
 
-def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoDataFrame:
+def _simplify_cluster(cluster: gpd.GeoDataFrame, cluster_id: int) -> tuple[int, gpd.GeoSeries]:
+    simplified = simplify_gdf(cluster)
+    return cluster_id, simplified.geometry
+
+
+def quadtree_clustering(
+    gdf: gpd.GeoDataFrame,
+    max_size: int = 1_000,
+) -> gpd.GeoDataFrame:
     gdf = gdf.copy()
 
+    # Centroid columns (ignore CRS warning)
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+        warnings.simplefilter("ignore", category=UserWarning)
         gdf["centroid_x"] = gdf.geometry.centroid.x
         gdf["centroid_y"] = gdf.geometry.centroid.y
 
+    # Build quadtree and label clusters
     clusters = build_quadtree_iterative(gdf, max_size=max_size)
 
-    cluster_id = np.zeros(len(gdf), dtype=int)
+    cluster_array = np.zeros(len(gdf), dtype=int)
     for i, cluster_indexes in enumerate(clusters):
-        cluster_id[cluster_indexes] = i
+        cluster_array[cluster_indexes] = i
 
-    gdf["cluster_id"] = cluster_id
-
+    gdf["cluster_id"] = cluster_array
     gdf = gdf.sort_values(by=["cluster_id", "centroid_x"]).reset_index(drop=True)
 
-    # Simplifying the geometries in each cluster
-    for cluster in tqdm(gdf["cluster_id"].unique(), total=gdf.cluster_id.nunique(), desc="Simplifying clusters"):
-        cluster_gdf = gdf[gdf["cluster_id"] == cluster]
-        simplified_gdf = simplify_gdf(cluster_gdf)
-        gdf.loc[gdf["cluster_id"] == cluster, "geometry"] = simplified_gdf.geometry.values
+    unique_cluster_ids = gdf["cluster_id"].unique()
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=20) as executor:
+        futures = {
+            executor.submit(_simplify_cluster, gdf[gdf.cluster_id == cluster_id][["geometry"]], cluster_id): cluster_id
+            for cluster_id in unique_cluster_ids
+        }
+
+        for future in tqdm(
+            concurrent.futures.as_completed(futures),
+            total=len(futures),
+            desc="Simplifying clusters",
+            smoothing=0.5,
+        ):
+            cluster_id, simplified_geom = future.result()
+            gdf.loc[gdf["cluster_id"] == cluster_id, "geometry"] = simplified_geom.values
 
     return gdf
 
