@@ -225,3 +225,29 @@ def ee_get_reducers(reducer_names: list[str] | None = None) -> ee.Reducer:  # no
         reducer = reducer.combine(r, None, True)
 
     return reducer
+
+
+def ee_filter_img_collection_invalid_pixels(
+    ee_img_collection: ee.ImageCollection, ee_geometry: ee.Geometry, pixel_size: int, min_valid_pixels: int = 20
+) -> ee.ImageCollection:
+    ee_img_collection = ee_img_collection.map(lambda i: ee_map_valid_pixels(i, ee_geometry, pixel_size)).filter(
+        ee.Filter.gte("ZZ_USER_VALID_PIXELS", min_valid_pixels)
+    )
+
+    ee_img_collection = (
+        ee_img_collection.map(lambda img: img.set("ZZ_USER_TIME_DUMMY", img.date().format("YYYY-MM-dd")))
+        .sort("ZZ_USER_TIME_DUMMY")
+        .distinct("ZZ_USER_TIME_DUMMY")
+    )
+
+    return ee_img_collection
+
+
+def ee_get_number_of_pixels(ee_geometry: ee.Geometry, subsampling_max_pixels: float, pixel_size: int) -> ee.Number:
+    # -- maxPixels logic (absolute or fraction of footprint) -- #
+    if subsampling_max_pixels > 1:
+        return ee.Number(subsampling_max_pixels)
+    else:
+        pixel_area = ee.Number(pixel_size).pow(2)
+        total_pixels = ee_geometry.area().divide(pixel_area)
+        return total_pixels.multiply(subsampling_max_pixels).toInt()

@@ -14,10 +14,11 @@ def visualize_single_sits(
     end_date: pd.Timestamp | str,
     satellite: AbstractSatellite,
     band_or_indice_to_plot: str,
+    date_type: str = "fyear",
 ) -> None:
-    sits = download_single_sits(geometry, start_date, end_date, satellite)
+    sits = download_single_sits(geometry, start_date, end_date, satellite, date_types=[date_type])
     long_sits = wide_to_long_dataframe(sits)
-    band_columns = long_sits.columns[long_sits.columns != "doy"]
+    band_columns = long_sits.columns[long_sits.columns != date_type]
     long_sits[band_columns] = satellite.scaleBands(long_sits[band_columns])
 
     if band_or_indice_to_plot in ALL_NUMPY_INDICES:
@@ -25,6 +26,4 @@ def visualize_single_sits(
     else:
         y = long_sits[band_or_indice_to_plot].values
 
-    plt.xlim(0, 366)
-    # plt.ylim(-0.1, 1.1)
-    plt.plot(long_sits.doy, y)
+    plt.plot(long_sits[date_type], y)

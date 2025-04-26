@@ -3,9 +3,10 @@ from functools import partial
 import ee
 
 from agrigee_lite.ee_utils import (
+    ee_filter_img_collection_invalid_pixels,
+    ee_get_number_of_pixels,
     ee_get_reducers,
     ee_map_bands_and_doy,
-    ee_map_valid_pixels,
 )
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
@@ -125,15 +126,7 @@ class Sentinel1(AbstractSatellite):
             .select(list(self.availableBands.values()), list(self.selectedBands.keys()))
         )
 
-        s1_img = s1_img.map(lambda i: ee_map_valid_pixels(i, ee_geometry, 10)).filter(
-            ee.Filter.gte("ZZ_USER_VALID_PIXELS", 20)
-        )
-
-        s1_img = (
-            s1_img.map(lambda img: img.set("ZZ_USER_TIME_DUMMY", img.date().format("YYYY-MM-dd")))
-            .sort("ZZ_USER_TIME_DUMMY")
-            .distinct("ZZ_USER_TIME_DUMMY")
-        )
+        s1_img = ee_filter_img_collection_invalid_pixels(s1_img, ee_geometry, self.pixelSize, 20)
 
         return ee.ImageCollection(s1_img)
 
@@ -151,21 +144,13 @@ class Sentinel1(AbstractSatellite):
 
         s1_img = self.imageCollection(ee_feature)
 
-        # -- maxPixels logic (absolute or fraction of footprint) -- #
-        if subsampling_max_pixels > 1:
-            ee_max_pixels = ee.Number(subsampling_max_pixels)
-        else:
-            pixel_area = ee.Number(self.pixelSize).pow(2)
-            total_pixels = ee_geometry.area().divide(pixel_area)
-            ee_max_pixels = total_pixels.multiply(subsampling_max_pixels).toInt()
-
         features = s1_img.map(
             partial(
                 ee_map_bands_and_doy,
                 ee_geometry=ee_geometry,
                 ee_feature=ee_feature,
                 pixel_size=self.pixelSize,
-                subsampling_max_pixels=ee_max_pixels,
+                subsampling_max_pixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
                 reducer=ee_get_reducers(reducers),
                 date_types=date_types,
             )

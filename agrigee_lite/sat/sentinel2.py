@@ -2,7 +2,13 @@ from functools import partial
 
 import ee
 
-from agrigee_lite.ee_utils import ee_cloud_probability_mask, ee_get_reducers, ee_map_bands_and_doy, ee_map_valid_pixels
+from agrigee_lite.ee_utils import (
+    ee_cloud_probability_mask,
+    ee_filter_img_collection_invalid_pixels,
+    ee_get_number_of_pixels,
+    ee_get_reducers,
+    ee_map_bands_and_doy,
+)
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
@@ -135,15 +141,7 @@ class Sentinel2(AbstractSatellite):
         s2_img = s2_img.combine(s2_cloud_mask)
 
         s2_img = s2_img.map(lambda img: ee_cloud_probability_mask(img, 0.7, True))
-        s2_img = s2_img.map(lambda img: ee_map_valid_pixels(img, ee_geometry, 10)).filter(
-            ee.Filter.gte("ZZ_USER_VALID_PIXELS", 20)
-        )
-
-        s2_img = (
-            s2_img.map(lambda img: img.set("ZZ_USER_TIME_DUMMY", img.date().format("YYYY-MM-dd")))
-            .sort("ZZ_USER_TIME_DUMMY")
-            .distinct("ZZ_USER_TIME_DUMMY")
-        )
+        s2_img = ee_filter_img_collection_invalid_pixels(s2_img, ee_geometry, self.pixelSize, 20)
 
         return ee.ImageCollection(s2_img)
 
@@ -168,23 +166,13 @@ class Sentinel2(AbstractSatellite):
         allowed_reducers = {"mean", "median"}
         round_int_16 = reducers is None or set(reducers).issubset(allowed_reducers)
 
-        # ─── here: determine max_pixels. ────────────────────────────────────────────────
-        if subsampling_max_pixels > 1:
-            ee_subsampling_max_pixels = ee.Number(subsampling_max_pixels)
-        else:
-            # geometry area (m²) ÷ (pixelSize²) = total pixel count → take fraction
-            pixel_area = ee.Number(self.pixelSize).pow(2)
-            total_pixels = ee_geometry.area().divide(pixel_area)
-            ee_subsampling_max_pixels = total_pixels.multiply(subsampling_max_pixels).toInt()
-        # ────────────────────────────────────────────────────────────────────────────────
-
         features = s2_img.map(
             partial(
                 ee_map_bands_and_doy,
                 ee_geometry=ee_geometry,
                 ee_feature=ee_feature,
                 pixel_size=self.pixelSize,
-                subsampling_max_pixels=ee_subsampling_max_pixels,
+                subsampling_max_pixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
                 reducer=ee_get_reducers(reducers),
                 date_types=date_types,
                 round_int_16=round_int_16,
