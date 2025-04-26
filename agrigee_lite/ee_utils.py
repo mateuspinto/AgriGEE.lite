@@ -49,7 +49,7 @@ def ee_map_bands_and_doy(
         ee_stats = ee_stats.map(lambda _, value: ee.Number(value).round().int16())
 
     ee_stats = ee_get_date_value(ee_stats, ee_img, date_types)
-    ee_stats = ee_stats.set("00_indexnum", ee_feature.get("00_indexnum"))
+    ee_stats = ee_stats.set("00_indexnum", ee_feature.get("0"))
 
     return ee.Feature(None, ee_stats)
 
@@ -83,6 +83,10 @@ def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame) -> ee.FeatureCollection:
 
     gdf["start_date"] = gdf["start_date"].dt.strftime("%Y-%m-%d")
     gdf["end_date"] = gdf["end_date"].dt.strftime("%Y-%m-%d")
+
+    gdf.rename(
+        columns={"start_date": "s", "end_date": "e", "00_indexnum": "0"}, inplace=True
+    )  # saving memory when uploading geojson to GEE
 
     geo_json = os.path.join(os.getcwd(), "".join(random.choice(string.ascii_lowercase) for i in range(6)) + ".geojson")  # noqa: S311
     gdf = gdf.to_crs(4326)

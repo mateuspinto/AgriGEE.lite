@@ -40,7 +40,7 @@ def download_single_sits(
 
     ee_feature = ee.Feature(
         ee.Geometry(geometry.__geo_interface__),
-        {"start_date": start_date, "end_date": end_date, "00_indexnum": 0},
+        {"s": start_date, "e": end_date, "0": 0},
     )
     ee_expression = satellite.compute(
         ee_feature, reducers=reducers, date_types=date_types, subsampling_max_pixels=subsampling_max_pixels

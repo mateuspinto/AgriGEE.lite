@@ -45,16 +45,16 @@ def download_for_test_download_multiple_sits() -> None:
     sits.to_parquet("tests/data/sits/multithread.parquet")
 
 
-def download_for_test_download_multiple_sits_async() -> None:
-    from agrigee_lite.get.sits import __download_multiple_sits_async
+# def download_for_test_download_multiple_sits_async() -> None:
+#     from agrigee_lite.get.sits import __download_multiple_sits_async
 
-    gdf = gpd.read_parquet("tests/data/gdf.parquet")
-    satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
-    sits = anyio.run(
-        partial(__download_multiple_sits_async, gdf.iloc[0:2], satellite, ["skew", "p13"], ["doy"], 0.3),
-        backend_options={"use_uvloop": True},
-    )
-    sits.to_parquet("tests/data/sits/async.parquet")
+#     gdf = gpd.read_parquet("tests/data/gdf.parquet")
+#     satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
+#     sits = anyio.run(
+#         partial(__download_multiple_sits_async, gdf.iloc[0:2], satellite, ["skew", "p13"], ["doy"], 1),
+#         backend_options={"use_uvloop": True},
+#     )
+#     sits.to_parquet("tests/data/sits/async.parquet")
 
 
 def download_for_test_multiple_reducers() -> None:
@@ -100,7 +100,7 @@ if __name__ == "__main__":
 
     test_all_date_types(all_date_types)
     download_for_test_download_multiple_sits()
-    download_for_test_download_multiple_sits_async()
+    # download_for_test_download_multiple_sits_async()
     download_for_test_multiple_reducers()
 
     for satellite in all_satellites:

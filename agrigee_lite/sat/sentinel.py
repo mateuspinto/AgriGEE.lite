@@ -59,8 +59,8 @@ class Sentinel2(AbstractSatellite):
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()
 
-        ee_start_date = ee_feature.get("start_date")
-        ee_end_date = ee_feature.get("end_date")
+        ee_start_date = ee_feature.get("s")
+        ee_end_date = ee_feature.get("e")
 
         ee_filter = ee.Filter.And(ee.Filter.bounds(ee_geometry), ee.Filter.date(ee_start_date, ee_end_date))
 
