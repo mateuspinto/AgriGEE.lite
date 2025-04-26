@@ -26,5 +26,5 @@ def visualize_single_sits(
         y = long_sits[band_or_indice_to_plot].values
 
     plt.xlim(0, 366)
-    plt.ylim(-0.1, 1.1)
+    # plt.ylim(-0.1, 1.1)
     plt.plot(long_sits.doy, y)

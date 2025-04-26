@@ -37,7 +37,7 @@ def test_reducers_of_all_satellites_in_single_sits(satellite: AbstractSatellite,
 
 def test_multiple_reducers() -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
-    satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
+    satellite = agl.sat.Sentinel2(bands=["swir1", "nir"])
     row = gdf.iloc[0]
 
     sits = agl.get.sits(
@@ -50,7 +50,7 @@ def test_multiple_reducers() -> None:
 
 def test_download_multiple_sits_multithread() -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
-    satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
+    satellite = agl.sat.Sentinel2(bands=["swir1", "nir"])
     sits = agl.get.multiple_sits(gdf.iloc[0:2], satellite, ["skew", "p13"], ["doy"], 0.3)
     original_sits = pd.read_parquet("tests/data/sits/multithread.parquet")
 
@@ -60,7 +60,7 @@ def test_download_multiple_sits_multithread() -> None:
 @pytest.mark.parametrize("date_type", all_date_types)
 def test_date_type(date_type: str) -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
-    satellite = agl.sat.Sentinel2(selected_bands=["nir", "green"])
+    satellite = agl.sat.Sentinel2(bands=["nir", "green"])
     row = gdf.iloc[0]
 
     sits = agl.get.sits(row.geometry, row.start_date, row.end_date, satellite, ["kurt", "mode"], [date_type], 100)
@@ -71,7 +71,7 @@ def test_date_type(date_type: str) -> None:
 
 def test_all_date_types() -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
-    satellite = agl.sat.Sentinel2(selected_bands=["swir1", "swir2", "re4"])
+    satellite = agl.sat.Sentinel2(bands=["swir1", "swir2", "re4"])
     row = gdf.iloc[0]
 
     sits = agl.get.sits(row.geometry, row.start_date, row.end_date, satellite, ["kurt", "mode"], all_date_types, 200)
@@ -84,7 +84,7 @@ def test_all_date_types() -> None:
 #     from agrigee_lite.get.sits import __download_multiple_sits_async
 
 #     gdf = gpd.read_parquet("tests/data/gdf.parquet")
-#     satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
+#     satellite = agl.sat.Sentinel2(bands=["swir1", "nir"])
 #     sits = anyio.run(
 #         partial(__download_multiple_sits_async, gdf.iloc[0:2].copy(), satellite, ["skew", "p13"], ["doy"], 1),
 #         backend_options={"use_uvloop": True},

@@ -1,7 +1,5 @@
 import os
-from functools import partial
 
-import anyio
 import ee
 import geopandas as gpd
 import numpy as np
@@ -40,7 +38,7 @@ def download_sits_for_test_with_reducers(satellite: AbstractSatellite) -> None:
 
 def download_for_test_download_multiple_sits() -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
-    satellite = agl.sat.Sentinel2(selected_bands=["red"])
+    satellite = agl.sat.Sentinel2(bands=["red"])
     sits = agl.get.multiple_sits(gdf.iloc[0:2], satellite, ["kurt", "median"], ["doy"], 0.7)
     sits.to_parquet("tests/data/sits/multithread.parquet")
 
@@ -49,7 +47,7 @@ def download_for_test_download_multiple_sits() -> None:
 #     from agrigee_lite.get.sits import __download_multiple_sits_async
 
 #     gdf = gpd.read_parquet("tests/data/gdf.parquet")
-#     satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
+#     satellite = agl.sat.Sentinel2(bands=["swir1", "nir"])
 #     sits = anyio.run(
 #         partial(__download_multiple_sits_async, gdf.iloc[0:2], satellite, ["skew", "p13"], ["doy"], 1),
 #         backend_options={"use_uvloop": True},
@@ -59,7 +57,7 @@ def download_for_test_download_multiple_sits() -> None:
 
 def download_for_test_multiple_reducers() -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
-    satellite = agl.sat.Sentinel2(selected_bands=["swir1", "nir"])
+    satellite = agl.sat.Sentinel2(bands=["swir1", "nir"])
     row = gdf.iloc[0]
 
     sits = agl.get.sits(
@@ -70,7 +68,7 @@ def download_for_test_multiple_reducers() -> None:
 
 def download_for_test_date_type(date_type: str) -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
-    satellite = agl.sat.Sentinel2(selected_bands=["nir", "green"])
+    satellite = agl.sat.Sentinel2(bands=["nir", "green"])
     row = gdf.iloc[0]
 
     sits = agl.get.sits(row.geometry, row.start_date, row.end_date, satellite, ["kurt", "mode"], [date_type], 100)
@@ -79,7 +77,7 @@ def download_for_test_date_type(date_type: str) -> None:
 
 def test_all_date_types(all_date_types: list[str]) -> None:
     gdf = gpd.read_parquet("tests/data/gdf.parquet")
-    satellite = agl.sat.Sentinel2(selected_bands=["swir1", "swir2", "re4"])
+    satellite = agl.sat.Sentinel2(bands=["swir1", "swir2", "re4"])
     row = gdf.iloc[0]
 
     sits = agl.get.sits(row.geometry, row.start_date, row.end_date, satellite, ["kurt", "mode"], all_date_types, 200)

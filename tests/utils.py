@@ -61,7 +61,12 @@ def assert_df_equivalence(
 
 
 def get_all_satellites_for_test() -> list[AbstractSatellite]:
-    return [agl.sat.Sentinel2(), agl.sat.Sentinel2(use_sr=True)]
+    return [
+        agl.sat.Sentinel2(),
+        agl.sat.Sentinel2(use_sr=True),
+        agl.sat.Sentinel1(),
+        agl.sat.Sentinel1(ascending=False),
+    ]
 
 
 def get_all_date_types_for_test() -> list[str]:

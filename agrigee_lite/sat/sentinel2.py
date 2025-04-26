@@ -55,7 +55,6 @@ class Sentinel2(AbstractSatellite):
     | re3        | B7            | 20 m        | 780 nm                |
     | nir        | B8            | 10 m        | 833 nm                |
     | re4        | B8A           | 20 m        | 864 nm                |
-    | vapor      | B9            | 60 m        | 943 nm                |
     | swir1      | B11           | 20 m        | 1610 nm               |
     | swir2      | B12           | 20 m        | 2186 nm               |
     +------------+---------------+--------------+----------------------+
