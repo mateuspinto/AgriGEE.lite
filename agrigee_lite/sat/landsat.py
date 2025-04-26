@@ -369,6 +369,7 @@ class Landsat8(AbstractSatellite):
     def __repr__(self) -> str:
         return self.shortName
 
+
 class Landsat9(AbstractSatellite):
     def __init__(
         self,
