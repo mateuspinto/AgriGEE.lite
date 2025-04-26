@@ -1,3 +1,4 @@
+import concurrent.futures
 import hashlib
 import inspect
 import warnings
@@ -9,6 +10,8 @@ from typing import ParamSpec, TypeVar
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from topojson import Topology
+from tqdm.std import tqdm
 
 
 def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> list[int]:
@@ -59,21 +62,86 @@ def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) 
     return left_clusters + right_clusters
 
 
-def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoDataFrame:
+def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:
+    """
+    1. Detect duplicate geometries once, using WKB-hex as a stable key.
+    2. Run TopoJSON simplification only on the unique geometries.
+    3. Propagate the simplified result back to every original row.
+    """
     gdf = gdf.copy()
 
+    # ------------------------------------------------------------------
+    # 1.  Build a geometry-only frame and keep just the unique geometries
+    # ------------------------------------------------------------------
+    gdf["_geom_key"] = gdf.geometry.apply(lambda g: g.wkb_hex)  # fast, deterministic
+    unique_gdf = gdf[["_geom_key", "geometry"]].drop_duplicates("_geom_key")
+
+    # ---------------------------------------------------------------
+    # 2.  Simplify the unique geometries once with Topology.toposimplify
+    # ---------------------------------------------------------------
+    topo = Topology(unique_gdf[["geometry"]], prequantize=False)
+    topo = topo.toposimplify(tol, prevent_oversimplify=True)
+    simplified_unique = topo.to_gdf()
+
+    # topo.to_gdf() returns rows in the same order, so align keys back
+    simplified_unique["_geom_key"] = unique_gdf["_geom_key"].values
+
+    # -------------------------------------------------------
+    # 3.  Merge the simplified geometries back to the original
+    # -------------------------------------------------------
+    out = (
+        gdf.drop(columns="geometry")
+        .merge(simplified_unique[["_geom_key", "geometry"]], on="_geom_key", how="left")
+        .drop(columns="_geom_key")
+        .set_geometry("geometry")
+    )
+    out.index = gdf.index  # keep the original ordering
+    return out
+
+
+def _simplify_cluster(cluster: gpd.GeoDataFrame, cluster_id: int) -> tuple[int, gpd.GeoSeries]:
+    simplified = simplify_gdf(cluster)
+    return cluster_id, simplified.geometry
+
+
+def quadtree_clustering(
+    gdf: gpd.GeoDataFrame,
+    max_size: int = 1_000,
+) -> gpd.GeoDataFrame:
+    gdf = gdf.copy()
+
+    # Centroid columns (ignore CRS warning)
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+        warnings.simplefilter("ignore", category=UserWarning)
         gdf["centroid_x"] = gdf.geometry.centroid.x
         gdf["centroid_y"] = gdf.geometry.centroid.y
 
+    # Build quadtree and label clusters
     clusters = build_quadtree_iterative(gdf, max_size=max_size)
 
-    cluster_id = np.zeros(len(gdf), dtype=int)
+    cluster_array = np.zeros(len(gdf), dtype=int)
     for i, cluster_indexes in enumerate(clusters):
-        cluster_id[cluster_indexes] = i
+        cluster_array[cluster_indexes] = i
 
-    gdf["cluster_id"] = cluster_id
+    gdf["cluster_id"] = cluster_array
+    gdf = gdf.sort_values(by=["cluster_id", "centroid_x"]).reset_index(drop=True)
+
+    unique_cluster_ids = gdf["cluster_id"].unique()
+
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures = {
+            executor.submit(_simplify_cluster, gdf[gdf.cluster_id == cluster_id][["geometry"]], cluster_id): cluster_id
+            for cluster_id in unique_cluster_ids
+        }
+
+        for future in tqdm(
+            concurrent.futures.as_completed(futures),
+            total=len(futures),
+            desc="Simplifying clusters",
+            smoothing=0.5,
+        ):
+            cluster_id, simplified_geom = future.result()
+            gdf.loc[gdf["cluster_id"] == cluster_id, "geometry"] = simplified_geom.values
 
     return gdf
 
@@ -129,6 +197,7 @@ def long_to_wide_dataframe(df: pd.DataFrame, prefix: str = "", group_col: str = 
 
 def wide_to_long_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
+    df["indexnum"] = range(len(df))
     df_long = df.melt(id_vars=["indexnum"], var_name="band_time", value_name="value")
 
     df_long[["prefix", "band", "idx"]] = df_long["band_time"].str.extract(r"([^_]+)_(\w+)_(\d+)")
@@ -161,3 +230,13 @@ def compute_index_from_df(df: pd.DataFrame, np_function: Callable) -> np.ndarray
                 )
 
     return np_function(**kwargs)
+
+
+def add_indexnum_column(df: pd.DataFrame) -> None:
+    if "00_indexnum" not in df.columns:
+        if not (df.index.to_numpy() == np.arange(len(df))).all():
+            raise ValueError(
+                "The index must be sequential from 0 to N-1. To do this, use gdf.reset_index(drop=True) before executing this function."
+            )
+        df["00_indexnum"] = range(len(df))
+        # print(f"Added '00_indexnum' column to DataFrame with {len(df)} rows.")

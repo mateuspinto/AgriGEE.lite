@@ -16,7 +16,7 @@ from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
 @cached
-def multiple_images_multithread(
+def download_download_single_sits(
     geometry: Polygon,
     start_date: pd.Timestamp | str,
     end_date: pd.Timestamp | str,
@@ -42,7 +42,7 @@ def multiple_images_multithread(
     ee_geometry = ee.Geometry(geometry.__geo_interface__)
     ee_feature = ee.Feature(
         ee_geometry,
-        {"start_date": start_date, "end_date": end_date, "00_indexnum": 1},
+        {"s": start_date, "e": end_date, "0": 1},
     )
     ee_expression = satellite.imageCollection(ee_feature)
 

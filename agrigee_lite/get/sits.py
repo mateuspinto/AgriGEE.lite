@@ -16,6 +16,7 @@ from tqdm.std import tqdm
 
 from agrigee_lite.ee_utils import ee_gdf_to_feature_collection, ee_get_tasks_status
 from agrigee_lite.misc import (
+    add_indexnum_column,
     create_gdf_hash,
     long_to_wide_dataframe,
     quadtree_clustering,
@@ -25,7 +26,7 @@ from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
 # @cached # Doesn't work with lists as parameters :(
-def single_sits(
+def download_single_sits(
     geometry: Polygon,
     start_date: pd.Timestamp | str,
     end_date: pd.Timestamp | str,
@@ -39,7 +40,7 @@ def single_sits(
 
     ee_feature = ee.Feature(
         ee.Geometry(geometry.__geo_interface__),
-        {"start_date": start_date, "end_date": end_date, "00_indexnum": 0},
+        {"s": start_date, "e": end_date, "0": 0},
     )
     ee_expression = satellite.compute(
         ee_feature, reducers=reducers, date_types=date_types, subsampling_max_pixels=subsampling_max_pixels
@@ -55,13 +56,15 @@ def single_sits(
     return sits_df
 
 
-def multiple_sits(
+def download_multiple_sits(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
     date_types: list[str] | None = None,
     subsampling_max_pixels: float = 1000,
 ) -> pd.DataFrame:
+    add_indexnum_column(gdf)
+
     fc = ee_gdf_to_feature_collection(gdf)
     ee_expression = ee.FeatureCollection(
         fc.map(
@@ -83,7 +86,7 @@ def multiple_sits(
     return sits_df
 
 
-def multiple_sits_multithread(
+def download_multiple_sits_multithread(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
@@ -92,7 +95,9 @@ def multiple_sits_multithread(
     mini_chunksize: int = 10,
     num_threads_rush: int = 30,
     num_threads_retry: int = 10,
+    pbar: tqdm | None = None,
 ) -> pd.DataFrame:
+    add_indexnum_column(gdf)
     log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
 
     file_handler = logging.FileHandler("logging.log", mode="a")
@@ -115,20 +120,21 @@ def multiple_sits_multithread(
 
     def process_download(gdf_chunk: gpd.GeoDataFrame, i: int) -> tuple[pd.DataFrame, int]:
         try:
-            result_chunk = multiple_sits(
+            result_chunk = download_multiple_sits(
                 gdf_chunk,
                 satellite,
                 reducers=reducers,
                 date_types=date_types,
                 subsampling_max_pixels=subsampling_max_pixels,
             )
-            result_chunk["chunk_id"] = i
             return result_chunk, i  # noqa: TRY300
+        except KeyboardInterrupt:
+            raise KeyboardInterrupt  # noqa: B904
         except Exception as e:
             logger.error(f"download_multiple_sits_multithread_{i}_{satellite.shortName} = {e}")  # noqa: TRY400
             return pd.DataFrame(), i
 
-    def run_downloads(chunk_ids: list[int], num_threads: int, desc: str) -> None:
+    def run_downloads(chunk_ids: list[int], num_threads: int) -> None:
         nonlocal whole_result_df
         error_count = 0
 
@@ -144,35 +150,30 @@ def multiple_sits_multithread(
                 for i in chunk_ids
             ]
 
-            pbar = tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc=desc)
-            for future in pbar:
+            for future in concurrent.futures.as_completed(futures):
                 result_df_chunk, i = future.result()
                 if result_df_chunk.empty:
                     error_count += 1
                     indexes_with_errors.append(i)
-                    pbar.set_postfix({"errors": error_count})
+
+                    if pbar is not None:
+                        pbar.set_postfix({"errors": error_count})
                 else:
                     whole_result_df = pd.concat([whole_result_df, result_df_chunk])
 
-    run_downloads(all_chunk_ids, num_threads=num_threads_rush, desc="Downloading")
+                    if pbar is not None:
+                        pbar.update(len(result_df_chunk))
+
+    run_downloads(all_chunk_ids, num_threads=num_threads_rush)
 
     if indexes_with_errors:
-        run_downloads(
-            indexes_with_errors,
-            num_threads=num_threads_retry,
-            desc="Re-running failed downloads",
-        )
-
-    whole_result_df["indexnum"] = (
-        whole_result_df["chunk_id"] * (whole_result_df["indexnum"].max() + 1) + whole_result_df["indexnum"]
-    )
-    whole_result_df.drop(columns=["chunk_id"], inplace=True)
-    whole_result_df = whole_result_df.sort_values("indexnum", kind="stable").reset_index(drop=True)
+        run_downloads(indexes_with_errors, num_threads=num_threads_retry)
 
     return whole_result_df
 
 
-async def multiple_sits_async(
+# Dead code, but kept in case we need it in the future
+async def __download_multiple_sits_async(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
@@ -184,6 +185,7 @@ async def multiple_sits_async(
     initial_timeout: float = 20,
     retry_timeout: float = 10,
 ) -> pd.DataFrame:
+    add_indexnum_column(gdf)
     log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
 
     file_handler = logging.FileHandler("logging.log", mode="a")
@@ -220,7 +222,7 @@ async def multiple_sits_async(
                     with anyio.fail_after(timeout):
                         chunk_result_df = await anyio.to_thread.run_sync(
                             partial(
-                                multiple_sits,
+                                download_multiple_sits,
                                 gdf_chunk,
                                 satellite,
                                 reducers=reducers,
@@ -231,7 +233,8 @@ async def multiple_sits_async(
                         chunk_result_df["chunk_id"] = chunk_id
 
                     whole_result_df = pd.concat([whole_result_df, chunk_result_df])
-
+                except KeyboardInterrupt:
+                    raise KeyboardInterrupt  # noqa: B904
                 except Exception as e:
                     logger.error(f"download_multiple_sits_anyio_{chunk_id}_{satellite.shortName} = {e}")  # noqa: TRY400
                     indexes_with_errors.append(chunk_id)
@@ -247,16 +250,12 @@ async def multiple_sits_async(
 
     queue_listener.stop()
 
-    whole_result_df["indexnum"] = (
-        whole_result_df["chunk_id"] * (whole_result_df["indexnum"].max() + 1) + whole_result_df["indexnum"]
-    )
-    whole_result_df.drop(columns=["chunk_id"], inplace=True)
-    whole_result_df = whole_result_df.sort_values("indexnum", kind="stable").reset_index(drop=True)
+    whole_result_df = whole_result_df.sort_values(by=["indexnum"], kind="stable").reset_index(drop=True)
 
     return whole_result_df
 
 
-def multiple_sits_chunks_multithread(
+def download_multiple_sits_chunks_multithread(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
@@ -266,6 +265,7 @@ def multiple_sits_chunks_multithread(
     mini_chunksize: int = 10,
     initial_concurrency: int = 30,
     retry_concurrency: int = 10,
+    force_redownload: bool = False,
 ) -> gpd.GeoDataFrame:
     if len(gdf) == 0:
         print("Empty GeoDataFrame, nothing to download")
@@ -276,54 +276,50 @@ def multiple_sits_chunks_multithread(
         "start_date": pa.Column(pa.DateTime, nullable=False),
         "end_date": pa.Column(pa.DateTime, nullable=False),
     })
-
     schema.validate(gdf, lazy=True)
+
+    gdf = gdf.copy()
+    add_indexnum_column(gdf)
 
     hashlib_gdf = create_gdf_hash(gdf)
     output_path = pathlib.Path("data/temp") / f"{satellite.shortName}_{hashlib_gdf}_{chunksize}"
     output_path.mkdir(parents=True, exist_ok=True)
-
     existing_chunks = {int(f.stem) for f in output_path.glob("*.parquet") if f.stem.isdigit()}
 
-    gdf = quadtree_clustering(gdf, max_size=chunksize)
+    gdf = quadtree_clustering(gdf, max_size=1000)
 
-    for idx, chunk in enumerate(sorted(gdf.cluster_id.unique().tolist())):
-        if idx in existing_chunks:
-            continue
+    num_chunks = (len(gdf) + chunksize - 1) // chunksize
 
-        output_filestem = str(output_path) + "/" + f"{idx}"
+    with tqdm(total=len(gdf), desc="Downloading multiple sits", smoothing=0.5) as pbar:
+        for current_chunk in range(num_chunks):
+            if (not force_redownload) and (current_chunk in existing_chunks):
+                continue
 
-        chunk_df = multiple_sits_multithread(
-            gdf[gdf.cluster_id == chunk],
-            satellite,
-            reducers=reducers,
-            date_types=date_types,
-            subsampling_max_pixels=subsampling_max_pixels,
-            mini_chunksize=mini_chunksize,
-            num_threads_rush=initial_concurrency,
-            num_threads_retry=retry_concurrency,
-        )
-
-        chunk_df.to_parquet(f"{output_filestem}.parquet")
+            chunk_df = download_multiple_sits_multithread(
+                gdf.iloc[current_chunk * chunksize : (current_chunk + 1) * chunksize],
+                satellite,
+                reducers=reducers,
+                date_types=date_types,
+                subsampling_max_pixels=subsampling_max_pixels,
+                mini_chunksize=mini_chunksize,
+                num_threads_rush=initial_concurrency,
+                num_threads_retry=retry_concurrency,
+                pbar=pbar,
+            )
+            chunk_df.to_parquet(f"{output_path / str(current_chunk)}.parquet")
 
     whole_result_df = pd.DataFrame()
+    for f in sorted(output_path.glob("*.parquet"), key=lambda p: int(p.stem)):
+        df = pd.read_parquet(f)
+        whole_result_df = pd.concat([whole_result_df, df], ignore_index=True)
 
-    for f in output_path.glob("*.parquet"):
-        chunk_id = int(f.stem)
-        chunk_df = pd.read_parquet(f)
-        chunk_df["chunk_id"] = chunk_id
-        whole_result_df = pd.concat([whole_result_df, chunk_df], ignore_index=True)
-
-    whole_result_df["indexnum"] = (
-        whole_result_df["chunk_id"] * (whole_result_df["indexnum"].max() + 1) + whole_result_df["indexnum"]
+    whole_result_df = (
+        whole_result_df.sort_values(by=["indexnum"], kind="stable").reset_index(drop=True).drop(columns=["indexnum"])
     )
-    whole_result_df.drop(columns=["chunk_id"], inplace=True)
-    whole_result_df = whole_result_df.sort_values("indexnum", kind="stable").reset_index(drop=True)
-
     return whole_result_df
 
 
-def multiple_sits_task_gdrive(
+def download_multiple_sits_task_gdrive(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     file_stem: str,
@@ -336,6 +332,7 @@ def multiple_sits_task_gdrive(
     if taskname == "":
         taskname = file_stem
 
+    add_indexnum_column(gdf)
     fc = ee_gdf_to_feature_collection(gdf)
     ee_expression = ee.FeatureCollection(
         fc.map(
@@ -360,7 +357,7 @@ def multiple_sits_task_gdrive(
     task.start()
 
 
-def multiple_sits_task_gcs(
+def download_multiple_sits_task_gcs(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     bucket_name: str,
@@ -373,6 +370,7 @@ def multiple_sits_task_gcs(
     if taskname == "":
         taskname = file_path
 
+    add_indexnum_column(gdf)
     fc = ee_gdf_to_feature_collection(gdf)
     ee_expression = ee.FeatureCollection(
         fc.map(
@@ -397,7 +395,7 @@ def multiple_sits_task_gcs(
     task.start()
 
 
-def multiple_sits_chunks_gdrive(
+def download_multiple_sits_chunks_gdrive(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
@@ -411,6 +409,7 @@ def multiple_sits_chunks_gdrive(
         tasks_df.description.apply(lambda x: x.split("_", 1)[0] + "_" + x.split("_", 2)[2]).tolist()
     )  # The task is the same, no matter who started it
 
+    add_indexnum_column(gdf)
     gdf = quadtree_clustering(gdf, cluster_size)
     username = getpass.getuser().replace("_", "")
     hashname = create_gdf_hash(gdf)
@@ -419,7 +418,7 @@ def multiple_sits_chunks_gdrive(
         cluster_id = int(cluster_id)
 
         if f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks:
-            multiple_sits_task_gdrive(
+            download_multiple_sits_task_gdrive(
                 gdf[gdf.cluster_id == cluster_id],
                 satellite,
                 f"{satellite.shortName}_{hashname}_{cluster_id}",
@@ -431,7 +430,7 @@ def multiple_sits_chunks_gdrive(
             )
 
 
-def multiple_sits_chunks_gcs(
+def download_multiple_sits_chunks_gcs(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     bucket_name: str,
@@ -445,6 +444,7 @@ def multiple_sits_chunks_gcs(
         tasks_df.description.apply(lambda x: x.split("_", 1)[0] + "_" + x.split("_", 2)[2]).tolist()
     )  # The task is the same, no matter who started it
 
+    add_indexnum_column(gdf)
     gdf = quadtree_clustering(gdf, cluster_size)
     username = getpass.getuser().replace("_", "")
     hashname = create_gdf_hash(gdf)
@@ -454,7 +454,7 @@ def multiple_sits_chunks_gcs(
 
         if f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks:
             # TODO: Also skip if the file already exists in GCS
-            multiple_sits_task_gcs(
+            download_multiple_sits_task_gcs(
                 gdf[gdf.cluster_id == cluster_id],
                 satellite,
                 reducers=reducers,

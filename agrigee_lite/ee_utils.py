@@ -7,7 +7,6 @@ import ee
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from topojson import Topology
 
 
 def ee_get_date_value(stats: ee.Dictionary, ee_img: ee.Image, date_types: list[str] | None = None) -> ee.Dictionary:
@@ -50,7 +49,7 @@ def ee_map_bands_and_doy(
         ee_stats = ee_stats.map(lambda _, value: ee.Number(value).round().int16())
 
     ee_stats = ee_get_date_value(ee_stats, ee_img, date_types)
-    ee_stats = ee_stats.set("00_indexnum", ee_feature.get("00_indexnum"))
+    ee_stats = ee_stats.set("00_indexnum", ee_feature.get("0"))
 
     return ee.Feature(None, ee_stats)
 
@@ -79,18 +78,15 @@ def ee_cloud_probability_mask(img: ee.Image, threshold: float, invert: bool = Fa
     return img.updateMask(mask).select(img.bandNames().remove("cloud"))
 
 
-def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame, simplify: bool = True) -> ee.FeatureCollection:
-    gdf = gdf.copy()
-    gdf = gdf[["geometry", "start_date", "end_date"]]
+def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame) -> ee.FeatureCollection:
+    gdf = gdf[["00_indexnum", "geometry", "start_date", "end_date"]]
 
-    gdf["00_indexnum"] = gdf.index.values.astype(int)
     gdf["start_date"] = gdf["start_date"].dt.strftime("%Y-%m-%d")
     gdf["end_date"] = gdf["end_date"].dt.strftime("%Y-%m-%d")
 
-    if simplify:
-        topo = Topology(gdf, prequantize=False)
-        topo = topo.toposimplify(0.001, prevent_oversimplify=True)
-        gdf = topo.to_gdf()
+    gdf.rename(
+        columns={"start_date": "s", "end_date": "e", "00_indexnum": "0"}, inplace=True
+    )  # saving memory when uploading geojson to GEE
 
     geo_json = os.path.join(os.getcwd(), "".join(random.choice(string.ascii_lowercase) for i in range(6)) + ".geojson")  # noqa: S311
     gdf = gdf.to_crs(4326)
@@ -115,15 +111,15 @@ def ee_img_to_numpy(ee_img: ee.Image, ee_geometry: ee.Geometry, scale: int) -> n
     ee_geometry = ee.Geometry(ee_geometry).bounds()
 
     projection = ee.Projection("EPSG:4326").atScale(scale).getInfo()
-    chip_size = round(ee_geometry.perimeter(0.1).getInfo() / (4 * scale))
+    chip_size = round(ee_geometry.perimeter(0.1).getInfo() / (4 * scale))  # type: ignore  # noqa: PGH003
 
-    scale_y = -projection["transform"][0]
-    scale_x = projection["transform"][4]
+    scale_y = -projection["transform"][0]  # type: ignore  # noqa: PGH003
+    scale_x = projection["transform"][4]  # type: ignore  # noqa: PGH003
 
     list_of_coordinates = ee.Array.cat(ee_geometry.coordinates(), 1).getInfo()
 
-    x_min = list_of_coordinates[0][0]
-    y_max = list_of_coordinates[2][1]
+    x_min = list_of_coordinates[0][0]  # type: ignore  # noqa: PGH003
+    y_max = list_of_coordinates[2][1]  # type: ignore  # noqa: PGH003
     coordinates = [x_min, y_max]
 
     chip_size = 1 if chip_size == 0 else chip_size
@@ -139,7 +135,7 @@ def ee_img_to_numpy(ee_img: ee.Image, ee_geometry: ee.Geometry, scale: int) -> n
                 "translateX": coordinates[0],
                 "translateY": coordinates[1],
             },
-            "crsCode": projection["crs"],
+            "crsCode": projection["crs"],  # type: ignore  # noqa: PGH003
         },
     })
 
