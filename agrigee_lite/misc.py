@@ -197,6 +197,7 @@ def long_to_wide_dataframe(df: pd.DataFrame, prefix: str = "", group_col: str = 
 
 def wide_to_long_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
+    df["indexnum"] = range(len(df))
     df_long = df.melt(id_vars=["indexnum"], var_name="band_time", value_name="value")
 
     df_long[["prefix", "band", "idx"]] = df_long["band_time"].str.extract(r"([^_]+)_(\w+)_(\d+)")

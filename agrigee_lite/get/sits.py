@@ -287,8 +287,6 @@ def download_multiple_sits_chunks_multithread(
     existing_chunks = {int(f.stem) for f in output_path.glob("*.parquet") if f.stem.isdigit()}
 
     gdf = quadtree_clustering(gdf, max_size=1000)
-    gdf["centroid_x"] = gdf.geometry.centroid.x
-    gdf = gdf.sort_values(["cluster_id", "centroid_x"]).reset_index(drop=True)
 
     num_chunks = (len(gdf) + chunksize - 1) // chunksize
 
