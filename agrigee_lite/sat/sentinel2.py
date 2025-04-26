@@ -7,13 +7,67 @@ from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
 class Sentinel2(AbstractSatellite):
+    """
+    Satellite abstraction for Sentinel-2 (HARMONIZED collections).
+
+    Sentinel-2 is a constellation of twins Earth observation satellites,
+    operated by ESA, designed for land monitoring, vegetation, soil, water cover, and coastal areas.
+
+    Parameters
+    ----------
+    bands : list of str, optional
+        List of bands to select. Defaults to all 10 bands most used for vegetation and soil analysis.
+    use_sr : bool, defaults to False
+        If True, uses surface reflectance (BOA, 'S2_SR_HARMONIZED').
+        If False, uses top-of-atmosphere reflectance ('S2_HARMONIZED').
+
+    Satellite Information
+    ---------------------
+    +-----------------------------------+------------------------+
+    | Field                             | Value                  |
+    +-----------------------------------+------------------------+
+    | Name                              | Sentinel-2             |
+    | Revisit Time                      | 5 days                 |
+    | Revisit Time (cloud-free estimate) | ~7 days               |
+    | Pixel Size                        | 10 meters              |
+    | Coverage                          | Global                 |
+    +-----------------------------------+------------------------+
+
+    Collection Dates
+    ----------------
+    +------------------+------------+----------------+
+    | Collection Type  | Start Date | End Date        |
+    +------------------+------------+----------------+
+    | TOA (Top of Atmosphere) | 2016-01-01 | present    |
+    | SR (Surface Reflectance) | 2019-01-01 | present   |
+    +------------------+------------+----------------+
+
+    Band Information
+    ------------
+    +------------+---------------+--------------+----------------------+
+    | Band Name  | Original Band | Resolution   | Spectral Wavelength   |
+    +------------+---------------+--------------+----------------------+
+    | blue       | B2            | 10 m        | 492 nm                |
+    | green      | B3            | 10 m        | 559 nm                |
+    | red        | B4            | 10 m        | 665 nm                |
+    | re1        | B5            | 20 m        | 704 nm                |
+    | re2        | B6            | 20 m        | 739 nm                |
+    | re3        | B7            | 20 m        | 780 nm                |
+    | nir        | B8            | 10 m        | 833 nm                |
+    | re4        | B8A           | 20 m        | 864 nm                |
+    | vapor      | B9            | 60 m        | 943 nm                |
+    | swir1      | B11           | 20 m        | 1610 nm               |
+    | swir2      | B12           | 20 m        | 2186 nm               |
+    +------------+---------------+--------------+----------------------+
+    """
+
     def __init__(
         self,
-        selected_bands: list[str] | None = None,
+        bands: list[str] | None = None,
         use_sr: bool = False,
     ):
-        if selected_bands is None:
-            selected_bands = [
+        if bands is None:
+            bands = [
                 "blue",
                 "green",
                 "red",
@@ -48,10 +102,10 @@ class Sentinel2(AbstractSatellite):
             "swir2": "B12",
         }
 
-        remap_bands = {s: f"{(n + 10):02}_{s}" for n, s in enumerate(selected_bands)}
+        remap_bands = {s: f"{(n + 10):02}_{s}" for n, s in enumerate(bands)}
 
         self.selectedBands: dict[str, str] = {
-            remap_bands[band]: self.availableBands[band] for band in selected_bands if band in self.availableBands
+            remap_bands[band]: self.availableBands[band] for band in bands if band in self.availableBands
         }
 
         self.scaleBands = lambda x: x / 10000
@@ -102,7 +156,13 @@ class Sentinel2(AbstractSatellite):
         subsampling_max_pixels: float = 1000,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
-
+        ee_geometry = ee.Geometry(
+            ee.Algorithms.If(
+                ee_geometry.buffer(-10).area().gte(35000),
+                ee_geometry.buffer(-10),
+                ee_geometry,
+            )
+        )
         s2_img = self.imageCollection(ee_feature)
 
         # round_int_16 is True only if reducers are None or contain exclusively 'mean' and/or 'median'
