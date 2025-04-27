@@ -1,6 +1,6 @@
 [project]
 name = "agrigee_lite"
-version = "0.0.8"
+version = "0.0.10"
 description = "Because using satellite data shouldn't require rocket science, neither in code nor in hardware."
 authors = [{ name = "Mateus Pinto da Silva", email = "mateus.p.silva@ufv.br" }]
 readme = "README.md"
@@ -8,6 +8,7 @@ keywords = ['python']
 requires-python = ">=3.10,<4.0"
 dependencies = [
     "earthengine-api>=1.5.7",
+    "ee-s1-ard>=1.0.5",
     "geopandas>=1.0.1",
     "pyarrow>=19.0.1",
     "tqdm>=4.67.1",

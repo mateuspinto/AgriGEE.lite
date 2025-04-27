@@ -1,5 +1,4 @@
 version = 1
-revision = 1
 requires-python = ">=3.10, <4.0"
 resolution-markers = [
     "python_full_version < '3.11'",
@@ -10,11 +9,12 @@ resolution-markers = [
 
 [[package]]
 name = "agrigee-lite"
-version = "0.0.8"
+version = "0.0.10"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
     { name = "earthengine-api" },
+    { name = "ee-s1-ard" },
     { name = "geopandas" },
     { name = "pandera" },
     { name = "pyarrow" },
@@ -24,7 +24,7 @@ dependencies = [
     { name = "uvloop" },
 ]
 
-[package.dev-dependencies]
+[package.dependency-groups]
 dev = [
     { name = "deptry" },
     { name = "ipykernel" },
@@ -47,6 +47,7 @@ dev = [
 requires-dist = [
     { name = "anyio", specifier = ">=4.9.0" },
     { name = "earthengine-api", specifier = ">=1.5.7" },
+    { name = "ee-s1-ard", specifier = ">=1.0.5" },
     { name = "geopandas", specifier = ">=1.0.1" },
     { name = "pandera", specifier = ">=0.23.1" },
     { name = "pyarrow", specifier = ">=19.0.1" },
@@ -56,7 +57,7 @@ requires-dist = [
     { name = "uvloop", specifier = ">=0.21.0" },
 ]
 
-[package.metadata.requires-dev]
+[package.metadata.dependency-groups]
 dev = [
     { name = "deptry", specifier = ">=0.23.0" },
     { name = "ipykernel", specifier = ">=6.29.5" },
@@ -298,7 +299,7 @@ name = "click"
 version = "8.1.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "platform_system == 'Windows'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b9/2e/0090cbf739cee7d23781ad4b89a9894a41538e4fcf4c31dcdd705b78eb8b/click-8.1.8.tar.gz", hash = "sha256:ed53c9d8990d83c2a27deae68e4ee337473f6330c040a31d4225c9574d16096a", size = 226593 }
 wheels = [
@@ -552,6 +553,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/fe/e2/698c46c106d9d211c62b0512964889a8accda362c0415e6a9bc3a1d09bf7/earthengine_api-1.5.7.tar.gz", hash = "sha256:e1fccd1a0fff76ef3b451370be7fe261ae74eedbc4486d06108d309fb125b6a6", size = 413855 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/41/ea/1e7a7ef27cb2ab6d9e2d9000ae14fcbbc35f5b3277f5058fa8156a4979b8/earthengine_api-1.5.7-py3-none-any.whl", hash = "sha256:24f826f4c984990eafecd1d9b53ba67a73389987e0f855e582410727761257f4", size = 459612 },
+]
+
+[[package]]
+name = "ee-s1-ard"
+version = "1.0.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "earthengine-api" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/95/1e45b9d1ea2618af5e8706df8f730abb66a7b8c7590d9e5b981f2f6c1bc5/ee_s1_ard-1.0.5.tar.gz", hash = "sha256:3f7d2ad9cbb8b221181ffbcf128b2c7b14f49a61b1da4667d7ea27c7cf95e124", size = 72378 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c4/f6/06e5d550fa2a2baab93fdd9cca79d80616b601749a7d86a8162eb55f511e/ee_s1_ard-1.0.5-py3-none-any.whl", hash = "sha256:4978cc7cf0e42c696dfabd0345675b228563ec617c155d6d0e94c919a09c8e84", size = 16394 },
 ]
 
 [[package]]
@@ -856,7 +869,7 @@ name = "ipykernel"
 version = "6.29.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "appnope", marker = "sys_platform == 'darwin'" },
+    { name = "appnope", marker = "platform_system == 'Darwin'" },
     { name = "comm" },
     { name = "debugpy" },
     { name = "ipython", version = "8.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version != '3.11.*'" },
@@ -1226,7 +1239,7 @@ version = "1.6.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "platform_system == 'Windows'" },
     { name = "ghp-import" },
     { name = "jinja2" },
     { name = "markdown" },
@@ -2531,7 +2544,7 @@ name = "tqdm"
 version = "4.67.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "platform_system == 'Windows'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a8/4b/29b4ef32e036bb34e4ab51796dd745cdba7ed47ad142a9f4a1eb8e0c744d/tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2", size = 169737 }
 wheels = [

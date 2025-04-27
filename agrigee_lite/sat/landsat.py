@@ -7,7 +7,6 @@ from agrigee_lite.ee_utils import (
     ee_get_number_of_pixels,
     ee_get_reducers,
     ee_map_bands_and_doy,
-    ee_map_valid_pixels,
 )
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
@@ -107,10 +106,7 @@ class Landsat5(AbstractSatellite):
         )
 
         l_img = l_img.map(ee_l_mask)
-        l_img = l_img.map(lambda img: ee_map_valid_pixels(img, ee_geometry, self.pixelSize)).filter(
-            ee.Filter.gte("ZZ_USER_VALID_PIXELS", 12)
-        )
-        l_img = ee_filter_img_collection_invalid_pixels(l_img, ee_geometry, self.pixelSize, 20)
+        l_img = ee_filter_img_collection_invalid_pixels(l_img, ee_geometry, self.pixelSize, 12)
 
         return ee.ImageCollection(l_img)
 
@@ -216,10 +212,7 @@ class Landsat7(AbstractSatellite):
         )
 
         l_img = l_img.map(ee_l_mask)
-        l_img = l_img.map(lambda img: ee_map_valid_pixels(img, ee_geometry, self.pixelSize)).filter(
-            ee.Filter.gte("ZZ_USER_VALID_PIXELS", 12)
-        )
-        l_img = ee_filter_img_collection_invalid_pixels(l_img, ee_geometry, self.pixelSize, 20)
+        l_img = ee_filter_img_collection_invalid_pixels(l_img, ee_geometry, self.pixelSize, 12)
 
         return ee.ImageCollection(l_img)
 
@@ -325,10 +318,7 @@ class Landsat8(AbstractSatellite):
         )
 
         l_img = l_img.map(ee_l_mask)
-        l_img = l_img.map(lambda img: ee_map_valid_pixels(img, ee_geometry, self.pixelSize)).filter(
-            ee.Filter.gte("ZZ_USER_VALID_PIXELS", 12)
-        )
-        l_img = ee_filter_img_collection_invalid_pixels(l_img, ee_geometry, self.pixelSize, 20)
+        l_img = ee_filter_img_collection_invalid_pixels(l_img, ee_geometry, self.pixelSize, 12)
 
         return ee.ImageCollection(l_img)
 
@@ -434,10 +424,7 @@ class Landsat9(AbstractSatellite):
         )
 
         l_img = l_img.map(ee_l_mask)
-        l_img = l_img.map(lambda img: ee_map_valid_pixels(img, ee_geometry, self.pixelSize)).filter(
-            ee.Filter.gte("ZZ_USER_VALID_PIXELS", 12)
-        )
-        l_img = ee_filter_img_collection_invalid_pixels(l_img, ee_geometry, self.pixelSize, 20)
+        l_img = ee_filter_img_collection_invalid_pixels(l_img, ee_geometry, self.pixelSize, 12)
 
         return ee.ImageCollection(l_img)
 
