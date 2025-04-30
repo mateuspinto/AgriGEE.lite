@@ -38,77 +38,72 @@ def ee_l_mask(img: ee.Image) -> ee.Image:
 def ee_l_apply_sr_scale_factors(img: ee.Image) -> ee.Image:
     img = ee.Image(img)
     optical_bands = img.select("SR_B.").multiply(0.0000275).add(-0.2)
-    thermal_bands = img.select("ST_B6").multiply(0.00341802).add(149.0)
-    return img.addBands(optical_bands, None, True).addBands(thermal_bands, None, True)
+    # thermal_bands = img.select("ST_B6").multiply(0.00341802).add(149.0)
+    return img.addBands(optical_bands, None, True)  # .addBands(thermal_bands, None, True)
 
 
-class Landsat5(AbstractSatellite):
+class AbstractLandsat(AbstractSatellite):
+    """Fatoriza toda a lógica compartilhada pelos sensores Landsat."""
+
+    _DEFAULT_BANDS: list[str] = [  # noqa: RUF012
+        "blue",
+        "green",
+        "red",
+        "nir",
+        "swir1",
+        "swir2",
+    ]
+
     def __init__(
         self,
+        *,
+        sensor_code: str,  # e.g. "LT05"
+        toa_band_map: dict[str, str],
+        sr_band_map: dict[str, str],
+        short_base: str,  # e.g. "l5"
+        start_date: str,  # sensor-specific
+        end_date: str,  # sensor-specific
         bands: list[str] | None = None,
         use_sr: bool = False,
         tier: int = 1,
-    ):
-        if bands is None:
-            bands = ["blue", "green", "red", "nir", "swir1", "swir2"]
-
+    ) -> None:
         super().__init__()
+
+        bands = bands or self._DEFAULT_BANDS
         self.useSr = use_sr
         self.tier = tier
         self.pixelSize: int = 30
 
-        self.imageCollectionName = f"LANDSAT/LT05/C02/T{tier}_L2" if use_sr else f"LANDSAT/LT05/C02/T{tier}_TOA"
-        self.startDate: str = "1984-03-01"
-        self.endDate: str = "2013-05-05"
-        self.shortName: str = "l5sr" if use_sr else "l5"
+        self.startDate: str = start_date
+        self.endDate: str = end_date
 
-        if use_sr:
-            self.availableBands = {
-                "blue": "SR_B1",
-                "green": "SR_B2",
-                "red": "SR_B3",
-                "nir": "SR_B4",
-                "swir1": "SR_B5",
-                "swir2": "SR_B7",
-            }
-        else:
-            self.availableBands = {
-                "blue": "B1",
-                "green": "B2",
-                "red": "B3",
-                "nir": "B4",
-                "swir1": "B5",
-                "swir2": "B7",
-            }
+        suffix = "L2" if use_sr else "TOA"
+        self.imageCollectionName = f"LANDSAT/{sensor_code}/C02/T{tier}_{suffix}"
+        self.shortName: str = f"{short_base}sr" if use_sr else short_base
 
-        remap_bands = {name: f"{idx}_{name}" for idx, name in enumerate(bands)}
+        self.availableBands = sr_band_map if use_sr else toa_band_map
 
+        remap = {name: f"{idx}_{name}" for idx, name in enumerate(bands)}
         self.selectedBands: dict[str, str] = {
-            remap_bands[b]: self.availableBands[b] for b in bands if b in self.availableBands
+            remap[b]: self.availableBands[b] for b in bands if b in self.availableBands
         }
         self.selectedBands["cloudq"] = "QA_PIXEL"
         self.scaleBands = lambda x: x
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
-        ee_geometry = ee_feature.geometry()
+        geom = ee_feature.geometry()
         ee_filter = ee.Filter.And(
-            ee.Filter.bounds(ee_geometry),
+            ee.Filter.bounds(geom),
             ee.Filter.date(ee_feature.get("s"), ee_feature.get("e")),
         )
 
-        l_img = ee.ImageCollection(self.imageCollectionName).filter(ee_filter)
+        col = ee.ImageCollection(self.imageCollectionName).filter(ee_filter)
+        col = col.map(ee_l_apply_sr_scale_factors) if self.useSr else col.map(remove_l_toa_tough_clouds)
 
-        l_img = l_img.map(ee_l_apply_sr_scale_factors) if self.useSr else l_img.map(remove_l_toa_tough_clouds)
-
-        l_img = l_img.select(
-            list(self.selectedBands.values()),
-            list(self.selectedBands.keys()),
-        )
-
-        l_img = l_img.map(ee_l_mask)
-        l_img = ee_filter_img_collection_invalid_pixels(l_img, ee_geometry, self.pixelSize, 12)
-
-        return ee.ImageCollection(l_img)
+        col = col.select(list(self.selectedBands.values()), list(self.selectedBands.keys()))
+        col = col.map(ee_l_mask)
+        col = ee_filter_img_collection_invalid_pixels(col, geom, self.pixelSize, 12)
+        return ee.ImageCollection(col)
 
     def compute(
         self,
@@ -117,24 +112,23 @@ class Landsat5(AbstractSatellite):
         date_types: list[str] | None = None,
         subsampling_max_pixels: float = 1000,
     ) -> ee.FeatureCollection:
-        ee_geometry = ee_feature.geometry()
-        ee_geometry = ee.Geometry(
+        geom = ee_feature.geometry()
+        geom = ee.Geometry(
             ee.Algorithms.If(
-                ee_geometry.buffer(-self.pixelSize).area().gte(50000),
-                ee_geometry.buffer(-self.pixelSize),
-                ee_geometry,
+                geom.buffer(-self.pixelSize).area().gte(50000),
+                geom.buffer(-self.pixelSize),
+                geom,
             )
         )
 
-        l_img = self.imageCollection(ee_feature)
-
-        features = l_img.map(
+        col = self.imageCollection(ee_feature)
+        features = col.map(
             partial(
                 ee_map_bands_and_doy,
-                ee_geometry=ee_geometry,
+                ee_geometry=geom,
                 ee_feature=ee_feature,
                 pixel_size=self.pixelSize,
-                subsampling_max_pixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
+                subsampling_max_pixels=ee_get_number_of_pixels(geom, subsampling_max_pixels, self.pixelSize),
                 reducer=ee_get_reducers(reducers),
                 date_types=date_types,
             )
@@ -144,323 +138,120 @@ class Landsat5(AbstractSatellite):
     def __str__(self) -> str:
         return self.shortName
 
-    def __repr__(self) -> str:
-        return self.shortName
+    __repr__ = __str__
 
 
-class Landsat7(AbstractSatellite):
+class Landsat5(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
         use_sr: bool = False,
         tier: int = 1,
     ):
-        if bands is None:
-            bands = ["blue", "green", "red", "nir", "swir1", "swir2"]
-
-        super().__init__()
-        self.useSr = use_sr
-        self.tier = tier
-        self.pixelSize: int = 30
-
-        self.imageCollectionName = f"LANDSAT/LE07/C02/T{tier}_L2" if use_sr else f"LANDSAT/LE07/C02/T{tier}_TOA"
-        self.startDate: str = "1984-03-01"
-        self.endDate: str = "2013-05-05"
-        self.shortName: str = "l7sr" if use_sr else "l7"
-
-        if use_sr:
-            self.availableBands = {
-                "blue": "SR_B1",
-                "green": "SR_B2",
-                "red": "SR_B3",
-                "nir": "SR_B4",
-                "swir1": "SR_B5",
-                "swir2": "SR_B7",
-            }
-        else:
-            self.availableBands = {
-                "blue": "B1",
-                "green": "B2",
-                "red": "B3",
-                "nir": "B4",
-                "swir1": "B5",
-                "swir2": "B7",
-            }
-
-        remap_bands = {name: f"{idx}_{name}" for idx, name in enumerate(bands)}
-
-        self.selectedBands: dict[str, str] = {
-            remap_bands[b]: self.availableBands[b] for b in bands if b in self.availableBands
+        toa = {"blue": "B1", "green": "B2", "red": "B3", "nir": "B4", "swir1": "B5", "swir2": "B7"}
+        sr = {
+            "blue": "SR_B1",
+            "green": "SR_B2",
+            "red": "SR_B3",
+            "nir": "SR_B4",
+            "swir1": "SR_B5",
+            "swir2": "SR_B7",
         }
-        self.selectedBands["cloudq"] = "QA_PIXEL"
-        self.scaleBands = lambda x: x
-
-    def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
-        ee_geometry = ee_feature.geometry()
-        ee_filter = ee.Filter.And(
-            ee.Filter.bounds(ee_geometry),
-            ee.Filter.date(ee_feature.get("s"), ee_feature.get("e")),
+        super().__init__(
+            sensor_code="LT05",
+            toa_band_map=toa,
+            sr_band_map=sr,
+            short_base="l5",
+            start_date="1984-03-01",
+            end_date="2013-05-05",
+            bands=bands,
+            use_sr=use_sr,
+            tier=tier,
         )
 
-        l_img = ee.ImageCollection(self.imageCollectionName).filter(ee_filter)
 
-        l_img = l_img.map(ee_l_apply_sr_scale_factors) if self.useSr else l_img.map(remove_l_toa_tough_clouds)
-
-        l_img = l_img.select(
-            list(self.selectedBands.values()),
-            list(self.selectedBands.keys()),
-        )
-
-        l_img = l_img.map(ee_l_mask)
-        l_img = ee_filter_img_collection_invalid_pixels(l_img, ee_geometry, self.pixelSize, 12)
-
-        return ee.ImageCollection(l_img)
-
-    def compute(
-        self,
-        ee_feature: ee.Feature,
-        reducers: list[str] | None = None,
-        date_types: list[str] | None = None,
-        subsampling_max_pixels: float = 1000,
-    ) -> ee.FeatureCollection:
-        ee_geometry = ee_feature.geometry()
-        ee_geometry = ee.Geometry(
-            ee.Algorithms.If(
-                ee_geometry.buffer(-self.pixelSize).area().gte(50000),
-                ee_geometry.buffer(-self.pixelSize),
-                ee_geometry,
-            )
-        )
-
-        l_img = self.imageCollection(ee_feature)
-
-        features = l_img.map(
-            partial(
-                ee_map_bands_and_doy,
-                ee_geometry=ee_geometry,
-                ee_feature=ee_feature,
-                pixel_size=self.pixelSize,
-                subsampling_max_pixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
-                reducer=ee_get_reducers(reducers),
-                date_types=date_types,
-            )
-        )
-        return features
-
-    def __str__(self) -> str:
-        return self.shortName
-
-    def __repr__(self) -> str:
-        return self.shortName
-
-
-class Landsat8(AbstractSatellite):
+class Landsat7(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
         use_sr: bool = False,
         tier: int = 1,
     ):
-        if bands is None:
-            bands = ["blue", "green", "red", "nir", "swir1", "swir2"]
-
-        super().__init__()
-        self.useSr = use_sr
-        self.tier = tier
-        self.pixelSize: int = 30
-
-        self.imageCollectionName = f"LANDSAT/LC08/C02/T{tier}_L2" if use_sr else f"LANDSAT/LC08/C02/T{tier}_TOA"
-        self.startDate: str = "1984-03-01"
-        self.endDate: str = "2013-05-05"
-        self.shortName: str = "l8sr" if use_sr else "l8"
-
-        if use_sr:
-            self.availableBands = {
-                "blue": "SR_B2",
-                "green": "SR_B3",
-                "red": "SR_B4",
-                "nir": "SR_B5",
-                "swir1": "SR_B6",
-                "swir2": "SR_B7",
-            }
-        else:
-            self.availableBands = {
-                "blue": "B2",
-                "green": "B3",
-                "red": "B4",
-                "nir": "B5",
-                "swir1": "B6",
-                "swir2": "B7",
-            }
-
-        remap_bands = {name: f"{idx}_{name}" for idx, name in enumerate(bands)}
-
-        self.selectedBands: dict[str, str] = {
-            remap_bands[b]: self.availableBands[b] for b in bands if b in self.availableBands
+        toa = {"blue": "B1", "green": "B2", "red": "B3", "nir": "B4", "swir1": "B5", "swir2": "B7"}
+        sr = {
+            "blue": "SR_B1",
+            "green": "SR_B2",
+            "red": "SR_B3",
+            "nir": "SR_B4",
+            "swir1": "SR_B5",
+            "swir2": "SR_B7",
         }
-        self.selectedBands["cloudq"] = "QA_PIXEL"
-        self.scaleBands = lambda x: x
-
-    def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
-        ee_geometry = ee_feature.geometry()
-        ee_filter = ee.Filter.And(
-            ee.Filter.bounds(ee_geometry),
-            ee.Filter.date(ee_feature.get("s"), ee_feature.get("e")),
+        super().__init__(
+            sensor_code="LE07",
+            toa_band_map=toa,
+            sr_band_map=sr,
+            short_base="l7",
+            start_date="1999-04-15",
+            end_date="2022-04-06",
+            bands=bands,
+            use_sr=use_sr,
+            tier=tier,
         )
 
-        l_img = ee.ImageCollection(self.imageCollectionName).filter(ee_filter)
 
-        l_img = l_img.map(ee_l_apply_sr_scale_factors) if self.useSr else l_img.map(remove_l_toa_tough_clouds)
-
-        l_img = l_img.select(
-            list(self.selectedBands.values()),
-            list(self.selectedBands.keys()),
-        )
-
-        l_img = l_img.map(ee_l_mask)
-        l_img = ee_filter_img_collection_invalid_pixels(l_img, ee_geometry, self.pixelSize, 12)
-
-        return ee.ImageCollection(l_img)
-
-    def compute(
-        self,
-        ee_feature: ee.Feature,
-        reducers: list[str] | None = None,
-        date_types: list[str] | None = None,
-        subsampling_max_pixels: float = 1000,
-    ) -> ee.FeatureCollection:
-        ee_geometry = ee_feature.geometry()
-        ee_geometry = ee.Geometry(
-            ee.Algorithms.If(
-                ee_geometry.buffer(-self.pixelSize).area().gte(50000),
-                ee_geometry.buffer(-self.pixelSize),
-                ee_geometry,
-            )
-        )
-
-        l_img = self.imageCollection(ee_feature)
-
-        features = l_img.map(
-            partial(
-                ee_map_bands_and_doy,
-                ee_geometry=ee_geometry,
-                ee_feature=ee_feature,
-                pixel_size=self.pixelSize,
-                subsampling_max_pixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
-                reducer=ee_get_reducers(reducers),
-                date_types=date_types,
-            )
-        )
-        return features
-
-    def __str__(self) -> str:
-        return self.shortName
-
-    def __repr__(self) -> str:
-        return self.shortName
-
-
-class Landsat9(AbstractSatellite):
+class Landsat8(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
         use_sr: bool = False,
         tier: int = 1,
     ):
-        if bands is None:
-            bands = ["blue", "green", "red", "nir", "swir1", "swir2"]
-
-        super().__init__()
-        self.useSr = use_sr
-        self.tier = tier
-        self.pixelSize: int = 30
-
-        self.imageCollectionName = f"LANDSAT/LC09/C02/T{tier}_L2" if use_sr else f"LANDSAT/LC09/C02/T{tier}_TOA"
-        self.startDate: str = "1984-03-01"
-        self.endDate: str = "2013-05-05"
-        self.shortName: str = "l9sr" if use_sr else "l9"
-
-        if use_sr:
-            self.availableBands = {
-                "blue": "SR_B2",
-                "green": "SR_B3",
-                "red": "SR_B4",
-                "nir": "SR_B5",
-                "swir1": "SR_B6",
-                "swir2": "SR_B7",
-            }
-        else:
-            self.availableBands = {
-                "blue": "B2",
-                "green": "B3",
-                "red": "B4",
-                "nir": "B5",
-                "swir1": "B6",
-                "swir2": "B7",
-            }
-
-        remap_bands = {name: f"{idx}_{name}" for idx, name in enumerate(bands)}
-
-        self.selectedBands: dict[str, str] = {
-            remap_bands[b]: self.availableBands[b] for b in bands if b in self.availableBands
+        toa = {"blue": "B2", "green": "B3", "red": "B4", "nir": "B5", "swir1": "B6", "swir2": "B7"}
+        sr = {
+            "blue": "SR_B2",
+            "green": "SR_B3",
+            "red": "SR_B4",
+            "nir": "SR_B5",
+            "swir1": "SR_B6",
+            "swir2": "SR_B7",
         }
-        self.selectedBands["cloudq"] = "QA_PIXEL"
-        self.scaleBands = lambda x: x
-
-    def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
-        ee_geometry = ee_feature.geometry()
-        ee_filter = ee.Filter.And(
-            ee.Filter.bounds(ee_geometry),
-            ee.Filter.date(ee_feature.get("s"), ee_feature.get("e")),
+        super().__init__(
+            sensor_code="LC08",
+            toa_band_map=toa,
+            sr_band_map=sr,
+            short_base="l8",
+            start_date="2013-04-11",
+            end_date="2050-01-01",
+            bands=bands,
+            use_sr=use_sr,
+            tier=tier,
         )
 
-        l_img = ee.ImageCollection(self.imageCollectionName).filter(ee_filter)
 
-        l_img = l_img.map(ee_l_apply_sr_scale_factors) if self.useSr else l_img.map(remove_l_toa_tough_clouds)
-
-        l_img = l_img.select(
-            list(self.selectedBands.values()),
-            list(self.selectedBands.keys()),
-        )
-
-        l_img = l_img.map(ee_l_mask)
-        l_img = ee_filter_img_collection_invalid_pixels(l_img, ee_geometry, self.pixelSize, 12)
-
-        return ee.ImageCollection(l_img)
-
-    def compute(
+class Landsat9(AbstractLandsat):
+    def __init__(
         self,
-        ee_feature: ee.Feature,
-        reducers: list[str] | None = None,
-        date_types: list[str] | None = None,
-        subsampling_max_pixels: float = 1000,
-    ) -> ee.FeatureCollection:
-        ee_geometry = ee_feature.geometry()
-        ee_geometry = ee.Geometry(
-            ee.Algorithms.If(
-                ee_geometry.buffer(-self.pixelSize).area().gte(50000),
-                ee_geometry.buffer(-self.pixelSize),
-                ee_geometry,
-            )
+        bands: list[str] | None = None,
+        use_sr: bool = False,
+        tier: int = 1,
+    ):
+        toa = {"blue": "B2", "green": "B3", "red": "B4", "nir": "B5", "swir1": "B6", "swir2": "B7"}
+        sr = {
+            "blue": "SR_B2",
+            "green": "SR_B3",
+            "red": "SR_B4",
+            "nir": "SR_B5",
+            "swir1": "SR_B6",
+            "swir2": "SR_B7",
+        }
+        super().__init__(
+            sensor_code="LC09",
+            toa_band_map=toa,
+            sr_band_map=sr,
+            short_base="l9",
+            start_date="2021-11-01",
+            end_date="2050-01-01",
+            bands=bands,
+            use_sr=use_sr,
+            tier=tier,
         )
-
-        l_img = self.imageCollection(ee_feature)
-
-        features = l_img.map(
-            partial(
-                ee_map_bands_and_doy,
-                ee_geometry=ee_geometry,
-                ee_feature=ee_feature,
-                pixel_size=self.pixelSize,
-                subsampling_max_pixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
-                reducer=ee_get_reducers(reducers),
-                date_types=date_types,
-            )
-        )
-        return features
-
-    def __str__(self) -> str:
-        return self.shortName
-
-    def __repr__(self) -> str:
-        return self.shortName
