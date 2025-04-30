@@ -80,9 +80,9 @@ class Modis(AbstractSatellite):
     def compute(
         self,
         ee_feature: ee.Feature,
+        subsampling_max_pixels: float,
         reducers: list[str] | None = None,
         date_types: list[str] | None = None,
-        subsampling_max_pixels: float = 1600,
     ) -> ee.FeatureCollection:
         """Sample time series of median reflectance within *ee_feature*."""
         geom = ee_feature.geometry()

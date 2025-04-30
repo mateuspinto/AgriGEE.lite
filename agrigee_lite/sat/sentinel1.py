@@ -133,9 +133,9 @@ class Sentinel1(AbstractSatellite):
     def compute(
         self,
         ee_feature: ee.Feature,
+        subsampling_max_pixels: float,
         reducers: list[str] | None = None,
         date_types: list[str] | None = None,
-        subsampling_max_pixels: float = 1000,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
         ee_geometry = ee.Geometry(
