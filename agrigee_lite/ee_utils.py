@@ -63,7 +63,7 @@ def ee_map_valid_pixels(img: ee.Image, ee_geometry: ee.Geometry, pixel_size: int
             reducer=ee.Reducer.count(),
             geometry=ee_geometry,
             scale=pixel_size,
-            maxPixels=1e8,
+            maxPixels=1e13,
             bestEffort=True,
         )
         .get("valid")
