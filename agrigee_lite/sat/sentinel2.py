@@ -91,7 +91,7 @@ class Sentinel2(AbstractSatellite):
         self.pixelSize: int = 10
 
         self.startDate: str = "2019-01-01" if use_sr else "2016-01-01"
-        self.endDate: str = ""
+        self.endDate: str = "2050-01-01"
         self.shortName: str = "s2sr" if use_sr else "s2"
 
         self.availableBands: dict[str, str] = {
