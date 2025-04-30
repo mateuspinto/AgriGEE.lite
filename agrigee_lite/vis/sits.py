@@ -27,3 +27,7 @@ def visualize_single_sits(
         y = long_sits[band_or_indice_to_plot].values
 
     plt.plot(long_sits[date_type], y)
+    plt.scatter(
+        long_sits[date_type],
+        y,
+    )
