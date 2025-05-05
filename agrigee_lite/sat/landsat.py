@@ -64,7 +64,7 @@ class AbstractLandsat(AbstractSatellite):
         start_date: str,  # sensor-specific
         end_date: str,  # sensor-specific
         bands: list[str] | None = None,
-        use_sr: bool = False,
+        use_sr: bool = True,
         tier: int = 1,
     ) -> None:
         super().__init__()
@@ -145,7 +145,7 @@ class Landsat5(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
-        use_sr: bool = False,
+        use_sr: bool = True,
         tier: int = 1,
     ):
         toa = {"blue": "B1", "green": "B2", "red": "B3", "nir": "B4", "swir1": "B5", "swir2": "B7"}
@@ -174,7 +174,7 @@ class Landsat7(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
-        use_sr: bool = False,
+        use_sr: bool = True,
         tier: int = 1,
     ):
         toa = {"blue": "B1", "green": "B2", "red": "B3", "nir": "B4", "swir1": "B5", "swir2": "B7"}
@@ -203,7 +203,7 @@ class Landsat8(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
-        use_sr: bool = False,
+        use_sr: bool = True,
         tier: int = 1,
     ):
         toa = {"blue": "B2", "green": "B3", "red": "B4", "nir": "B5", "swir1": "B6", "swir2": "B7"}
@@ -232,7 +232,7 @@ class Landsat9(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
-        use_sr: bool = False,
+        use_sr: bool = True,
         tier: int = 1,
     ):
         toa = {"blue": "B2", "green": "B3", "red": "B4", "nir": "B5", "swir1": "B6", "swir2": "B7"}
