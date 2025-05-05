@@ -21,7 +21,7 @@ class Modis(AbstractSatellite):
         self.shortName = "modis"
         self.pixelSize = 250
         self.startDate = "2000-02-24"
-        self.endDate = "present"
+        self.endDate = "2050-01-01"
 
         self._terra_vis = "MODIS/061/MOD09GQ"
         self._terra_qa = "MODIS/061/MOD09GA"
