@@ -13,13 +13,13 @@ def ee_get_date_value(stats: ee.Dictionary, ee_img: ee.Image, date_types: list[s
     if date_types is None:
         date_types = ["doy"]
 
-    for n, date_type in enumerate(date_types):
+    for date_type in date_types:
         if date_type == "doy":
-            stats = stats.set(f"{n + 1:02}_doy", ee_img.date().getRelative("day", "year").add(1))
+            stats = stats.set("01_doy", ee_img.date().getRelative("day", "year").add(1))
         elif date_type == "year":
-            stats = stats.set(f"{n + 2:02}_year", ee_img.date().get("year"))
+            stats = stats.set("02_year", ee_img.date().get("year"))
         elif date_type == "fyear":
-            stats = stats.set(f"{n + 3:02}_fyear", ee_img.date().getFraction("year").add(ee_img.date().get("year")))
+            stats = stats.set("03_fyear", ee_img.date().getFraction("year").add(ee_img.date().get("year")))
         else:
             raise ValueError(f"Unknown date_type: '{date_type}'")
 
