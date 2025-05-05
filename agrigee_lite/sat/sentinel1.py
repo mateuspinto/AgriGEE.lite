@@ -71,7 +71,7 @@ class Sentinel1(AbstractSatellite):
 
         # full mission start (S-1A launch)
         self.startDate: str = "2014-10-03"
-        self.endDate: str = ""
+        self.endDate: str = "2050-01-01"
         self.shortName: str = "s1a" if ascending else "s1d"
 
         # original → product band
