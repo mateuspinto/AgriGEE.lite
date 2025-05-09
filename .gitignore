@@ -148,3 +148,5 @@ core.*
 
 *.parquet
 *.npz
+
+!data/sample.parquet

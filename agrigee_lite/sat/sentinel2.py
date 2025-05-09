@@ -8,11 +8,12 @@ from agrigee_lite.ee_utils import (
     ee_get_number_of_pixels,
     ee_get_reducers,
     ee_map_bands_and_doy,
+    ee_safe_remove_borders,
 )
-from agrigee_lite.sat.abstract_satellite import AbstractSatellite
+from agrigee_lite.sat.abstract_satellite import OpticalSatellite
 
 
-class Sentinel2(AbstractSatellite):
+class Sentinel2(OpticalSatellite):
     """
     Satellite abstraction for Sentinel-2 (HARMONIZED collections).
 
@@ -69,7 +70,8 @@ class Sentinel2(AbstractSatellite):
     def __init__(
         self,
         bands: list[str] | None = None,
-        use_sr: bool = False,
+        use_sr: bool = True,
+        rescale_0_1: bool = True,
     ):
         if bands is None:
             bands = [
@@ -113,7 +115,9 @@ class Sentinel2(AbstractSatellite):
             remap_bands[band]: self.availableBands[band] for band in bands if band in self.availableBands
         }
 
-        self.scaleBands = lambda x: x / 10000
+        self.rescale_0_1 = rescale_0_1
+
+        self.scaleBands = lambda x: x if rescale_0_1 else x / 10000
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()
@@ -143,6 +147,9 @@ class Sentinel2(AbstractSatellite):
         s2_img = s2_img.map(lambda img: ee_cloud_probability_mask(img, 0.7, True))
         s2_img = ee_filter_img_collection_invalid_pixels(s2_img, ee_geometry, self.pixelSize, 20)
 
+        if self.rescale_0_1:
+            s2_img = s2_img.map(lambda img: ee.Image(img).addBands(ee.Image(img).divide(10000), overwrite=True))
+
         return ee.ImageCollection(s2_img)
 
     def compute(
@@ -153,18 +160,20 @@ class Sentinel2(AbstractSatellite):
         date_types: list[str] | None = None,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
+        ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 35000)
+
         ee_geometry = ee.Geometry(
             ee.Algorithms.If(
-                ee_geometry.buffer(-10).area().gte(35000),
-                ee_geometry.buffer(-10),
+                ee_geometry.buffer(-self.pixelSize).area().gte(35000),
+                ee_geometry.buffer(-self.pixelSize),
                 ee_geometry,
             )
         )
         s2_img = self.imageCollection(ee_feature)
 
-        # round_int_16 is True only if reducers are None or contain exclusively 'mean' and/or 'median'
+        # round_int_16 is True only if reducers are None or contain exclusively 'mean' and/or 'median' and the image is not rescaled to 0-1
         allowed_reducers = {"mean", "median"}
-        round_int_16 = reducers is None or set(reducers).issubset(allowed_reducers)
+        round_int_16 = (reducers is None or set(reducers).issubset(allowed_reducers)) and not self.rescale_0_1
 
         features = s2_img.map(
             partial(

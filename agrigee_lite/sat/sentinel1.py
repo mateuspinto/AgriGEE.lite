@@ -7,11 +7,12 @@ from agrigee_lite.ee_utils import (
     ee_get_number_of_pixels,
     ee_get_reducers,
     ee_map_bands_and_doy,
+    ee_safe_remove_borders,
 )
-from agrigee_lite.sat.abstract_satellite import AbstractSatellite
+from agrigee_lite.sat.abstract_satellite import RadarSatellite
 
 
-class Sentinel1(AbstractSatellite):
+class Sentinel1(RadarSatellite):
     """
     Satellite abstraction for Sentinel-1.
 
@@ -71,7 +72,7 @@ class Sentinel1(AbstractSatellite):
 
         # full mission start (S-1A launch)
         self.startDate: str = "2014-10-03"
-        self.endDate: str = ""
+        self.endDate: str = "2050-01-01"
         self.shortName: str = "s1a" if ascending else "s1d"
 
         # original → product band
@@ -109,6 +110,7 @@ class Sentinel1(AbstractSatellite):
         ee_geometry = ee_feature.geometry()
         ee_start = ee_feature.get("s")
         ee_end = ee_feature.get("e")
+        ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 35000)
 
         ee_filter = ee.Filter.And(ee.Filter.bounds(ee_geometry), ee.Filter.date(ee_start, ee_end))
 

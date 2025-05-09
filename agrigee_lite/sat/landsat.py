@@ -7,8 +7,9 @@ from agrigee_lite.ee_utils import (
     ee_get_number_of_pixels,
     ee_get_reducers,
     ee_map_bands_and_doy,
+    ee_safe_remove_borders,
 )
-from agrigee_lite.sat.abstract_satellite import AbstractSatellite
+from agrigee_lite.sat.abstract_satellite import OpticalSatellite
 
 
 def remove_l_toa_tough_clouds(img: ee.Image) -> ee.Image:
@@ -42,9 +43,7 @@ def ee_l_apply_sr_scale_factors(img: ee.Image) -> ee.Image:
     return img.addBands(optical_bands, None, True)  # .addBands(thermal_bands, None, True)
 
 
-class AbstractLandsat(AbstractSatellite):
-    """Fatoriza toda a lógica compartilhada pelos sensores Landsat."""
-
+class AbstractLandsat(OpticalSatellite):
     _DEFAULT_BANDS: list[str] = [  # noqa: RUF012
         "blue",
         "green",
@@ -64,7 +63,7 @@ class AbstractLandsat(AbstractSatellite):
         start_date: str,  # sensor-specific
         end_date: str,  # sensor-specific
         bands: list[str] | None = None,
-        use_sr: bool = False,
+        use_sr: bool = True,
         tier: int = 1,
     ) -> None:
         super().__init__()
@@ -113,13 +112,7 @@ class AbstractLandsat(AbstractSatellite):
         date_types: list[str] | None = None,
     ) -> ee.FeatureCollection:
         geom = ee_feature.geometry()
-        geom = ee.Geometry(
-            ee.Algorithms.If(
-                geom.buffer(-self.pixelSize).area().gte(50000),
-                geom.buffer(-self.pixelSize),
-                geom,
-            )
-        )
+        geom = ee_safe_remove_borders(geom, self.pixelSize, 50000)
 
         col = self.imageCollection(ee_feature)
         features = col.map(
@@ -145,7 +138,7 @@ class Landsat5(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
-        use_sr: bool = False,
+        use_sr: bool = True,
         tier: int = 1,
     ):
         toa = {"blue": "B1", "green": "B2", "red": "B3", "nir": "B4", "swir1": "B5", "swir2": "B7"}
@@ -174,7 +167,7 @@ class Landsat7(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
-        use_sr: bool = False,
+        use_sr: bool = True,
         tier: int = 1,
     ):
         toa = {"blue": "B1", "green": "B2", "red": "B3", "nir": "B4", "swir1": "B5", "swir2": "B7"}
@@ -203,7 +196,7 @@ class Landsat8(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
-        use_sr: bool = False,
+        use_sr: bool = True,
         tier: int = 1,
     ):
         toa = {"blue": "B2", "green": "B3", "red": "B4", "nir": "B5", "swir1": "B6", "swir2": "B7"}
@@ -232,7 +225,7 @@ class Landsat9(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
-        use_sr: bool = False,
+        use_sr: bool = True,
         tier: int = 1,
     ):
         toa = {"blue": "B2", "green": "B3", "red": "B4", "nir": "B5", "swir1": "B6", "swir2": "B7"}

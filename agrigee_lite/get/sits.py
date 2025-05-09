@@ -33,7 +33,7 @@ def download_single_sits(
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
     date_types: list[str] | None = None,
-    subsampling_max_pixels: float = 1000,
+    subsampling_max_pixels: float = 1e13,
 ) -> pd.DataFrame:
     start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
     end_date = end_date.strftime("%Y-%m-%d") if isinstance(end_date, pd.Timestamp) else end_date
@@ -67,7 +67,7 @@ def download_multiple_sits(
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
     date_types: list[str] | None = None,
-    subsampling_max_pixels: float = 1000,
+    subsampling_max_pixels: float = 1e13,
 ) -> pd.DataFrame:
     add_indexnum_column(gdf)
 
@@ -97,7 +97,7 @@ def download_multiple_sits_multithread(
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
     date_types: list[str] | None = None,
-    subsampling_max_pixels: float = 1000,
+    subsampling_max_pixels: float = 1e13,
     mini_chunksize: int = 10,
     num_threads_rush: int = 30,
     num_threads_retry: int = 10,
@@ -184,7 +184,7 @@ async def __download_multiple_sits_async(
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
     date_types: list[str] | None = None,
-    subsampling_max_pixels: float = 1000,
+    subsampling_max_pixels: float = 1e13,
     mini_chunksize: int = 10,
     initial_concurrency: int = 30,
     retry_concurrency: int = 10,
@@ -266,7 +266,7 @@ def download_multiple_sits_chunks_multithread(
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
     date_types: list[str] | None = None,
-    subsampling_max_pixels: float = 1000,
+    subsampling_max_pixels: float = 1e13,
     chunksize: int = 10000,
     mini_chunksize: int = 10,
     initial_concurrency: int = 30,
@@ -342,7 +342,7 @@ def download_multiple_sits_task_gdrive(
     file_stem: str,
     reducers: list[str] | None = None,
     date_types: list[str] | None = None,
-    subsampling_max_pixels: float = 1000,
+    subsampling_max_pixels: float = 1e13,
     taskname: str = "",
     gee_save_folder: str = "GEE_EXPORTS",
 ) -> None:
@@ -381,7 +381,7 @@ def download_multiple_sits_task_gcs(
     file_path: str,
     reducers: list[str] | None = None,
     date_types: list[str] | None = None,
-    subsampling_max_pixels: float = 1000,
+    subsampling_max_pixels: float = 1e13,
     taskname: str = "",
 ) -> None:
     if taskname == "":
@@ -417,10 +417,29 @@ def download_multiple_sits_chunks_gdrive(
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
     date_types: list[str] | None = None,
-    subsampling_max_pixels: float = 1000,
+    subsampling_max_pixels: float = 1e13,
     cluster_size: int = 500,
     gee_save_folder: str = "GEE_EXPORTS",
 ) -> None:
+    if len(gdf) == 0:
+        print("Empty GeoDataFrame, nothing to download")
+        return None
+
+    schema = pa.DataFrameSchema({
+        "geometry": pa.Column("geometry", nullable=False),
+        "start_date": pa.Column(
+            pa.DateTime,
+            nullable=False,
+            checks=pa.Check.in_range(min_value=satellite.startDate, max_value=satellite.endDate),
+        ),
+        "end_date": pa.Column(
+            pa.DateTime,
+            nullable=False,
+            checks=pa.Check.in_range(min_value=satellite.startDate, max_value=satellite.endDate),
+        ),
+    })
+    schema.validate(gdf, lazy=True)
+
     tasks_df = ee_get_tasks_status()
     completed_or_running_tasks = set(
         tasks_df.description.apply(lambda x: x.split("_", 1)[0] + "_" + x.split("_", 2)[2]).tolist()
@@ -453,9 +472,28 @@ def download_multiple_sits_chunks_gcs(
     bucket_name: str,
     reducers: list[str] | None = None,
     date_types: list[str] | None = None,
-    subsampling_max_pixels: float = 1000,
+    subsampling_max_pixels: float = 1e13,
     cluster_size: int = 500,
 ) -> None:
+    if len(gdf) == 0:
+        print("Empty GeoDataFrame, nothing to download")
+        return None
+
+    schema = pa.DataFrameSchema({
+        "geometry": pa.Column("geometry", nullable=False),
+        "start_date": pa.Column(
+            pa.DateTime,
+            nullable=False,
+            checks=pa.Check.in_range(min_value=satellite.startDate, max_value=satellite.endDate),
+        ),
+        "end_date": pa.Column(
+            pa.DateTime,
+            nullable=False,
+            checks=pa.Check.in_range(min_value=satellite.startDate, max_value=satellite.endDate),
+        ),
+    })
+    schema.validate(gdf, lazy=True)
+
     tasks_df = ee_get_tasks_status()
     completed_or_running_tasks = set(
         tasks_df.description.apply(lambda x: x.split("_", 1)[0] + "_" + x.split("_", 2)[2]).tolist()

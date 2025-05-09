@@ -15,12 +15,13 @@ from agrigee_lite.misc import cached
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
-@cached
-def download_download_single_sits(
+# @cached
+def download_multiple_images(
     geometry: Polygon,
     start_date: pd.Timestamp | str,
     end_date: pd.Timestamp | str,
     satellite: AbstractSatellite,
+    invalid_images_threshold: float = 0.5,
     num_threads_rush: int = 30,
     num_threads_retry: int = 10,
 ) -> np.ndarray:
@@ -45,6 +46,12 @@ def download_download_single_sits(
         {"s": start_date, "e": end_date, "0": 1},
     )
     ee_expression = satellite.imageCollection(ee_feature)
+
+    max_valid_pixels = ee_expression.aggregate_max("ZZ_USER_VALID_PIXELS")
+    threshold = ee.Number(max_valid_pixels).multiply(invalid_images_threshold)
+    ee_expression = ee_expression.filter(ee.Filter.gte("ZZ_USER_VALID_PIXELS", threshold))
+
+    image_names = ee_expression.aggregate_array("ZZ_USER_TIME_DUMMY").getInfo()
 
     image_indexes = [
         (n, image_index)
@@ -91,4 +98,4 @@ def download_download_single_sits(
             desc="Re-running failed downloads",
         )
 
-    return np.stack(all_images)
+    return np.stack(all_images), image_names

@@ -13,15 +13,15 @@ def ee_get_date_value(stats: ee.Dictionary, ee_img: ee.Image, date_types: list[s
     if date_types is None:
         date_types = ["doy"]
 
-    for n, date_type in enumerate(date_types):
+    for date_type in date_types:
         if date_type == "doy":
-            stats = stats.set(f"{n + 1:02}_doy", ee_img.date().getRelative("day", "year").add(1))
+            stats = stats.set("01_doy", ee_img.date().getRelative("day", "year").add(1))
         elif date_type == "year":
-            stats = stats.set(f"{n + 2:02}_year", ee_img.date().get("year"))
+            stats = stats.set("02_year", ee_img.date().get("year"))
         elif date_type == "fyear":
-            stats = stats.set(f"{n + 3:02}_fyear", ee_img.date().getFraction("year").add(ee_img.date().get("year")))
+            stats = stats.set("03_fyear", ee_img.date().getFraction("year").add(ee_img.date().get("year")))
         else:
-            raise ValueError(f"Unknown date_type: '{date_type}'")
+            raise ValueError(f"Unknown date_type: '{date_type}'")  # noqa: TRY003
 
     return stats
 
@@ -63,7 +63,7 @@ def ee_map_valid_pixels(img: ee.Image, ee_geometry: ee.Geometry, pixel_size: int
             reducer=ee.Reducer.count(),
             geometry=ee_geometry,
             scale=pixel_size,
-            maxPixels=1e8,
+            maxPixels=1e13,
             bestEffort=True,
         )
         .get("valid")
@@ -234,11 +234,9 @@ def ee_filter_img_collection_invalid_pixels(
         ee.Filter.gte("ZZ_USER_VALID_PIXELS", min_valid_pixels)
     )
 
-    ee_img_collection = (
-        ee_img_collection.map(lambda img: img.set("ZZ_USER_TIME_DUMMY", img.date().format("YYYY-MM-dd")))
-        .sort("ZZ_USER_TIME_DUMMY")
-        .distinct("ZZ_USER_TIME_DUMMY")
-    )
+    ee_img_collection = ee_img_collection.map(
+        lambda img: img.set("ZZ_USER_TIME_DUMMY", img.date().format("YYYY-MM-dd"))
+    ).sort("ZZ_USER_TIME_DUMMY")
 
     return ee_img_collection
 
@@ -251,3 +249,13 @@ def ee_get_number_of_pixels(ee_geometry: ee.Geometry, subsampling_max_pixels: fl
         pixel_area = ee.Number(pixel_size).pow(2)
         total_pixels = ee_geometry.area().divide(pixel_area)
         return total_pixels.multiply(subsampling_max_pixels).toInt()
+
+
+def ee_safe_remove_borders(ee_geometry: ee.Geometry, border_size: int, area_lower_bound: int) -> ee.Geometry:
+    return ee.Geometry(
+        ee.Algorithms.If(
+            ee_geometry.buffer(-border_size).area().gte(area_lower_bound),
+            ee_geometry.buffer(-border_size),
+            ee_geometry,
+        )
+    )

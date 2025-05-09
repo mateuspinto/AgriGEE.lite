@@ -7,12 +7,13 @@ from agrigee_lite.ee_utils import (
     ee_get_number_of_pixels,
     ee_get_reducers,
     ee_map_bands_and_doy,
+    ee_safe_remove_borders,
 )
-from agrigee_lite.sat.abstract_satellite import AbstractSatellite
+from agrigee_lite.sat.abstract_satellite import OpticalSatellite
 
 
-class Modis(AbstractSatellite):
-    def __init__(self, bands: list[str] | None = None) -> None:
+class Modis(OpticalSatellite):
+    def __init__(self, bands: list[str] | None = None, rescale_0_1: bool = True) -> None:
         if bands is None:
             bands = ["red", "nir"]
 
@@ -21,7 +22,7 @@ class Modis(AbstractSatellite):
         self.shortName = "modis"
         self.pixelSize = 250
         self.startDate = "2000-02-24"
-        self.endDate = "present"
+        self.endDate = "2050-01-01"
 
         self._terra_vis = "MODIS/061/MOD09GQ"
         self._terra_qa = "MODIS/061/MOD09GA"
@@ -36,6 +37,7 @@ class Modis(AbstractSatellite):
         remap = {name: f"{idx}_{name}" for idx, name in enumerate(bands)}
         self.selectedBands = {remap[b]: self.availableBands[b] for b in bands if b in self.availableBands}
 
+        self.rescale_0_1 = rescale_0_1
         self.scaleBands = lambda img: img
 
     @staticmethod
@@ -71,11 +73,16 @@ class Modis(AbstractSatellite):
         terra = _base(self._terra_vis, self._terra_qa)
         aqua = _base(self._aqua_vis, self._aqua_qa)
 
-        col = terra.merge(aqua)
+        modis_imgc = terra.merge(aqua)
 
-        col = ee_filter_img_collection_invalid_pixels(col, ee_geometry, self.pixelSize, 2)
+        modis_imgc = ee_filter_img_collection_invalid_pixels(modis_imgc, ee_geometry, self.pixelSize, 2)
 
-        return ee.ImageCollection(col)
+        if self.rescale_0_1:
+            modis_imgc = modis_imgc.map(
+                lambda img: ee.Image(img).addBands(ee.Image(img).add(100).divide(16_100), overwrite=True)
+            )
+
+        return ee.ImageCollection(modis_imgc)
 
     def compute(
         self,
@@ -86,10 +93,13 @@ class Modis(AbstractSatellite):
     ) -> ee.FeatureCollection:
         """Sample time series of median reflectance within *ee_feature*."""
         geom = ee_feature.geometry()
+        geom = ee_safe_remove_borders(geom, self.pixelSize // 2, 190_000)
 
         modis = self.imageCollection(ee_feature)
 
-        subsample = ee_get_number_of_pixels(geom, subsampling_max_pixels, self.pixelSize)
+        # round_int_16 is True only if reducers are None or contain exclusively 'mean' and/or 'median' and the image is not rescaled to 0-1
+        allowed_reducers = {"mean", "median"}
+        round_int_16 = (reducers is None or set(reducers).issubset(allowed_reducers)) and not self.rescale_0_1
 
         feats = modis.map(
             partial(
@@ -97,9 +107,10 @@ class Modis(AbstractSatellite):
                 ee_geometry=geom,
                 ee_feature=ee_feature,
                 pixel_size=self.pixelSize,
-                subsampling_max_pixels=subsample,
-                reducer=ee_get_reducers(reducers),
+                subsampling_max_pixels=ee_get_number_of_pixels(geom, subsampling_max_pixels, self.pixelSize),
+                reducer=ee_get_reducers(["mean"] if reducers is None else reducers),
                 date_types=date_types,
+                round_int_16=round_int_16,
             )
         )
         return feats
