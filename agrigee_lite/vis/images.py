@@ -17,8 +17,6 @@ def visualize_multiple_images(
     num_threads_rush: int = 30,
     num_threads_retry: int = 10,
 ) -> None:
-    assert len(satellite.selectedBands) == 3, "It is necessary to select 3 bands for visualization"  # noqa: S101
-
     images, image_names = download_multiple_images(
         geometry, start_date, end_date, satellite, invalid_images_threshold, num_threads_rush, num_threads_retry
     )
