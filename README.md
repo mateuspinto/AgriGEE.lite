@@ -1,6 +1,7 @@
 # AgriGEE.lite
 
-![A cute chibi mascot](https://github.com/user-attachments/assets/d84b8145-3673-441b-b997-bdb420ed88eb)
+![mascote](https://github.com/user-attachments/assets/908400d6-c68f-4c26-98ae-0887cdb34d11)
+
 
 AgriGEE.lite is an Earth Engine wrapper that allows easy download of **Analysis Ready Multimodal Data (ARD)**, focused on downloading **time series** of **agricultural** and native vegetation data.
 
