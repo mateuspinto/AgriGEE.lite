@@ -252,3 +252,13 @@ def ee_get_number_of_pixels(ee_geometry: ee.Geometry, subsampling_max_pixels: fl
         pixel_area = ee.Number(pixel_size).pow(2)
         total_pixels = ee_geometry.area().divide(pixel_area)
         return total_pixels.multiply(subsampling_max_pixels).toInt()
+
+
+def ee_safe_remove_borders(ee_geometry: ee.Geometry, border_size: int, area_lower_bound: int) -> ee.Geometry:
+    return ee.Geometry(
+        ee.Algorithms.If(
+            ee_geometry.buffer(-border_size).area().gte(area_lower_bound),
+            ee_geometry.buffer(-border_size),
+            ee_geometry,
+        )
+    )

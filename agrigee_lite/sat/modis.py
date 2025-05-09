@@ -7,6 +7,7 @@ from agrigee_lite.ee_utils import (
     ee_get_number_of_pixels,
     ee_get_reducers,
     ee_map_bands_and_doy,
+    ee_safe_remove_borders,
 )
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
@@ -92,13 +93,7 @@ class Modis(AbstractSatellite):
     ) -> ee.FeatureCollection:
         """Sample time series of median reflectance within *ee_feature*."""
         geom = ee_feature.geometry()
-        geom = ee.Geometry(
-            ee.Algorithms.If(
-                geom.buffer(-self.pixelSize // 2).area().gte(190_000),
-                geom.buffer(-self.pixelSize // 2),
-                geom,
-            )
-        )
+        geom = ee_safe_remove_borders(geom, self.pixelSize // 2, 190_000)
 
         modis = self.imageCollection(ee_feature)
 

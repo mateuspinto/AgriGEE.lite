@@ -1,6 +1,7 @@
 import ee
 
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
+from agrigee_lite.ee_utils import ee_safe_remove_borders
 
 
 class MapBiomas(AbstractSatellite):
@@ -12,7 +13,7 @@ class MapBiomas(AbstractSatellite):
         self.pixelSize: int = 30
         self.startDate = "1985-02-24"
         self.endDate = "2023-12-32"
-        self.shortName = "mapbiomasconfclass"
+        self.shortName = "mapbiomasmajclass"
 
     def compute(
         self,
@@ -22,6 +23,8 @@ class MapBiomas(AbstractSatellite):
         date_types: list[str] | None = None,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
+        ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 50000)
+
         mb_image = ee.Image(self.imageAsset)
 
         ee_start = ee.Feature(ee_feature).get("s")

@@ -7,6 +7,7 @@ from agrigee_lite.ee_utils import (
     ee_get_number_of_pixels,
     ee_get_reducers,
     ee_map_bands_and_doy,
+    ee_safe_remove_borders,
 )
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
@@ -113,13 +114,7 @@ class AbstractLandsat(AbstractSatellite):
         date_types: list[str] | None = None,
     ) -> ee.FeatureCollection:
         geom = ee_feature.geometry()
-        geom = ee.Geometry(
-            ee.Algorithms.If(
-                geom.buffer(-self.pixelSize).area().gte(50000),
-                geom.buffer(-self.pixelSize),
-                geom,
-            )
-        )
+        geom = ee_safe_remove_borders(geom, self.pixelSize, 50000)
 
         col = self.imageCollection(ee_feature)
         features = col.map(

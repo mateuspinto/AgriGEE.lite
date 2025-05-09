@@ -8,6 +8,7 @@ from agrigee_lite.ee_utils import (
     ee_get_number_of_pixels,
     ee_get_reducers,
     ee_map_bands_and_doy,
+    ee_safe_remove_borders,
 )
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
@@ -159,6 +160,8 @@ class Sentinel2(AbstractSatellite):
         date_types: list[str] | None = None,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
+        ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 35000)
+
         ee_geometry = ee.Geometry(
             ee.Algorithms.If(
                 ee_geometry.buffer(-self.pixelSize).area().gte(35000),
