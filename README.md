@@ -1,5 +1,7 @@
 # AgriGEE.lite
 
+![A cute chibi mascot](https://github.com/user-attachments/assets/d84b8145-3673-441b-b997-bdb420ed88eb)
+
 AgriGEE.lite is an Earth Engine wrapper that allows easy download of **Analysis Ready Multimodal Data (ARD)**, focused on downloading **time series** of **agricultural** and native vegetation data.
 
 For example, to download and view a time series of cloud-free Sentinel 2 imagery cropped to a specific field and date range, only a few lines of code are required. Here’s an example:
@@ -19,7 +21,11 @@ agl.vis.images(row.geometry, row.start_date, row.end_date, satellite)
 
 Through this example, it is already possible to understand the basic functioning of the lib. The **entire lib was designed to be used in conjunction with [GeoPandas](https://geopandas.org/en/stable/)**, and a basic knowledge of it is necessary.
 
+![{Sentinel 2 RGB Agricultural Area from Mato Grosso, Brazil}](https://github.com/user-attachments/assets/f01c1b9b-03c2-43ff-9e00-3b687048659c)
+
 You can also download aggregations, such as spatial median aggregations of indices. Here's an example with median from multiple satellites:
+
+![{Multiple satellites EVI2 time series}](https://github.com/user-attachments/assets/dccd7d52-6047-4734-8d83-e6ea4de35808)
 
 For more examples, see the examples folder.
 
