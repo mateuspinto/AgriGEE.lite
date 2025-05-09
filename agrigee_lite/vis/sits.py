@@ -15,6 +15,9 @@ def visualize_single_sits(
     satellite: AbstractSatellite,
     band_or_indice_to_plot: str,
     date_type: str = "fyear",
+    axis: plt.Axes | None = None,
+    color: str = "blue",
+    alpha: float = 1,
 ) -> None:
     sits = download_single_sits(geometry, start_date, end_date, satellite, date_types=[date_type])
     long_sits = wide_to_long_dataframe(sits)
@@ -26,8 +29,22 @@ def visualize_single_sits(
     else:
         y = long_sits[band_or_indice_to_plot].values
 
-    plt.plot(long_sits[date_type], y)
-    plt.scatter(
-        long_sits[date_type],
-        y,
-    )
+    if axis is None:
+        plt.plot(
+            long_sits[date_type],
+            y,
+            color=color,
+            alpha=alpha,
+        )
+        plt.scatter(
+            long_sits[date_type],
+            y,
+            color=color,
+        )
+    else:
+        axis.plot(long_sits[date_type], y, color=color, alpha=alpha, label=satellite.shortName)
+        axis.scatter(
+            long_sits[date_type],
+            y,
+            color=color,
+        )
