@@ -10,10 +10,10 @@ from agrigee_lite.ee_utils import (
     ee_map_bands_and_doy,
     ee_safe_remove_borders,
 )
-from agrigee_lite.sat.abstract_satellite import AbstractSatellite
+from agrigee_lite.sat.abstract_satellite import OpticalSatellite
 
 
-class Sentinel2(AbstractSatellite):
+class Sentinel2(OpticalSatellite):
     """
     Satellite abstraction for Sentinel-2 (HARMONIZED collections).
 

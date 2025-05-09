@@ -9,10 +9,10 @@ from agrigee_lite.ee_utils import (
     ee_map_bands_and_doy,
     ee_safe_remove_borders,
 )
-from agrigee_lite.sat.abstract_satellite import AbstractSatellite
+from agrigee_lite.sat.abstract_satellite import OpticalSatellite
 
 
-class Modis(AbstractSatellite):
+class Modis(OpticalSatellite):
     def __init__(self, bands: list[str] | None = None, rescale_0_1: bool = True) -> None:
         if bands is None:
             bands = ["red", "nir"]

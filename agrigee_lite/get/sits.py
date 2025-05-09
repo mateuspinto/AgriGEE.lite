@@ -421,6 +421,25 @@ def download_multiple_sits_chunks_gdrive(
     cluster_size: int = 500,
     gee_save_folder: str = "GEE_EXPORTS",
 ) -> None:
+    if len(gdf) == 0:
+        print("Empty GeoDataFrame, nothing to download")
+        return None
+
+    schema = pa.DataFrameSchema({
+        "geometry": pa.Column("geometry", nullable=False),
+        "start_date": pa.Column(
+            pa.DateTime,
+            nullable=False,
+            checks=pa.Check.in_range(min_value=satellite.startDate, max_value=satellite.endDate),
+        ),
+        "end_date": pa.Column(
+            pa.DateTime,
+            nullable=False,
+            checks=pa.Check.in_range(min_value=satellite.startDate, max_value=satellite.endDate),
+        ),
+    })
+    schema.validate(gdf, lazy=True)
+
     tasks_df = ee_get_tasks_status()
     completed_or_running_tasks = set(
         tasks_df.description.apply(lambda x: x.split("_", 1)[0] + "_" + x.split("_", 2)[2]).tolist()
@@ -456,6 +475,25 @@ def download_multiple_sits_chunks_gcs(
     subsampling_max_pixels: float = 1e13,
     cluster_size: int = 500,
 ) -> None:
+    if len(gdf) == 0:
+        print("Empty GeoDataFrame, nothing to download")
+        return None
+
+    schema = pa.DataFrameSchema({
+        "geometry": pa.Column("geometry", nullable=False),
+        "start_date": pa.Column(
+            pa.DateTime,
+            nullable=False,
+            checks=pa.Check.in_range(min_value=satellite.startDate, max_value=satellite.endDate),
+        ),
+        "end_date": pa.Column(
+            pa.DateTime,
+            nullable=False,
+            checks=pa.Check.in_range(min_value=satellite.startDate, max_value=satellite.endDate),
+        ),
+    })
+    schema.validate(gdf, lazy=True)
+
     tasks_df = ee_get_tasks_status()
     completed_or_running_tasks = set(
         tasks_df.description.apply(lambda x: x.split("_", 1)[0] + "_" + x.split("_", 2)[2]).tolist()

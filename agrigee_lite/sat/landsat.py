@@ -9,7 +9,7 @@ from agrigee_lite.ee_utils import (
     ee_map_bands_and_doy,
     ee_safe_remove_borders,
 )
-from agrigee_lite.sat.abstract_satellite import AbstractSatellite
+from agrigee_lite.sat.abstract_satellite import OpticalSatellite
 
 
 def remove_l_toa_tough_clouds(img: ee.Image) -> ee.Image:
@@ -43,9 +43,7 @@ def ee_l_apply_sr_scale_factors(img: ee.Image) -> ee.Image:
     return img.addBands(optical_bands, None, True)  # .addBands(thermal_bands, None, True)
 
 
-class AbstractLandsat(AbstractSatellite):
-    """Fatoriza toda a lógica compartilhada pelos sensores Landsat."""
-
+class AbstractLandsat(OpticalSatellite):
     _DEFAULT_BANDS: list[str] = [  # noqa: RUF012
         "blue",
         "green",

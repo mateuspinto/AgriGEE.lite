@@ -235,8 +235,7 @@ def compute_index_from_df(df: pd.DataFrame, np_function: Callable) -> np.ndarray
 def add_indexnum_column(df: pd.DataFrame) -> None:
     if "00_indexnum" not in df.columns:
         if not (df.index.to_numpy() == np.arange(len(df))).all():
-            raise ValueError(
+            raise ValueError(  # noqa: TRY003
                 "The index must be sequential from 0 to N-1. To do this, use gdf.reset_index(drop=True) before executing this function."
             )
         df["00_indexnum"] = range(len(df))
-        # print(f"Added '00_indexnum' column to DataFrame with {len(df)} rows.")

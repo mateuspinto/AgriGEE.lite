@@ -1,10 +1,10 @@
 import ee
 
-from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 from agrigee_lite.ee_utils import ee_safe_remove_borders
+from agrigee_lite.sat.abstract_satellite import DataSourceSatellite
 
 
-class MapBiomas(AbstractSatellite):
+class MapBiomas(DataSourceSatellite):
     def __init__(self) -> None:
         super().__init__()
         self.imageAsset: str = (
