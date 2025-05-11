@@ -1,6 +1,6 @@
 [project]
 name = "agrigee_lite"
-version = "1.0.0"
+version = "1.0.1"
 description = "Because using satellite data shouldn't require rocket science, neither in code nor in hardware."
 authors = [{ name = "Mateus Pinto da Silva", email = "mateus.p.silva@ufv.br" }]
 readme = "README.md"
@@ -14,7 +14,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "anyio>=4.9.0",
     "uvloop>=0.21.0",
-    "smart_open>=7.1.0",
+    "smart_open[gcs]>=7.1.0",
     "pandera>=0.23.1",
     "topojson>=1.9",
 ]

@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agrigee-lite"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
@@ -18,7 +18,7 @@ dependencies = [
     { name = "geopandas" },
     { name = "pandera" },
     { name = "pyarrow" },
-    { name = "smart-open" },
+    { name = "smart-open", extra = ["gcs"] },
     { name = "topojson" },
     { name = "tqdm" },
     { name = "uvloop" },
@@ -51,7 +51,7 @@ requires-dist = [
     { name = "geopandas", specifier = ">=1.0.1" },
     { name = "pandera", specifier = ">=0.23.1" },
     { name = "pyarrow", specifier = ">=19.0.1" },
-    { name = "smart-open", specifier = ">=7.1.0" },
+    { name = "smart-open", extras = ["gcs"], specifier = ">=7.1.0" },
     { name = "topojson", specifier = ">=1.9" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "uvloop", specifier = ">=0.21.0" },
@@ -2407,6 +2407,11 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/21/30/1f41c3d3b8cec82024b4b277bfd4e5b18b765ae7279eb9871fa25c503778/smart_open-7.1.0.tar.gz", hash = "sha256:a4f09f84f0f6d3637c6543aca7b5487438877a21360e7368ccf1f704789752ba", size = 72044 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7a/18/9a8d9f01957aa1f8bbc5676d54c2e33102d247e146c1a3679d3bd5cc2e3a/smart_open-7.1.0-py3-none-any.whl", hash = "sha256:4b8489bb6058196258bafe901730c7db0dcf4f083f316e97269c66f45502055b", size = 61746 },
+]
+
+[package.optional-dependencies]
+gcs = [
+    { name = "google-cloud-storage" },
 ]
 
 [[package]]
