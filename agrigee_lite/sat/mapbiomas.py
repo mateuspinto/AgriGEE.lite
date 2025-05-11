@@ -12,7 +12,7 @@ class MapBiomas(DataSourceSatellite):
         )
         self.pixelSize: int = 30
         self.startDate = "1985-02-24"
-        self.endDate = "2023-12-32"
+        self.endDate = "2023-12-31"
         self.shortName = "mapbiomasmajclass"
 
     def compute(
