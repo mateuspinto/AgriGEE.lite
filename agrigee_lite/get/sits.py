@@ -5,6 +5,7 @@ import logging.handlers
 import pathlib
 import queue
 from functools import partial
+from typing import Optional
 
 import anyio
 import ee
@@ -12,6 +13,7 @@ import geopandas as gpd
 import pandas as pd
 import pandera as pa
 from shapely import Polygon
+from smart_open import open
 from tqdm.std import tqdm
 
 from agrigee_lite.ee_utils import ee_gdf_to_feature_collection, ee_get_tasks_status
@@ -20,9 +22,12 @@ from agrigee_lite.misc import (
     create_gdf_hash,
     long_to_wide_dataframe,
     quadtree_clustering,
+    reconstruct_df_with_indexnum,
+    reduce_results_dataframe_size,
     remove_underscore_in_df,
 )
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
+from agrigee_lite.task_manager import GEETaskManager
 
 
 # @cached # Doesn't work with lists as parameters :(
@@ -327,11 +332,9 @@ def download_multiple_sits_chunks_multithread(
         df = pd.read_parquet(f)
         whole_result_df = pd.concat([whole_result_df, df], ignore_index=True)
 
-    whole_result_df = (
-        whole_result_df.sort_values(by=["indexnum"], kind="stable").reset_index(drop=True).drop(columns=["indexnum"])
-    )
-
+    whole_result_df = reconstruct_df_with_indexnum(whole_result_df, len(gdf))
     whole_result_df.fillna(0, inplace=True)
+    whole_result_df = reduce_results_dataframe_size(whole_result_df)
 
     return whole_result_df
 
@@ -345,7 +348,7 @@ def download_multiple_sits_task_gdrive(
     subsampling_max_pixels: float = 1e13,
     taskname: str = "",
     gee_save_folder: str = "GEE_EXPORTS",
-) -> None:
+) -> ee.batch.Task:
     if taskname == "":
         taskname = file_stem
 
@@ -371,7 +374,7 @@ def download_multiple_sits_task_gdrive(
         selectors=["00_indexnum", "01_doy", *satellite.selectedBands],
     )
 
-    task.start()
+    return task
 
 
 def download_multiple_sits_task_gcs(
@@ -383,7 +386,7 @@ def download_multiple_sits_task_gcs(
     date_types: list[str] | None = None,
     subsampling_max_pixels: float = 1e13,
     taskname: str = "",
-) -> None:
+) -> ee.batch.Task:
     if taskname == "":
         taskname = file_path
 
@@ -409,7 +412,7 @@ def download_multiple_sits_task_gcs(
         selectors=["00_indexnum", "01_doy", *satellite.selectedBands],
     )
 
-    task.start()
+    return task
 
 
 def download_multiple_sits_chunks_gdrive(
@@ -420,6 +423,8 @@ def download_multiple_sits_chunks_gdrive(
     subsampling_max_pixels: float = 1e13,
     cluster_size: int = 500,
     gee_save_folder: str = "GEE_EXPORTS",
+    force_redownload: bool = False,
+    wait: bool = True,
 ) -> None:
     if len(gdf) == 0:
         print("Empty GeoDataFrame, nothing to download")
@@ -440,6 +445,8 @@ def download_multiple_sits_chunks_gdrive(
     })
     schema.validate(gdf, lazy=True)
 
+    task_mgr = GEETaskManager()  # To handle the new tasks
+
     tasks_df = ee_get_tasks_status()
     completed_or_running_tasks = set(
         tasks_df.description.apply(lambda x: x.split("_", 1)[0] + "_" + x.split("_", 2)[2]).tolist()
@@ -453,8 +460,10 @@ def download_multiple_sits_chunks_gdrive(
     for cluster_id in tqdm(sorted(gdf.cluster_id.unique())):
         cluster_id = int(cluster_id)
 
-        if f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks:
-            download_multiple_sits_task_gdrive(
+        if (force_redownload) or (
+            f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks
+        ):
+            task = download_multiple_sits_task_gdrive(
                 gdf[gdf.cluster_id == cluster_id],
                 satellite,
                 f"{satellite.shortName}_{hashname}_{cluster_id}",
@@ -465,6 +474,13 @@ def download_multiple_sits_chunks_gdrive(
                 gee_save_folder=gee_save_folder,
             )
 
+            task_mgr.add(task)
+
+    task_mgr.start()  # Start all tasks at once allows user to cancel them before submitted to GEE
+
+    if wait:
+        task_mgr.wait()
+
 
 def download_multiple_sits_chunks_gcs(
     gdf: gpd.GeoDataFrame,
@@ -474,7 +490,9 @@ def download_multiple_sits_chunks_gcs(
     date_types: list[str] | None = None,
     subsampling_max_pixels: float = 1e13,
     cluster_size: int = 500,
-) -> None:
+    force_redownload: bool = False,
+    wait: bool = True,
+) -> None | pd.DataFrame:
     if len(gdf) == 0:
         print("Empty GeoDataFrame, nothing to download")
         return None
@@ -494,6 +512,7 @@ def download_multiple_sits_chunks_gcs(
     })
     schema.validate(gdf, lazy=True)
 
+    task_mgr = GEETaskManager()
     tasks_df = ee_get_tasks_status()
     completed_or_running_tasks = set(
         tasks_df.description.apply(lambda x: x.split("_", 1)[0] + "_" + x.split("_", 2)[2]).tolist()
@@ -503,13 +522,16 @@ def download_multiple_sits_chunks_gcs(
     gdf = quadtree_clustering(gdf, cluster_size)
     username = getpass.getuser().replace("_", "")
     hashname = create_gdf_hash(gdf)
+    file_uris = []
 
     for cluster_id in tqdm(sorted(gdf.cluster_id.unique())):
         cluster_id = int(cluster_id)
 
-        if f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks:
+        if (not force_redownload) and (
+            f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks
+        ):
             # TODO: Also skip if the file already exists in GCS
-            download_multiple_sits_task_gcs(
+            task = download_multiple_sits_task_gcs(
                 gdf[gdf.cluster_id == cluster_id],
                 satellite,
                 reducers=reducers,
@@ -519,3 +541,25 @@ def download_multiple_sits_chunks_gcs(
                 file_path=f"{satellite.shortName}_{hashname}/{cluster_id}",
                 taskname=f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
             )
+
+            task_mgr.add(task)
+
+        file_uris.append(f"gs://{bucket_name}/{satellite.shortName}_{hashname}/{cluster_id}")
+
+    task_mgr.start()
+
+    if wait:
+        task_mgr.wait()
+
+        df = pd.DataFrame()
+        for file_uri in file_uris:
+            with open(file_uri, "rb") as f:
+                sub_df = pd.read_csv(f)
+                df = pd.concat([df, sub_df], ignore_index=True)
+
+        remove_underscore_in_df(df)
+        df = long_to_wide_dataframe(df, satellite.shortName)
+        df = reduce_results_dataframe_size(df)
+        return df
+    else:
+        return None

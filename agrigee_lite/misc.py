@@ -192,6 +192,9 @@ def long_to_wide_dataframe(df: pd.DataFrame, prefix: str = "", group_col: str = 
                 df_wide[col] = df_wide[col].astype(original_dtypes[orig_col])
                 break
 
+    obs_count = pd.DataFrame(df.groupby(group_col).size().rename(f"{prefix}_observations"))
+    df_wide = obs_count.join(df_wide)
+
     return df_wide.reset_index()
 
 
@@ -239,3 +242,40 @@ def add_indexnum_column(df: pd.DataFrame) -> None:
                 "The index must be sequential from 0 to N-1. To do this, use gdf.reset_index(drop=True) before executing this function."
             )
         df["00_indexnum"] = range(len(df))
+
+
+def reconstruct_df_with_indexnum(whole_result_df: pd.DataFrame, N: int) -> pd.DataFrame:
+    if "indexnum" not in whole_result_df.columns:
+        raise ValueError("'indexnum' column is required")  # noqa: TRY003
+
+    all_indexes = pd.DataFrame({"indexnum": range(N)})
+
+    merged = all_indexes.merge(whole_result_df, on="indexnum", how="left")
+
+    filled = merged.fillna(0)
+
+    return filled.sort_values(by="indexnum", kind="stable").reset_index(drop=True).drop(columns=["indexnum"])
+
+
+def reduce_results_dataframe_size(whole_results_df: pd.DataFrame) -> pd.DataFrame:
+    int_columns = list(
+        filter(
+            lambda x: x.split("_", 1)[1].split("_", 1)[0] in {"doy", "class", "year", "observations"},
+            whole_results_df.columns.tolist(),
+        )
+    )
+    float_columns = list(
+        filter(
+            lambda x: x.split("_", 1)[1].split("_", 1)[0]
+            not in {"doy", "class", "year", "fyear", "timestamp", "observations"},
+            whole_results_df.columns.tolist(),
+        )
+    )
+
+    if "fyear" in whole_results_df.columns.tolist():
+        whole_results_df["fyear"] = whole_results_df["fyear"].astype(np.float32)
+
+    whole_results_df[int_columns] = whole_results_df[int_columns].astype(np.uint16)
+    whole_results_df[float_columns] = whole_results_df[float_columns].astype(np.float16)
+
+    return whole_results_df
