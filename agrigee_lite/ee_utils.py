@@ -20,6 +20,8 @@ def ee_get_date_value(stats: ee.Dictionary, ee_img: ee.Image, date_types: list[s
             stats = stats.set("02_year", ee_img.date().get("year"))
         elif date_type == "fyear":
             stats = stats.set("03_fyear", ee_img.date().getFraction("year").add(ee_img.date().get("year")))
+        elif date_type == "timestamp":
+            stats = stats.set("04_timestamp", ee.Date(ee_img.date()).format("YYYY-MM-dd"))
         else:
             raise ValueError(f"Unknown date_type: '{date_type}'")  # noqa: TRY003
 

@@ -180,6 +180,8 @@ def download_multiple_sits_multithread(
     if indexes_with_errors:
         run_downloads(indexes_with_errors, num_threads=num_threads_retry)
 
+    whole_result_df = reduce_results_dataframe_size(whole_result_df)
+
     return whole_result_df
 
 

@@ -258,24 +258,42 @@ def reconstruct_df_with_indexnum(whole_result_df: pd.DataFrame, N: int) -> pd.Da
 
 
 def reduce_results_dataframe_size(whole_results_df: pd.DataFrame) -> pd.DataFrame:
+    print(whole_results_df.columns.tolist())
+
+    result_columns = whole_results_df.columns.tolist()
+
+    if "indexnum" in result_columns:
+        result_columns.remove("indexnum")
+
     int_columns = list(
         filter(
             lambda x: x.split("_", 1)[1].split("_", 1)[0] in {"doy", "class", "year", "observations"},
-            whole_results_df.columns.tolist(),
+            result_columns,
         )
     )
     float_columns = list(
         filter(
             lambda x: x.split("_", 1)[1].split("_", 1)[0]
             not in {"doy", "class", "year", "fyear", "timestamp", "observations"},
-            whole_results_df.columns.tolist(),
+            result_columns,
+        )
+    )
+    timestamp_columns = list(
+        filter(
+            lambda x: x.split("_", 1)[1].split("_", 1)[0] in {"timestamp"},
+            result_columns,
         )
     )
 
-    if "fyear" in whole_results_df.columns.tolist():
+    if "fyear" in result_columns:
         whole_results_df["fyear"] = whole_results_df["fyear"].astype(np.float32)
 
     whole_results_df[int_columns] = whole_results_df[int_columns].astype(np.uint16)
     whole_results_df[float_columns] = whole_results_df[float_columns].astype(np.float16)
+
+    for timestamp_col in timestamp_columns:
+        whole_results_df[timestamp_col] = pd.to_datetime(
+            whole_results_df[timestamp_col], format="%Y-%m-%d", errors="coerce"
+        )
 
     return whole_results_df
