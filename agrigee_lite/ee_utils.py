@@ -259,9 +259,11 @@ def ee_filter_img_collection_invalid_pixels(
         ee.Filter.gte("ZZ_USER_VALID_PIXELS", min_valid_pixels)
     )
 
-    ee_img_collection = ee_img_collection.map(
-        lambda img: img.set("ZZ_USER_TIME_DUMMY", img.date().format("YYYY-MM-dd"))
-    ).sort("ZZ_USER_TIME_DUMMY")
+    ee_img_collection = (
+        ee_img_collection.map(lambda img: img.set("ZZ_USER_TIME_DUMMY", img.date().format("YYYY-MM-dd")))
+        .sort("ZZ_USER_TIME_DUMMY")
+        .distinct("ZZ_USER_TIME_DUMMY")
+    )
 
     return ee_img_collection
 

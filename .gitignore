@@ -150,3 +150,6 @@ core.*
 *.npz
 
 !data/sample.parquet
+
+*.pdf
+*.html

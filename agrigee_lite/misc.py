@@ -202,8 +202,10 @@ def wide_to_long_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["indexnum"] = range(len(df))
     df_long = df.melt(id_vars=["indexnum"], var_name="band_time", value_name="value")
-
+    df_long = df_long[df_long.value != 0].reset_index(drop=True)
     df_long[["prefix", "band", "idx"]] = df_long["band_time"].str.extract(r"([^_]+)_(\w+)_(\d+)")
+
+    df_long = df_long.dropna(subset=["idx"]).reset_index(drop=True)
 
     df_long["idx"] = df_long["idx"].astype(int)
     df_long["value"] = pd.to_numeric(df_long["value"], errors="coerce")
@@ -258,8 +260,6 @@ def reconstruct_df_with_indexnum(whole_result_df: pd.DataFrame, N: int) -> pd.Da
 
 
 def reduce_results_dataframe_size(whole_results_df: pd.DataFrame) -> pd.DataFrame:
-    print(whole_results_df.columns.tolist())
-
     result_columns = whole_results_df.columns.tolist()
 
     if "indexnum" in result_columns:
