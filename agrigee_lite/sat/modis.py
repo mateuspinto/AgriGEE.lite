@@ -13,7 +13,7 @@ from agrigee_lite.sat.abstract_satellite import OpticalSatellite
 
 
 class Modis(OpticalSatellite):
-    def __init__(self, bands: list[str] | None = None, rescale_0_1: bool = True) -> None:
+    def __init__(self, bands: list[str] | None = None) -> None:
         if bands is None:
             bands = ["red", "nir"]
 
@@ -36,9 +36,6 @@ class Modis(OpticalSatellite):
 
         remap = {name: f"{idx}_{name}" for idx, name in enumerate(bands)}
         self.selectedBands = {remap[b]: self.availableBands[b] for b in bands if b in self.availableBands}
-
-        self.rescale_0_1 = rescale_0_1
-        self.scaleBands = lambda img: img
 
     @staticmethod
     def _mask_modis_clouds(img: ee.Image) -> ee.Image:
@@ -77,10 +74,9 @@ class Modis(OpticalSatellite):
 
         modis_imgc = ee_filter_img_collection_invalid_pixels(modis_imgc, ee_geometry, self.pixelSize, 2)
 
-        if self.rescale_0_1:
-            modis_imgc = modis_imgc.map(
-                lambda img: ee.Image(img).addBands(ee.Image(img).add(100).divide(16_100), overwrite=True)
-            )
+        modis_imgc = modis_imgc.map(
+            lambda img: ee.Image(img).addBands(ee.Image(img).add(100).divide(16_100), overwrite=True)
+        )
 
         return ee.ImageCollection(modis_imgc)
 
@@ -96,10 +92,6 @@ class Modis(OpticalSatellite):
 
         modis = self.imageCollection(ee_feature)
 
-        # round_int_16 is True only if reducers are None or contain exclusively 'mean' and/or 'median' and the image is not rescaled to 0-1
-        allowed_reducers = {"mean", "median"}
-        round_int_16 = (reducers is None or set(reducers).issubset(allowed_reducers)) and not self.rescale_0_1
-
         feats = modis.map(
             partial(
                 ee_map_bands_and_doy,
@@ -107,8 +99,7 @@ class Modis(OpticalSatellite):
                 ee_feature=ee_feature,
                 pixel_size=self.pixelSize,
                 subsampling_max_pixels=ee_get_number_of_pixels(geom, subsampling_max_pixels, self.pixelSize),
-                reducer=ee_get_reducers(["mean"] if reducers is None else reducers),
-                round_int_16=round_int_16,
+                reducer=ee_get_reducers(reducers),
             )
         )
         return feats

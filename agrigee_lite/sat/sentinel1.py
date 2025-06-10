@@ -83,9 +83,6 @@ class Sentinel1(RadarSatellite):
             remap_bands[b]: self.availableBands[b] for b in bands if b in self.availableBands
         }
 
-        # keep values in dB - no scaling needed
-        self.scaleBands = lambda x: x
-
     @staticmethod
     def _mask_edge(img: ee.Image) -> ee.Image:
         """

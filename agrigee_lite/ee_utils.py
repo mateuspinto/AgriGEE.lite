@@ -16,7 +16,6 @@ def ee_map_bands_and_doy(
     pixel_size: int,
     subsampling_max_pixels: ee.Number,
     reducer: ee.Reducer,
-    round_int_16: bool = False,
 ) -> ee.Feature:
     ee_img = ee.Image(ee_img)
     ee_stats = ee_img.reduceRegion(
@@ -26,9 +25,6 @@ def ee_map_bands_and_doy(
         maxPixels=subsampling_max_pixels,
         bestEffort=True,
     ).map(lambda _, value: ee.Number(ee.Algorithms.If(ee.Algorithms.IsEqual(value, None), 0, value)))
-
-    if round_int_16:
-        ee_stats = ee_stats.map(lambda _, value: ee.Number(value).round().int16())
 
     ee_stats = ee_stats.set("01_timestamp", ee.Date(ee_img.date()).format("YYYY-MM-dd"))
     ee_stats = ee_stats.set("00_indexnum", ee_feature.get("0"))

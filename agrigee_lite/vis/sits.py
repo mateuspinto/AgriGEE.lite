@@ -29,8 +29,6 @@ def visualize_single_sits(
     alpha: float = 1,
 ) -> None:
     long_sits = download_single_sits(geometry, start_date, end_date, satellite)
-    band_columns = long_sits.columns[long_sits.columns != "timestamp"]
-    long_sits[band_columns] = satellite.scaleBands(long_sits[band_columns])
 
     if band_or_indice_to_plot in ALL_NUMPY_INDICES:
         y = compute_index_from_df(long_sits, ALL_NUMPY_INDICES[band_or_indice_to_plot])

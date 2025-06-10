@@ -87,7 +87,6 @@ class AbstractLandsat(OpticalSatellite):
             remap[b]: self.availableBands[b] for b in bands if b in self.availableBands
         }
         self.selectedBands["cloudq"] = "QA_PIXEL"
-        self.scaleBands = lambda x: x
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         geom = ee_feature.geometry()
