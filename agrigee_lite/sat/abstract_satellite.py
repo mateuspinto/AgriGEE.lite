@@ -23,6 +23,9 @@ class AbstractSatellite:
     ) -> ee.FeatureCollection:
         return ee.FeatureCollection()
 
+    def log_dict(self) -> dict:
+        return {self.__class__.__name__: self.__dict__}
+
 
 class OpticalSatellite(AbstractSatellite):
     def __init__(self) -> None:

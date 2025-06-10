@@ -204,3 +204,12 @@ def add_indexnum_column(df: pd.DataFrame) -> None:
                 "The index must be sequential from 0 to N-1. To do this, use gdf.reset_index(drop=True) before executing this function."
             )
         df["00_indexnum"] = range(len(df))
+
+
+def log_dict_function_call_summary(ignore: list[str] | None = None) -> dict[str, dict[str, str]]:
+    frame = inspect.currentframe().f_back
+    func_name = frame.f_code.co_name
+    args, _, _, values = inspect.getargvalues(frame)
+    ignore = ignore or []
+    args_dict = {str(arg): str(values[arg]) for arg in args if arg not in ignore}
+    return {func_name: args_dict}

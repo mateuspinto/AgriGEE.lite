@@ -1,5 +1,6 @@
 import concurrent.futures
 import getpass
+import json
 import logging
 import logging.handlers
 import pathlib
@@ -20,6 +21,7 @@ from agrigee_lite.ee_utils import ee_gdf_to_feature_collection, ee_get_tasks_sta
 from agrigee_lite.misc import (
     add_indexnum_column,
     create_gdf_hash,
+    log_dict_function_call_summary,
     quadtree_clustering,
     remove_underscore_in_df,
 )
@@ -34,7 +36,7 @@ def download_single_sits(
     end_date: pd.Timestamp | str,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
-    subsampling_max_pixels: float = 1e13,
+    subsampling_max_pixels: float = 1_000,
 ) -> pd.DataFrame:
     start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
     end_date = end_date.strftime("%Y-%m-%d") if isinstance(end_date, pd.Timestamp) else end_date
@@ -64,7 +66,7 @@ def download_multiple_sits(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
-    subsampling_max_pixels: float = 1e13,
+    subsampling_max_pixels: float = 1_000,
 ) -> pd.DataFrame:
     add_indexnum_column(gdf)
 
@@ -91,7 +93,7 @@ def download_multiple_sits_multithread(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
-    subsampling_max_pixels: float = 1e13,
+    subsampling_max_pixels: float = 1_000,
     mini_chunksize: int = 10,
     num_threads_rush: int = 30,
     num_threads_retry: int = 10,
@@ -176,7 +178,7 @@ async def __download_multiple_sits_async(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
-    subsampling_max_pixels: float = 1e13,
+    subsampling_max_pixels: float = 1_000,
     mini_chunksize: int = 10,
     initial_concurrency: int = 30,
     retry_concurrency: int = 10,
@@ -256,7 +258,7 @@ def download_multiple_sits_chunks_multithread(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
-    subsampling_max_pixels: float = 1e13,
+    subsampling_max_pixels: float = 1_000,
     chunksize: int = 10000,
     mini_chunksize: int = 10,
     initial_concurrency: int = 30,
@@ -331,7 +333,7 @@ def download_multiple_sits_task_gdrive(
     satellite: AbstractSatellite,
     file_stem: str,
     reducers: list[str] | None = None,
-    subsampling_max_pixels: float = 1e13,
+    subsampling_max_pixels: float = 1_000,
     taskname: str = "",
     gee_save_folder: str = "GEE_EXPORTS",
 ) -> ee.batch.Task:
@@ -368,7 +370,7 @@ def download_multiple_sits_task_gcs(
     bucket_name: str,
     file_path: str,
     reducers: list[str] | None = None,
-    subsampling_max_pixels: float = 1e13,
+    subsampling_max_pixels: float = 1_000,
     taskname: str = "",
 ) -> ee.batch.Task:
     if taskname == "":
@@ -402,7 +404,7 @@ def download_multiple_sits_chunks_gdrive(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: list[str] | None = None,
-    subsampling_max_pixels: float = 1e13,
+    subsampling_max_pixels: float = 1_000,
     cluster_size: int = 500,
     gee_save_folder: str = "GEE_EXPORTS",
     force_redownload: bool = False,
@@ -468,7 +470,7 @@ def download_multiple_sits_chunks_gcs(
     satellite: AbstractSatellite,
     bucket_name: str,
     reducers: list[str] | None = None,
-    subsampling_max_pixels: float = 1e13,
+    subsampling_max_pixels: float = 1_000,
     cluster_size: int = 500,
     force_redownload: bool = False,
     wait: bool = True,
@@ -502,6 +504,20 @@ def download_multiple_sits_chunks_gcs(
     gdf = quadtree_clustering(gdf, cluster_size)
     username = getpass.getuser().replace("_", "")
     hashname = create_gdf_hash(gdf)
+
+    gcs_save_folder = f"{satellite.shortName}_{hashname}"
+    metadata_dict: dict[str, str] = {}
+    metadata_dict |= log_dict_function_call_summary(["gdf", "satellite"])
+    metadata_dict |= satellite.log_dict()
+    metadata_dict["user"] = getpass.getuser()
+    metadata_dict["creation_date"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with open(f"{gcs_save_folder}/metadata.json", "w") as f:
+        json.dump(metadata_dict, f, indent=4)
+
+    with open(f"{gcs_save_folder}/geodataframe.parquet", "wb") as f:
+        gdf.to_parquet(f, compression="brotli")
+
     file_uris = []
 
     for cluster_id in tqdm(sorted(gdf.cluster_id.unique())):
@@ -517,7 +533,7 @@ def download_multiple_sits_chunks_gcs(
                 reducers=reducers,
                 subsampling_max_pixels=subsampling_max_pixels,
                 bucket_name=bucket_name,
-                file_path=f"{satellite.shortName}_{hashname}/{cluster_id}",
+                file_path=f"/{cluster_id}",
                 taskname=f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
             )
 
