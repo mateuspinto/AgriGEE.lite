@@ -157,7 +157,6 @@ class Sentinel2(OpticalSatellite):
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
         reducers: list[str] | None = None,
-        date_types: list[str] | None = None,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
         ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 35000)
@@ -183,7 +182,6 @@ class Sentinel2(OpticalSatellite):
                 pixel_size=self.pixelSize,
                 subsampling_max_pixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
                 reducer=ee_get_reducers(reducers),
-                date_types=date_types,
                 round_int_16=round_int_16,
             )
         )

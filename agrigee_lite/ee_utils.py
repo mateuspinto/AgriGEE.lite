@@ -9,25 +9,6 @@ import numpy as np
 import pandas as pd
 
 
-def ee_get_date_value(stats: ee.Dictionary, ee_img: ee.Image, date_types: list[str] | None = None) -> ee.Dictionary:
-    if date_types is None:
-        date_types = ["doy"]
-
-    for date_type in date_types:
-        if date_type == "doy":
-            stats = stats.set("01_doy", ee_img.date().getRelative("day", "year").add(1))
-        elif date_type == "year":
-            stats = stats.set("02_year", ee_img.date().get("year"))
-        elif date_type == "fyear":
-            stats = stats.set("03_fyear", ee_img.date().getFraction("year").add(ee_img.date().get("year")))
-        elif date_type == "timestamp":
-            stats = stats.set("04_timestamp", ee.Date(ee_img.date()).format("YYYY-MM-dd"))
-        else:
-            raise ValueError(f"Unknown date_type: '{date_type}'")  # noqa: TRY003
-
-    return stats
-
-
 def ee_map_bands_and_doy(
     ee_img: ee.Image,
     ee_geometry: ee.Geometry,
@@ -35,7 +16,6 @@ def ee_map_bands_and_doy(
     pixel_size: int,
     subsampling_max_pixels: ee.Number,
     reducer: ee.Reducer,
-    date_types: list[str] | None,
     round_int_16: bool = False,
 ) -> ee.Feature:
     ee_img = ee.Image(ee_img)
@@ -50,7 +30,7 @@ def ee_map_bands_and_doy(
     if round_int_16:
         ee_stats = ee_stats.map(lambda _, value: ee.Number(value).round().int16())
 
-    ee_stats = ee_get_date_value(ee_stats, ee_img, date_types)
+    ee_stats = ee_stats.set("01_timestamp", ee.Date(ee_img.date()).format("YYYY-MM-dd"))
     ee_stats = ee_stats.set("00_indexnum", ee_feature.get("0"))
 
     return ee.Feature(None, ee_stats)

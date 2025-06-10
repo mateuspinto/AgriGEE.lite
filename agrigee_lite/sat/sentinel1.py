@@ -137,7 +137,6 @@ class Sentinel1(RadarSatellite):
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
         reducers: list[str] | None = None,
-        date_types: list[str] | None = None,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
         ee_geometry = ee.Geometry(
@@ -154,7 +153,6 @@ class Sentinel1(RadarSatellite):
                 pixel_size=self.pixelSize,
                 subsampling_max_pixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
                 reducer=ee_get_reducers(reducers),
-                date_types=date_types,
             )
         )
 

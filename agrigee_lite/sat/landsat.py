@@ -109,7 +109,6 @@ class AbstractLandsat(OpticalSatellite):
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
         reducers: list[str] | None = None,
-        date_types: list[str] | None = None,
     ) -> ee.FeatureCollection:
         geom = ee_feature.geometry()
         geom = ee_safe_remove_borders(geom, self.pixelSize, 50000)
@@ -123,7 +122,6 @@ class AbstractLandsat(OpticalSatellite):
                 pixel_size=self.pixelSize,
                 subsampling_max_pixels=ee_get_number_of_pixels(geom, subsampling_max_pixels, self.pixelSize),
                 reducer=ee_get_reducers(reducers),
-                date_types=date_types,
             )
         )
         return features

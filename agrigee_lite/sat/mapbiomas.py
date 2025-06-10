@@ -20,7 +20,6 @@ class MapBiomas(DataSourceSatellite):
         ee_feature: ee.Feature,
         subsampling_max_pixels: float | None = None,
         reducers: list[str] | None = None,
-        date_types: list[str] | None = None,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
         ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 50000)
