@@ -358,7 +358,7 @@ def download_multiple_sits_task_gdrive(
         fileFormat="CSV",
         fileNamePrefix=file_stem,
         folder=gee_save_folder,
-        selectors=["00_indexnum", "01_doy", *satellite.selectedBands],
+        selectors=["00_indexnum", "01_timestamp", *satellite.selectedBands],
     )
 
     return task
@@ -394,7 +394,7 @@ def download_multiple_sits_task_gcs(
         description=taskname,
         fileFormat="CSV",
         fileNamePrefix=file_path,
-        selectors=["00_indexnum", "01_doy", *satellite.selectedBands],
+        selectors=["00_indexnum", "01_timestamp", *satellite.selectedBands],
     )
 
     return task
@@ -432,6 +432,7 @@ def download_multiple_sits_chunks_gdrive(
     task_mgr = GEETaskManager()  # To handle the new tasks
 
     tasks_df = ee_get_tasks_status()
+    tasks_df = tasks_df[tasks_df.description.str.startswith("agl_multiple_sits_")]
     completed_or_running_tasks = set(
         tasks_df.description.apply(lambda x: x.split("_", 1)[0] + "_" + x.split("_", 2)[2]).tolist()
     )  # The task is the same, no matter who started it
@@ -496,6 +497,7 @@ def download_multiple_sits_chunks_gcs(
 
     task_mgr = GEETaskManager()
     tasks_df = ee_get_tasks_status()
+    tasks_df = tasks_df[tasks_df.description.str.startswith("agl_")].reset_index(drop=True)
     completed_or_running_tasks = set(
         tasks_df.description.apply(lambda x: x.split("_", 1)[0] + "_" + x.split("_", 2)[2]).tolist()
     )  # The task is the same, no matter who started it
@@ -505,17 +507,17 @@ def download_multiple_sits_chunks_gcs(
     username = getpass.getuser().replace("_", "")
     hashname = create_gdf_hash(gdf)
 
-    gcs_save_folder = f"{satellite.shortName}_{hashname}"
+    gcs_save_folder = f"agl/{satellite.shortName}_{hashname}"
     metadata_dict: dict[str, str] = {}
     metadata_dict |= log_dict_function_call_summary(["gdf", "satellite"])
     metadata_dict |= satellite.log_dict()
-    metadata_dict["user"] = getpass.getuser()
+    metadata_dict["user"] = username
     metadata_dict["creation_date"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    with open(f"{gcs_save_folder}/metadata.json", "w") as f:
+    with open(f"gs://{bucket_name}/{gcs_save_folder}/metadata.json", "w") as f:
         json.dump(metadata_dict, f, indent=4)
 
-    with open(f"{gcs_save_folder}/geodataframe.parquet", "wb") as f:
+    with open(f"gs://{bucket_name}/{gcs_save_folder}/geodataframe.parquet", "wb") as f:
         gdf.to_parquet(f, compression="brotli")
 
     file_uris = []
@@ -523,7 +525,7 @@ def download_multiple_sits_chunks_gcs(
     for cluster_id in tqdm(sorted(gdf.cluster_id.unique())):
         cluster_id = int(cluster_id)
 
-        if (not force_redownload) and (
+        if (force_redownload) or (
             f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks
         ):
             # TODO: Also skip if the file already exists in GCS
@@ -533,13 +535,13 @@ def download_multiple_sits_chunks_gcs(
                 reducers=reducers,
                 subsampling_max_pixels=subsampling_max_pixels,
                 bucket_name=bucket_name,
-                file_path=f"/{cluster_id}",
+                file_path=f"{gcs_save_folder}/{cluster_id}",
                 taskname=f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
             )
 
             task_mgr.add(task)
 
-        file_uris.append(f"gs://{bucket_name}/{satellite.shortName}_{hashname}/{cluster_id}")
+        file_uris.append(f"gs://{bucket_name}/{gcs_save_folder}/{satellite.shortName}_{hashname}/{cluster_id}")
 
     task_mgr.start()
 
