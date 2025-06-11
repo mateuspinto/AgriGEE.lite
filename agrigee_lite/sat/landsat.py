@@ -86,7 +86,9 @@ class AbstractLandsat(OpticalSatellite):
         self.selectedBands: dict[str, str] = {
             remap[b]: self.availableBands[b] for b in bands if b in self.availableBands
         }
-        self.selectedBands["cloudq"] = "QA_PIXEL"
+
+        self.usingBands: dict[str, str] = self.selectedBands.copy()
+        self.usingBands["cloudq"] = "QA_PIXEL"
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         geom = ee_feature.geometry()
@@ -98,7 +100,7 @@ class AbstractLandsat(OpticalSatellite):
         col = ee.ImageCollection(self.imageCollectionName).filter(ee_filter)
         col = col.map(ee_l_apply_sr_scale_factors) if self.useSr else col.map(remove_l_toa_tough_clouds)
 
-        col = col.select(list(self.selectedBands.values()), list(self.selectedBands.keys()))
+        col = col.select(list(self.usingBands.values()), list(self.usingBands.keys()))
         col = col.map(ee_l_mask)
         col = ee_filter_img_collection_invalid_pixels(col, geom, self.pixelSize, 12)
         return ee.ImageCollection(col)
