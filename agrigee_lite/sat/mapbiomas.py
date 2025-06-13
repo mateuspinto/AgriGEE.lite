@@ -23,6 +23,7 @@ class MapBiomas(DataSourceSatellite):
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
         ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 50000)
+        ee_feature = ee_feature.setGeometry(ee_geometry)
 
         mb_image = ee.Image(self.imageAsset)
 

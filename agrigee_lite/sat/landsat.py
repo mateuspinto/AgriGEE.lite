@@ -113,12 +113,12 @@ class AbstractLandsat(OpticalSatellite):
     ) -> ee.FeatureCollection:
         geom = ee_feature.geometry()
         geom = ee_safe_remove_borders(geom, self.pixelSize, 50000)
+        ee_feature = ee_feature.setGeometry(geom)
 
         col = self.imageCollection(ee_feature)
         features = col.map(
             partial(
                 ee_map_bands_and_doy,
-                ee_geometry=geom,
                 ee_feature=ee_feature,
                 pixel_size=self.pixelSize,
                 subsampling_max_pixels=ee_get_number_of_pixels(geom, subsampling_max_pixels, self.pixelSize),

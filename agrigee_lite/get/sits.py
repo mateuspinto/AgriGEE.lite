@@ -7,7 +7,6 @@ import pathlib
 import queue
 from functools import partial
 
-import anyio
 import ee
 import geopandas as gpd
 import numpy as np
@@ -48,7 +47,7 @@ def download_single_sits(
         )
 
     ee_feature = ee.Feature(
-        ee.Geometry(geometry.__geo_interface__),
+        geometry.__geo_interface__,
         {"s": start_date, "e": end_date, "0": 0},
     )
     ee_expression = satellite.compute(ee_feature, reducers=reducers, subsampling_max_pixels=subsampling_max_pixels)
@@ -185,6 +184,8 @@ async def __download_multiple_sits_async(
     initial_timeout: float = 20,
     retry_timeout: float = 10,
 ) -> pd.DataFrame:
+    import anyio
+
     add_indexnum_column(gdf)
     log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
 

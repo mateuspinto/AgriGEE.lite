@@ -12,11 +12,10 @@ dependencies = [
     "geopandas>=1.0.1",
     "pyarrow>=19.0.1",
     "tqdm>=4.67.1",
-    "anyio>=4.9.0",
-    "uvloop>=0.21.0",
     "smart_open[gcs]>=7.1.0",
     "pandera>=0.23.1",
     "topojson>=1.9",
+    "matplotlib>=3.10.1",
 ]
 classifiers = [
     "Intended Audience :: Developers",
@@ -28,6 +27,9 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+
+[project.optional-dependencies]
+async = ["anyio>=4.9.0", "uvloop>=0.21.0"]
 
 [project.urls]
 Homepage = "https://mateuspinto.github.io/agrigee_lite/"
@@ -50,7 +52,6 @@ dev = [
     "pandas-stubs>=2.2.3.250308",
     "types-shapely>=2.0.0.20250202",
     "types-tqdm>=4.67.0.20250319",
-    "matplotlib>=3.10.1",
 ]
 
 [build-system]

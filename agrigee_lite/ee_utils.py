@@ -11,7 +11,6 @@ import pandas as pd
 
 def ee_map_bands_and_doy(
     ee_img: ee.Image,
-    ee_geometry: ee.Geometry,
     ee_feature: ee.Feature,
     pixel_size: int,
     subsampling_max_pixels: ee.Number,
@@ -20,7 +19,7 @@ def ee_map_bands_and_doy(
     ee_img = ee.Image(ee_img)
     ee_stats = ee_img.reduceRegion(
         reducer=reducer,
-        geometry=ee_geometry,
+        geometry=ee_feature.geometry(),
         scale=pixel_size,
         maxPixels=subsampling_max_pixels,
         bestEffort=True,
@@ -231,6 +230,12 @@ def ee_get_reducers(reducer_names: list[str] | None = None) -> ee.Reducer:  # no
 def ee_filter_img_collection_invalid_pixels(
     ee_img_collection: ee.ImageCollection, ee_geometry: ee.Geometry, pixel_size: int, min_valid_pixels: int = 20
 ) -> ee.ImageCollection:
+    min_valid_pixels = ee.Algorithms.If(
+        ee_geometry.area(),
+        ee.Number(min_valid_pixels),
+        ee.Number(1),
+    )
+
     ee_img_collection = ee_img_collection.map(lambda i: ee_map_valid_pixels(i, ee_geometry, pixel_size)).filter(
         ee.Filter.gte("ZZ_USER_VALID_PIXELS", min_valid_pixels)
     )

@@ -154,20 +154,13 @@ class Sentinel2(OpticalSatellite):
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
         ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 35000)
+        ee_feature = ee_feature.setGeometry(ee_geometry)
 
-        ee_geometry = ee.Geometry(
-            ee.Algorithms.If(
-                ee_geometry.buffer(-self.pixelSize).area().gte(35000),
-                ee_geometry.buffer(-self.pixelSize),
-                ee_geometry,
-            )
-        )
         s2_img = self.imageCollection(ee_feature)
 
         features = s2_img.map(
             partial(
                 ee_map_bands_and_doy,
-                ee_geometry=ee_geometry,
                 ee_feature=ee_feature,
                 pixel_size=self.pixelSize,
                 subsampling_max_pixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
