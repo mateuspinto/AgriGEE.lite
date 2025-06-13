@@ -10,6 +10,7 @@ from typing import ParamSpec, TypeVar
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from shapely.geometry import MultiPolygon, Point, Polygon
 from topojson import Topology
 from tqdm.std import tqdm
 
@@ -213,3 +214,70 @@ def log_dict_function_call_summary(ignore: list[str] | None = None) -> dict[str,
     ignore = ignore or []
     args_dict = {str(arg): str(values[arg]) for arg in args if arg not in ignore}
     return {func_name: args_dict}
+
+
+def create_grid_centroids_numpy(geometry: Polygon | MultiPolygon, n_cells=10) -> np.ndarray:
+    try:
+        xmin, ymin, xmax, ymax = geometry.bounds
+        cell_size = (xmax - xmin) / n_cells
+
+        num_cols = int(np.ceil((xmax - xmin) / cell_size))
+        num_rows = int(np.ceil((ymax - ymin) / cell_size))
+        max_points = num_cols * num_rows
+
+        centroids = np.empty((max_points, 2), dtype=np.float32)
+        count = 0
+
+        for x in np.arange(xmin + cell_size / 2, xmax, cell_size):
+            for y in np.arange(ymin + cell_size / 2, ymax, cell_size):
+                point = Point(x, y)
+                if geometry.contains(point):
+                    centroids[count] = [x, y]
+                    count += 1
+
+        if count >= n_cells:
+            return centroids[np.random.choice(count, size=n_cells, replace=False)]
+        if count == n_cells:
+            return centroids[np.random.choice(count, size=n_cells, replace=True)]
+        else:  # count < n_cells:
+            return np.zeros((n_cells, 2), dtype=np.float32)
+    except:  # noqa: E722
+        return np.zeros((n_cells, 2), dtype=np.float32)
+
+
+def generate_grid_random_points_from_gdf(gdf: gpd.GeoDataFrame, num_points_per_geometry=10) -> gpd.GeoDataFrame:
+    centroids = np.empty((num_points_per_geometry * gdf.geometry.nunique(), 2), dtype=np.float32)
+    geometry_ids = np.empty((num_points_per_geometry * gdf.geometry.nunique()), dtype=np.int32)
+
+    for n, (_, row) in enumerate(
+        tqdm(gdf[["geometry", "geometry_id"]].drop_duplicates().iterrows(), total=gdf.geometry.nunique())
+    ):
+        geom = row.geometry
+        geometry_id = row.geometry_id
+        centroids_sub = create_grid_centroids_numpy(geom, n_cells=num_points_per_geometry)
+        centroids[n * num_points_per_geometry : (n + 1) * num_points_per_geometry, :] = centroids_sub
+        geometry_ids[n * num_points_per_geometry : (n + 1) * num_points_per_geometry] = geometry_id
+
+    gdf = gpd.GeoDataFrame(geometry=[Point(lon, lat) for lon, lat in centroids], crs=gdf.crs)
+    gdf["geometry_id"] = geometry_ids
+
+    return gdf
+
+
+def random_points_from_gdf(
+    gdf: gpd.GeoDataFrame, num_points_per_geometry: int = 10, buffer: int = -10
+) -> gpd.GeoDataFrame:
+    if buffer != 0:
+        gdf = gdf.copy()
+        gdf = quadtree_clustering(gdf)
+        gdf["geometry"] = gdf.to_crs(gdf.estimate_utm_crs()).buffer(-10).to_crs("EPSG:4326")
+
+    gdf["geometry_id"] = pd.factorize(gdf["geometry"])[0]
+    points_gdf = generate_grid_random_points_from_gdf(gdf, num_points_per_geometry)
+    points_gdf = points_gdf.merge(
+        gdf.drop(columns=["geometry"]).reset_index().rename(columns={"index": "original_index"}),
+        on="geometry_id",
+        how="inner",
+    )
+
+    return points_gdf
