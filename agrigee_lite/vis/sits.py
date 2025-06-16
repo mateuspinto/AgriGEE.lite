@@ -23,11 +23,12 @@ def visualize_single_sits(
     end_date: pd.Timestamp | str,
     satellite: AbstractSatellite,
     band_or_indice_to_plot: str,
-    axis: plt.Axes | None = None,
+    reducer: str = "median",
+    ax: plt.Axes | None = None,
     color: str = "blue",
     alpha: float = 1,
 ) -> None:
-    long_sits = download_single_sits(geometry, start_date, end_date, satellite)
+    long_sits = download_single_sits(geometry, start_date, end_date, satellite, reducers=[reducer])
 
     if band_or_indice_to_plot in ALL_NUMPY_INDICES:
         y = compute_index_from_df(long_sits, ALL_NUMPY_INDICES[band_or_indice_to_plot])
@@ -36,7 +37,7 @@ def visualize_single_sits(
 
     long_sits["timestamp"] = pd.to_datetime(long_sits["timestamp"])
 
-    if axis is None:
+    if ax is None:
         plt.plot(
             long_sits.timestamp,
             y,
@@ -49,8 +50,8 @@ def visualize_single_sits(
             color=color,
         )
     else:
-        axis.plot(long_sits.timestamp, y, color=color, alpha=alpha, label=satellite.shortName)
-        axis.scatter(
+        ax.plot(long_sits.timestamp, y, color=color, alpha=alpha, label=satellite.shortName)
+        ax.scatter(
             long_sits.timestamp,
             y,
             color=color,
@@ -61,11 +62,12 @@ def visualize_multiple_sits(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     band_or_indice_to_plot: str,
-    axis: plt.Axes | None = None,
+    reducer: str = "median",
+    ax: plt.Axes | None = None,
     color: str = "blue",
     alpha: float = 0.5,
 ) -> None:
-    long_sits = download_multiple_sits_chunks_multithread(gdf, satellite)
+    long_sits = download_multiple_sits_chunks_multithread(gdf, satellite, reducers=[reducer])
 
     if band_or_indice_to_plot in ALL_NUMPY_INDICES:
         long_sits["y"] = compute_index_from_df(long_sits, ALL_NUMPY_INDICES[band_or_indice_to_plot])
@@ -81,7 +83,7 @@ def visualize_multiple_sits(
             else indexnumm_df[band_or_indice_to_plot].values
         )
 
-        if axis is None:
+        if ax is None:
             plt.plot(
                 indexnumm_df.timestamp,
                 y,
@@ -89,4 +91,4 @@ def visualize_multiple_sits(
                 alpha=alpha,
             )
         else:
-            axis.plot(indexnumm_df.timestamp, y, color=color, alpha=alpha, label=satellite.shortName)
+            ax.plot(indexnumm_df.timestamp, y, color=color, alpha=alpha, label=satellite.shortName)

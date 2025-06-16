@@ -3,6 +3,7 @@ from functools import partial
 import ee
 
 from agrigee_lite.ee_utils import (
+    ee_add_indexes_to_image,
     ee_filter_img_collection_invalid_pixels,
     ee_get_number_of_pixels,
     ee_get_reducers,
@@ -59,10 +60,14 @@ class Sentinel1(RadarSatellite):
     def __init__(
         self,
         bands: list[str] | None = None,
+        indices: list[str] | None = None,
         ascending: bool = True,
     ):
         if bands is None:
             bands = ["vv", "vh"]
+
+        if indices is None:
+            indices = []
 
         super().__init__()
 
@@ -78,10 +83,14 @@ class Sentinel1(RadarSatellite):
         # original → product band
         self.availableBands: dict[str, str] = {"vv": "VV", "vh": "VH"}
 
-        remap_bands = {s: f"{n}_{s}" for n, s in enumerate(bands)}
-        self.selectedBands: dict[str, str] = {
-            remap_bands[b]: self.availableBands[b] for b in bands if b in self.availableBands
-        }
+        self.selectedBands: list[tuple[str, str, str]] = [
+            (band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)
+        ]
+
+        self.selectedIndices: list[str] = [
+            (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
+            for n, indice_name in enumerate(indices)
+        ]
 
     @staticmethod
     def _mask_edge(img: ee.Image) -> ee.Image:
@@ -107,7 +116,6 @@ class Sentinel1(RadarSatellite):
         ee_geometry = ee_feature.geometry()
         ee_start = ee_feature.get("s")
         ee_end = ee_feature.get("e")
-        ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 35000)
 
         ee_filter = ee.Filter.And(ee.Filter.bounds(ee_geometry), ee.Filter.date(ee_start, ee_end))
 
@@ -122,7 +130,19 @@ class Sentinel1(RadarSatellite):
             )
             .filter(ee.Filter.eq("orbitProperties_pass", "ASCENDING" if self.ascending else "DESCENDING"))
             .map(self._mask_edge)
-            .select(list(self.availableBands.values()), list(self.selectedBands.keys()))
+            .select(list(self.availableBands.values()), list(self.availableBands.keys()))
+        )
+
+        if self.selectedIndices:
+            s1_img = s1_img.map(
+                partial(ee_add_indexes_to_image, indexes=[expression for (expression, _, _) in self.selectedIndices])
+            )
+
+        s1_img = s1_img.select(
+            [natural_band_name for natural_band_name, _ in self.selectedBands]
+            + [indice_name for _, indice_name, _ in self.selectedIndices],
+            [numeral_band_name for _, numeral_band_name in self.selectedBands]
+            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
         )
 
         s1_img = ee_filter_img_collection_invalid_pixels(s1_img, ee_geometry, self.pixelSize, 20)
@@ -152,9 +172,3 @@ class Sentinel1(RadarSatellite):
         )
 
         return features
-
-    def __str__(self) -> str:
-        return self.shortName
-
-    def __repr__(self) -> str:
-        return self.shortName

@@ -267,3 +267,11 @@ def ee_safe_remove_borders(ee_geometry: ee.Geometry, border_size: int, area_lowe
             ee_geometry,
         )
     )
+
+
+def ee_add_indexes_to_image(image: ee.Image, indexes: list[str]) -> ee.Image:
+    for index in indexes:
+        calculated = image.expression(index, {"i": image})
+        image = image.addBands(calculated, None, True)
+
+    return image

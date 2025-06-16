@@ -1,14 +1,15 @@
 import ee
 
+from agrigee_lite.vegetation_indices import VEGETATION_INDICES
+
 
 class AbstractSatellite:
     def __init__(self) -> None:
         self.startDate = ""
         self.endDate = ""
         self.shortName = "IDoNotExist"
-        self.originalBands: list[str] = []
-        self.renamed_bands: list[str] = []
-        self.selectedBands: dict[str, str] = {}
+        self.availableBands: dict[str, str] = {}
+        self.selectedBands: list[tuple[str, str, str]] = {}
         self.imageCollectionName = ""
         self.pixelSize: int = 0
 
@@ -25,6 +26,20 @@ class AbstractSatellite:
 
     def log_dict(self) -> dict:
         return {self.__class__.__name__: self.__dict__}
+
+    @property
+    def availableIndices(self) -> dict[str, str]:
+        return {
+            name: idx["expression"]
+            for name, idx in VEGETATION_INDICES.items()
+            if idx["required_bands"].issubset(self.availableBands.keys())
+        }
+
+    def __str__(self) -> str:
+        return self.shortName
+
+    def __repr__(self) -> str:
+        return self.shortName
 
 
 class OpticalSatellite(AbstractSatellite):

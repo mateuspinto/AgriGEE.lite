@@ -183,6 +183,11 @@ def compute_index_from_df(df: pd.DataFrame, np_function: Callable) -> np.ndarray
     sig = inspect.signature(np_function)
     kwargs = {}
 
+    index_name = str(np_function.__name__).split("np_")[1]
+
+    if index_name in df.columns.tolist():
+        return df[index_name].to_numpy()
+
     for param_name, param in sig.parameters.items():
         if param_name in df.columns:
             kwargs[param_name] = df[param_name].values

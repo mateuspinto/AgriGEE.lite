@@ -3,6 +3,7 @@ from functools import partial
 import ee
 
 from agrigee_lite.ee_utils import (
+    ee_add_indexes_to_image,
     ee_filter_img_collection_invalid_pixels,
     ee_get_number_of_pixels,
     ee_get_reducers,
@@ -13,9 +14,12 @@ from agrigee_lite.sat.abstract_satellite import OpticalSatellite
 
 
 class Modis(OpticalSatellite):
-    def __init__(self, bands: list[str] | None = None) -> None:
+    def __init__(self, bands: list[str] | None = None, indices: list[str] | None = None) -> None:
         if bands is None:
             bands = ["red", "nir"]
+
+        if indices is None:
+            indices = []
 
         super().__init__()
 
@@ -34,8 +38,14 @@ class Modis(OpticalSatellite):
             "nir": "sur_refl_b02",
         }
 
-        remap = {name: f"{idx}_{name}" for idx, name in enumerate(bands)}
-        self.selectedBands = {remap[b]: self.availableBands[b] for b in bands if b in self.availableBands}
+        self.selectedBands: list[tuple[str, str, str]] = [
+            (band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)
+        ]
+
+        self.selectedIndices: list[str] = [
+            (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
+            for n, indice_name in enumerate(indices)
+        ]
 
     @staticmethod
     def _mask_modis_clouds(img: ee.Image) -> ee.Image:
@@ -62,8 +72,8 @@ class Modis(OpticalSatellite):
                 .filter(ee_filter)
                 .map(self._mask_modis_clouds)
                 .select(
-                    list(self.selectedBands.values()),
-                    list(self.selectedBands.keys()),
+                    list(self.availableBands.values()),
+                    list(self.availableBands.keys()),
                 )
             )
 
@@ -72,11 +82,23 @@ class Modis(OpticalSatellite):
 
         modis_imgc = terra.merge(aqua)
 
-        modis_imgc = ee_filter_img_collection_invalid_pixels(modis_imgc, ee_geometry, self.pixelSize, 2)
-
         modis_imgc = modis_imgc.map(
             lambda img: ee.Image(img).addBands(ee.Image(img).add(100).divide(16_100), overwrite=True)
         )
+
+        if self.selectedIndices:
+            modis_imgc = modis_imgc.map(
+                partial(ee_add_indexes_to_image, indexes=[expression for (expression, _, _) in self.selectedIndices])
+            )
+
+        modis_imgc = modis_imgc.select(
+            [natural_band_name for natural_band_name, _ in self.selectedBands]
+            + [indice_name for _, indice_name, _ in self.selectedIndices],
+            [numeral_band_name for _, numeral_band_name in self.selectedBands]
+            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
+        )
+
+        modis_imgc = ee_filter_img_collection_invalid_pixels(modis_imgc, ee_geometry, self.pixelSize, 2)
 
         return ee.ImageCollection(modis_imgc)
 
@@ -103,9 +125,3 @@ class Modis(OpticalSatellite):
             )
         )
         return feats
-
-    def __str__(self) -> str:
-        return self.shortName
-
-    def __repr__(self) -> str:
-        return self.shortName

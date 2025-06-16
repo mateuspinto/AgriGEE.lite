@@ -3,6 +3,7 @@ from functools import partial
 import ee
 
 from agrigee_lite.ee_utils import (
+    ee_add_indexes_to_image,
     ee_cloud_probability_mask,
     ee_filter_img_collection_invalid_pixels,
     ee_get_number_of_pixels,
@@ -70,6 +71,7 @@ class Sentinel2(OpticalSatellite):
     def __init__(
         self,
         bands: list[str] | None = None,
+        indices: list[str] | None = None,
         use_sr: bool = True,
     ):
         if bands is None:
@@ -85,6 +87,9 @@ class Sentinel2(OpticalSatellite):
                 "swir1",
                 "swir2",
             ]
+
+        if indices is None:
+            indices = []
 
         super().__init__()
         self.useSr = use_sr
@@ -108,11 +113,14 @@ class Sentinel2(OpticalSatellite):
             "swir2": "B12",
         }
 
-        remap_bands = {s: f"{(n + 10):02}_{s}" for n, s in enumerate(bands)}
+        self.selectedBands: list[tuple[str, str, str]] = [
+            (band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)
+        ]
 
-        self.selectedBands: dict[str, str] = {
-            remap_bands[band]: self.availableBands[band] for band in bands if band in self.availableBands
-        }
+        self.selectedIndices: list[str] = [
+            (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
+            for n, indice_name in enumerate(indices)
+        ]
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()
@@ -126,9 +134,23 @@ class Sentinel2(OpticalSatellite):
             ee.ImageCollection(self.imageCollectionName)
             .filter(ee_filter)
             .select(
-                list(self.selectedBands.values()),
-                list(self.selectedBands.keys()),
+                list(self.availableBands.values()),
+                list(self.availableBands.keys()),
             )
+        )
+
+        s2_img = s2_img.map(lambda img: ee.Image(img).addBands(ee.Image(img).divide(10000), overwrite=True))
+
+        if self.selectedIndices:
+            s2_img = s2_img.map(
+                partial(ee_add_indexes_to_image, indexes=[expression for (expression, _, _) in self.selectedIndices])
+            )
+
+        s2_img = s2_img.select(
+            [natural_band_name for natural_band_name, _ in self.selectedBands]
+            + [indice_name for _, indice_name, _ in self.selectedIndices],
+            [numeral_band_name for _, numeral_band_name in self.selectedBands]
+            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
         )
 
         s2_cloud_mask = (
@@ -141,8 +163,6 @@ class Sentinel2(OpticalSatellite):
 
         s2_img = s2_img.map(lambda img: ee_cloud_probability_mask(img, 0.7, True))
         s2_img = ee_filter_img_collection_invalid_pixels(s2_img, ee_geometry, self.pixelSize, 20)
-
-        s2_img = s2_img.map(lambda img: ee.Image(img).addBands(ee.Image(img).divide(10000), overwrite=True))
 
         return ee.ImageCollection(s2_img)
 
@@ -169,9 +189,3 @@ class Sentinel2(OpticalSatellite):
         )
 
         return features
-
-    def __str__(self) -> str:
-        return self.shortName
-
-    def __repr__(self) -> str:
-        return self.shortName
