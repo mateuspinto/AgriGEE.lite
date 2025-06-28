@@ -83,9 +83,7 @@ class Sentinel1(RadarSatellite):
         # original → product band
         self.availableBands: dict[str, str] = {"vv": "VV", "vh": "VH"}
 
-        self.selectedBands: list[tuple[str, str, str]] = [
-            (band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)
-        ]
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
 
         self.selectedIndices: list[str] = [
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")

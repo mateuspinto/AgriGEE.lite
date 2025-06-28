@@ -9,7 +9,8 @@ class AbstractSatellite:
         self.endDate = ""
         self.shortName = "IDoNotExist"
         self.availableBands: dict[str, str] = {}
-        self.selectedBands: list[tuple[str, str, str]] = {}
+        self.selectedBands: list[tuple[str, str]] = []
+        self.selectedIndices: list[str] = []
         self.imageCollectionName = ""
         self.pixelSize: int = 0
 

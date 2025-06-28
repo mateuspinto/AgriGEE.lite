@@ -38,9 +38,7 @@ class Modis(OpticalSatellite):
             "nir": "sur_refl_b02",
         }
 
-        self.selectedBands: list[tuple[str, str, str]] = [
-            (band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)
-        ]
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
 
         self.selectedIndices: list[str] = [
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")

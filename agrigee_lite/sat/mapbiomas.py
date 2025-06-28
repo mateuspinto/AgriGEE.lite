@@ -1,6 +1,6 @@
 import ee
 
-from agrigee_lite.ee_utils import ee_safe_remove_borders
+from agrigee_lite.ee_utils import ee_map_valid_pixels, ee_safe_remove_borders
 from agrigee_lite.sat.abstract_satellite import DataSourceSatellite
 
 
@@ -14,6 +14,10 @@ class MapBiomas(DataSourceSatellite):
         self.startDate = "1985-02-24"
         self.endDate = "2023-12-31"
         self.shortName = "mapbiomasmajclass"
+        self.selectedBands = [
+            (None, "10_class"),
+            (None, "11_percent"),
+        ]
 
     def compute(
         self,
@@ -26,6 +30,7 @@ class MapBiomas(DataSourceSatellite):
         ee_feature = ee_feature.setGeometry(ee_geometry)
 
         mb_image = ee.Image(self.imageAsset)
+        mb_image = ee_map_valid_pixels(mb_image, ee_geometry, self.pixelSize)
 
         ee_start = ee.Feature(ee_feature).get("s")
         ee_end = ee.Feature(ee_feature).get("e")
@@ -61,15 +66,22 @@ class MapBiomas(DataSourceSatellite):
                 )
                 .get(year_str)
             )
-            return ee.Feature(
+
+            timestamp = ee.String(year_str).cat("-01-01")
+
+            stats = ee.Feature(
                 None,
                 {
                     "00_indexnum": indexnum,
-                    "02_year": year,
+                    "01_timestamp": timestamp,
                     "10_class": clazz,
                     "11_percent": percent,
                 },
             )
+
+            stats = stats.set("99_validPixelsCount", mb_image.get("ZZ_USER_VALID_PIXELS"))
+
+            return stats
 
         features = years.map(_feat_for_year)
         return ee.FeatureCollection(features)
