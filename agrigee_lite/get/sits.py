@@ -52,13 +52,15 @@ def download_single_sits(
     )
     ee_expression = satellite.compute(ee_feature, reducers=reducers, subsampling_max_pixels=subsampling_max_pixels)
 
-    sits_df = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
-        columns=["geo"]
-    )
+    sits_df = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"})
 
-    remove_underscore_in_df(sits_df)
+    if len(sits_df) == 0:
+        return pd.DataFrame()
+    else:
+        sits_df = sits_df.drop(columns=["geo"])
+        remove_underscore_in_df(sits_df)
 
-    return sits_df
+        return sits_df
 
 
 def download_multiple_sits(
@@ -79,13 +81,15 @@ def download_multiple_sits(
             )
         )
     ).flatten()
-    sits_df = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"}).drop(
-        columns=["geo"]
-    )
+    sits_df = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"})
 
-    remove_underscore_in_df(sits_df)
+    if len(sits_df) == 0:
+        return pd.DataFrame()
+    else:
+        sits_df = sits_df.drop(columns=["geo"])
+        remove_underscore_in_df(sits_df)
 
-    return sits_df
+        return sits_df
 
 
 def download_multiple_sits_multithread(

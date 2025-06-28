@@ -30,6 +30,9 @@ def visualize_single_sits(
 ) -> None:
     long_sits = download_single_sits(geometry, start_date, end_date, satellite, reducers=[reducer])
 
+    if len(long_sits) == 0:
+        return None
+
     if band_or_indice_to_plot in ALL_NUMPY_INDICES:
         y = compute_index_from_df(long_sits, ALL_NUMPY_INDICES[band_or_indice_to_plot])
     else:
@@ -68,6 +71,9 @@ def visualize_multiple_sits(
     alpha: float = 0.5,
 ) -> None:
     long_sits = download_multiple_sits_chunks_multithread(gdf, satellite, reducers=[reducer])
+
+    if len(long_sits) == 0:
+        return None
 
     if band_or_indice_to_plot in ALL_NUMPY_INDICES:
         long_sits["y"] = compute_index_from_df(long_sits, ALL_NUMPY_INDICES[band_or_indice_to_plot])

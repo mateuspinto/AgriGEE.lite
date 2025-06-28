@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.10, <4.0"
 resolution-markers = [
     "python_full_version < '3.11'",
@@ -9,26 +10,30 @@ resolution-markers = [
 
 [[package]]
 name = "agrigee-lite"
-version = "1.0.3"
+version = "1.0.5"
 source = { editable = "." }
 dependencies = [
-    { name = "anyio" },
     { name = "earthengine-api" },
     { name = "ee-s1-ard" },
     { name = "geopandas" },
+    { name = "matplotlib" },
     { name = "pandera" },
     { name = "pyarrow" },
     { name = "smart-open", extra = ["gcs"] },
     { name = "topojson" },
     { name = "tqdm" },
+]
+
+[package.optional-dependencies]
+async = [
+    { name = "anyio" },
     { name = "uvloop" },
 ]
 
-[package.dependency-groups]
+[package.dev-dependencies]
 dev = [
     { name = "deptry" },
     { name = "ipykernel" },
-    { name = "matplotlib" },
     { name = "mkdocs" },
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extra = ["python"] },
@@ -45,23 +50,24 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = ">=4.9.0" },
+    { name = "anyio", marker = "extra == 'async'", specifier = ">=4.9.0" },
     { name = "earthengine-api", specifier = ">=1.5.7" },
     { name = "ee-s1-ard", specifier = ">=1.0.5" },
     { name = "geopandas", specifier = ">=1.0.1" },
+    { name = "matplotlib", specifier = ">=3.10.1" },
     { name = "pandera", specifier = ">=0.23.1" },
     { name = "pyarrow", specifier = ">=19.0.1" },
     { name = "smart-open", extras = ["gcs"], specifier = ">=7.1.0" },
     { name = "topojson", specifier = ">=1.9" },
     { name = "tqdm", specifier = ">=4.67.1" },
-    { name = "uvloop", specifier = ">=0.21.0" },
+    { name = "uvloop", marker = "extra == 'async'", specifier = ">=0.21.0" },
 ]
+provides-extras = ["async"]
 
-[package.metadata.dependency-groups]
+[package.metadata.requires-dev]
 dev = [
     { name = "deptry", specifier = ">=0.23.0" },
     { name = "ipykernel", specifier = ">=6.29.5" },
-    { name = "matplotlib", specifier = ">=3.10.1" },
     { name = "mkdocs", specifier = ">=1.6.1" },
     { name = "mkdocs-material", specifier = ">=9.6.9" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=0.29.0" },
@@ -299,7 +305,7 @@ name = "click"
 version = "8.1.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "platform_system == 'Windows'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b9/2e/0090cbf739cee7d23781ad4b89a9894a41538e4fcf4c31dcdd705b78eb8b/click-8.1.8.tar.gz", hash = "sha256:ed53c9d8990d83c2a27deae68e4ee337473f6330c040a31d4225c9574d16096a", size = 226593 }
 wheels = [
@@ -869,7 +875,7 @@ name = "ipykernel"
 version = "6.29.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "appnope", marker = "platform_system == 'Darwin'" },
+    { name = "appnope", marker = "sys_platform == 'darwin'" },
     { name = "comm" },
     { name = "debugpy" },
     { name = "ipython", version = "8.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version != '3.11.*'" },
@@ -1239,7 +1245,7 @@ version = "1.6.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
-    { name = "colorama", marker = "platform_system == 'Windows'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "ghp-import" },
     { name = "jinja2" },
     { name = "markdown" },
@@ -2549,7 +2555,7 @@ name = "tqdm"
 version = "4.67.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "platform_system == 'Windows'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a8/4b/29b4ef32e036bb34e4ab51796dd745cdba7ed47ad142a9f4a1eb8e0c744d/tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2", size = 169737 }
 wheels = [

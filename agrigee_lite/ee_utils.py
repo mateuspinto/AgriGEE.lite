@@ -27,6 +27,7 @@ def ee_map_bands_and_doy(
 
     ee_stats = ee_stats.set("01_timestamp", ee.Date(ee_img.date()).format("YYYY-MM-dd"))
     ee_stats = ee_stats.set("00_indexnum", ee_feature.get("0"))
+    ee_stats = ee_stats.set("99_validPixelsCount", ee_img.get("ZZ_USER_VALID_PIXELS"))
 
     return ee.Feature(None, ee_stats)
 
