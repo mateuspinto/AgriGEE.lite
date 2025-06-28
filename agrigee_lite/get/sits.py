@@ -363,7 +363,7 @@ def download_multiple_sits_task_gdrive(
         fileFormat="CSV",
         fileNamePrefix=file_stem,
         folder=gee_save_folder,
-        selectors=["00_indexnum", "01_timestamp", *satellite.selectedBands],
+        selectors=["00_indexnum", "01_timestamp", *satellite.selectedBands, "99_validPixelsCount"],
     )
 
     return task
@@ -399,7 +399,7 @@ def download_multiple_sits_task_gcs(
         description=taskname,
         fileFormat="CSV",
         fileNamePrefix=file_path,
-        selectors=["00_indexnum", "01_timestamp", *satellite.selectedBands],
+        selectors=["00_indexnum", "01_timestamp", *satellite.selectedBands, "99_validPixelsCount"],
     )
 
     return task
