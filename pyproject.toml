@@ -1,6 +1,6 @@
 [project]
 name = "agrigee_lite"
-version = "1.0.5"
+version = "1.0.6"
 description = "Because using satellite data shouldn't require rocket science, neither in code nor in hardware."
 authors = [{ name = "Mateus Pinto da Silva", email = "mateus.p.silva@ufv.br" }]
 readme = "README.md"
