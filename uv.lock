@@ -10,13 +10,12 @@ resolution-markers = [
 
 [[package]]
 name = "agrigee-lite"
-version = "1.0.6"
+version = "1.0.7"
 source = { editable = "." }
 dependencies = [
     { name = "earthengine-api" },
     { name = "ee-s1-ard" },
     { name = "geopandas" },
-    { name = "matplotlib" },
     { name = "pandera" },
     { name = "pyarrow" },
     { name = "smart-open", extra = ["gcs"] },
@@ -28,6 +27,9 @@ dependencies = [
 async = [
     { name = "anyio" },
     { name = "uvloop" },
+]
+visualization = [
+    { name = "matplotlib" },
 ]
 
 [package.dev-dependencies]
@@ -54,7 +56,7 @@ requires-dist = [
     { name = "earthengine-api", specifier = ">=1.5.7" },
     { name = "ee-s1-ard", specifier = ">=1.0.5" },
     { name = "geopandas", specifier = ">=1.0.1" },
-    { name = "matplotlib", specifier = ">=3.10.1" },
+    { name = "matplotlib", marker = "extra == 'visualization'", specifier = ">=3.10.1" },
     { name = "pandera", specifier = ">=0.23.1" },
     { name = "pyarrow", specifier = ">=19.0.1" },
     { name = "smart-open", extras = ["gcs"], specifier = ">=7.1.0" },
@@ -62,7 +64,7 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "uvloop", marker = "extra == 'async'", specifier = ">=0.21.0" },
 ]
-provides-extras = ["async"]
+provides-extras = ["async", "visualization"]
 
 [package.metadata.requires-dev]
 dev = [

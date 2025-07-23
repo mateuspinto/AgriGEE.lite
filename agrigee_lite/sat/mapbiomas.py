@@ -1,6 +1,6 @@
 import ee
 
-from agrigee_lite.ee_utils import ee_map_valid_pixels, ee_safe_remove_borders
+from agrigee_lite.ee_utils import ee_get_number_of_pixels, ee_map_valid_pixels, ee_safe_remove_borders
 from agrigee_lite.sat.abstract_satellite import DataSourceSatellite
 
 
@@ -50,7 +50,7 @@ class MapBiomas(DataSourceSatellite):
                 reducer=ee.Reducer.mode(),
                 geometry=ee_geometry,
                 scale=self.pixelSize,
-                maxPixels=1e13,
+                maxPixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
                 bestEffort=True,
             )
             clazz = ee.Number(mode_dict.get(year_str)).round()
@@ -61,7 +61,7 @@ class MapBiomas(DataSourceSatellite):
                     reducer=ee.Reducer.mean(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=1e13,
+                    maxPixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
                     bestEffort=True,
                 )
                 .get(year_str)

@@ -232,7 +232,7 @@ def ee_filter_img_collection_invalid_pixels(
     ee_img_collection: ee.ImageCollection, ee_geometry: ee.Geometry, pixel_size: int, min_valid_pixels: int = 20
 ) -> ee.ImageCollection:
     min_valid_pixels = ee.Algorithms.If(
-        ee_geometry.area(),
+        ee_geometry.area(0.001),
         ee.Number(min_valid_pixels),
         ee.Number(1),
     )
@@ -256,15 +256,15 @@ def ee_get_number_of_pixels(ee_geometry: ee.Geometry, subsampling_max_pixels: fl
         return ee.Number(subsampling_max_pixels)
     else:
         pixel_area = ee.Number(pixel_size).pow(2)
-        total_pixels = ee_geometry.area().divide(pixel_area)
+        total_pixels = ee_geometry.area(0.001).divide(pixel_area)
         return total_pixels.multiply(subsampling_max_pixels).toInt()
 
 
 def ee_safe_remove_borders(ee_geometry: ee.Geometry, border_size: int, area_lower_bound: int) -> ee.Geometry:
     return ee.Geometry(
         ee.Algorithms.If(
-            ee_geometry.buffer(-border_size).area().gte(area_lower_bound),
-            ee_geometry.buffer(-border_size),
+            ee_geometry.buffer(-border_size, 0.001).area(0.001).gte(area_lower_bound),
+            ee_geometry.buffer(-border_size, 0.001),
             ee_geometry,
         )
     )

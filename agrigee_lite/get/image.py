@@ -47,6 +47,10 @@ def download_multiple_images(
     )
     ee_expression = satellite.imageCollection(ee_feature)
 
+    if ee_expression.size().getInfo() == 0:
+        logger.error("No images found for the specified parameters.")
+        return np.array([]), []
+
     max_valid_pixels = ee_expression.aggregate_max("ZZ_USER_VALID_PIXELS")
     threshold = ee.Number(max_valid_pixels).multiply(invalid_images_threshold)
     ee_expression = ee_expression.filter(ee.Filter.gte("ZZ_USER_VALID_PIXELS", threshold))

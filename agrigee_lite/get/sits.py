@@ -234,7 +234,6 @@ async def __download_multiple_sits_async(
                                 subsampling_max_pixels=subsampling_max_pixels,
                             )
                         )
-                        chunk_result_df["chunk_id"] = chunk_id
 
                     whole_result_df = pd.concat([whole_result_df, chunk_result_df])
                 except KeyboardInterrupt:
@@ -316,7 +315,10 @@ def download_multiple_sits_chunks_multithread(
                 num_threads_retry=retry_concurrency,
                 pbar=pbar,
             )
-            chunk_df["timestamp"] = pd.to_datetime(chunk_df.timestamp)
+
+            if len(chunk_df) != 0:
+                chunk_df["timestamp"] = pd.to_datetime(chunk_df.timestamp)
+
             for col in chunk_df.columns:
                 if col not in ["timestamp", "indexnum"]:
                     chunk_df[col] = chunk_df[col].astype(np.float16)
@@ -328,7 +330,8 @@ def download_multiple_sits_chunks_multithread(
         df = pd.read_parquet(f)
         whole_result_df = pd.concat([whole_result_df, df], ignore_index=True)
 
-    whole_result_df = whole_result_df.sort_values(by=["indexnum"], kind="stable").reset_index(drop=True)
+    if len(whole_result_df) != 0:
+        whole_result_df = whole_result_df.sort_values(by=["indexnum"], kind="stable").reset_index(drop=True)
 
     return whole_result_df
 

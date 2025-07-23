@@ -1,3 +1,5 @@
+import math
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -21,24 +23,35 @@ def visualize_multiple_images(
         geometry, start_date, end_date, satellite, invalid_images_threshold, num_threads_rush, num_threads_retry
     )
 
+    if len(images) == 0:
+        print("No images found for the specified parameters.")
+        return
+
     images = np.clip(images * contrast, 0, 1)
 
     images_per_row = 10
     num_rows = (len(image_names) // images_per_row) + (len(image_names) % images_per_row > 0)
 
     fig, ax = plt.subplots(
-        num_rows, images_per_row, figsize=(25, (len(image_names) // images_per_row) * 5), sharex=True, sharey=True
+        num_rows,
+        images_per_row,
+        figsize=(25, (math.ceil(len(image_names) / images_per_row)) * 5),
+        sharex=True,
+        sharey=True,
     )
+
+    ax = ax.flatten()
+
     for i in range(num_rows * images_per_row):
         if i < len(image_names):
             name = image_names[i]
             image = images[i]
 
-            ax[i // images_per_row, i % images_per_row].imshow(image)
-            ax[i // images_per_row, i % images_per_row].set_title(name)
-            ax[i // images_per_row, i % images_per_row].axis("off")
+            ax[i].imshow(image)
+            ax[i].set_title(name)
+            ax[i].axis("off")
         else:
-            fig.delaxes(ax[i // images_per_row, i % images_per_row])
+            fig.delaxes(ax[i])
 
     plt.tight_layout()
     plt.show()
