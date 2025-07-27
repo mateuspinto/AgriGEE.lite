@@ -48,7 +48,6 @@ class UnifiedSatellite(OpticalSatellite):
             datetime.fromisoformat(satellite_a.endDate), datetime.fromisoformat(satellite_b.endDate)
         ).isoformat()
 
-        self.endDate = satellite_b.endDate
         self.pixelSize = min(satellite_a.pixelSize, satellite_b.pixelSize)
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:

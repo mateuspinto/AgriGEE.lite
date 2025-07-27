@@ -40,9 +40,9 @@ def download_single_sits(
     start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
     end_date = end_date.strftime("%Y-%m-%d") if isinstance(end_date, pd.Timestamp) else end_date
 
-    if start_date < satellite.startDate or end_date > satellite.endDate:
+    if end_date < satellite.startDate or start_date > satellite.endDate:
         raise ValueError(  # noqa: TRY003
-            f"Start date {start_date} or end date {end_date} is outside the satellite's range "
+            f"Requested period ({start_date} to {end_date}) does not intersect with satellite's range "
             f"({satellite.startDate} to {satellite.endDate})"
         )
 
@@ -59,6 +59,11 @@ def download_single_sits(
     else:
         sits_df = sits_df.drop(columns=["geo"])
         remove_underscore_in_df(sits_df)
+        sits_df["timestamp"] = pd.to_datetime(sits_df["timestamp"])
+        sits_df.fillna(0, inplace=True)
+
+        band_columns = sorted(set(sits_df.columns.tolist()) - {"timestamp", "validPixelsCount"})
+        sits_df = sits_df[~(sits_df[band_columns] == 0).all(axis=1)]
 
         return sits_df
 
