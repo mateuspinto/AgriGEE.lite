@@ -51,6 +51,7 @@ The lib has 3 types of elements, which are divided into modules:
 | Landsat 9 | Blue, Green, Red, Nir, Swir1, Swir2 |  |  | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
 | MODIS Terra/Acqua | Red, Nir |  |  | Worldwide | 15 -- 30 | daily (with clouds) |  |
 | Sentinel 1 | VV, VH |  |  | Worldwide* | 10** | 5 days**** | GRD, ARD*** |
+| JAXOS PalSAR 2 | HH, HV |  |  | Worldwide | 25** | 15 days | GRD |
 | Mapbiomas Brazil | 37 Land Usage Land Cover Classes | 1985-01-01 | 2023-12-31 | Brazil | 30 | 1 year |  |
 
 ## Motivations: what an average data scientist - me - thought when I started learning GEE

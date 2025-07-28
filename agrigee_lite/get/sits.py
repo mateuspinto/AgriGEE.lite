@@ -283,12 +283,12 @@ def download_multiple_sits_chunks_multithread(
         "start_date": pa.Column(
             pa.DateTime,
             nullable=False,
-            checks=pa.Check.in_range(min_value=satellite.startDate, max_value=satellite.endDate),
+            # checks=pa.Check.in_range(min_value=satellite.startDate, max_value=satellite.endDate),
         ),
         "end_date": pa.Column(
             pa.DateTime,
             nullable=False,
-            checks=pa.Check.in_range(min_value=satellite.startDate, max_value=satellite.endDate),
+            # checks=pa.Check.in_range(min_value=satellite.startDate, max_value=satellite.endDate),
         ),
     })
     schema.validate(gdf, lazy=True)
