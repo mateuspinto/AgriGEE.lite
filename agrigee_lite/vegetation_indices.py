@@ -6,7 +6,11 @@ VEGETATION_INDICES_LIST = [
     "ndvi = (i.nir - i.red)/(i.nir + i.red)",
     "ndwi = (i.nir - i.swir1)/(i.nir + i.swir1)",
     "mndwi = (i.green - i.swir1)/(i.green + i.swir1)",
-    "vhvv = (i.vv - i.vh)/(i.vv + i.vh)",
+    # Radar-specific indices
+    "vhvv = (i.vv - i.vh)/(i.vv + i.vh)",  # VH-VV ratio (Sentinel-1)
+    "hhhv = (i.hh - i.hv)/(i.hh + i.hv)",  # HH-HV ratio (PALSAR)
+    "rvi = 4 * i.hv / (i.hh + i.hv)",  # Radar Vegetation Index (PALSAR)
+    "ravi = 4 * i.vh / (i.vv + i.vh)",  # Radar Adapted Vegetation Index (Sentinel-1)
 ]
 
 VEGETATION_INDICES = {}
