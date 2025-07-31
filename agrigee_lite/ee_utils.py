@@ -279,22 +279,26 @@ def ee_add_indexes_to_image(image: ee.Image, indexes: list[str]) -> ee.Image:
 
 
 def ee_quick_start() -> None:
-    """Quick start function to initialize Earth Engine.
+    """Quick start function to initialize Earth Engine."""
 
-    First it checks if GEE_KEY environment variable is set.
-    """
     if "GEE_KEY" in os.environ:
         gee_key = os.environ["GEE_KEY"]
 
         if gee_key.endswith(".json"):  # Corporative usage
+            credentials = ee.ServiceAccountCredentials(gee_key, gee_key)
+            ee.Initialize(credentials)
+
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gee_key
+
             with open(gee_key) as f:
-                ee.Initialize(
-                    json.load(f)["client_email"], str(gee_key), opt_url="https://earthengine-highvolume.googleapis.com"
+                key_data = json.load(f)
+                print(
+                    f"Earth Engine initialized successfully using AgriGEE.lite for corporative usage. Project: {key_data.get('project_id', 'Unknown')}, Email: {key_data.get('client_email', 'Unknown')}."
                 )
-            print("Earth Engine initialized successfully using AgriGEE.lite for corporative usage.")
+
         else:  # Academic usage
             ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project=gee_key)
-            print("Earth Engine initialized successfully using AgriGEE.lite for academic usage.")
+            print(f"Earth Engine initialized successfully using AgriGEE.lite for academic usage (project={gee_key}).")
 
     else:
         print(

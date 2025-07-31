@@ -1,11 +1,8 @@
-import ee
 from textual.app import App, ComposeResult
 from textual.timer import Timer
 from textual_pandas.widgets import DataFrameTable
 
 import agrigee_lite as agl
-
-ee.Initialize()
 
 
 class GuiTasksApp(App):
@@ -26,6 +23,11 @@ class GuiTasksApp(App):
     def refresh_table(self) -> None:
         df = agl.get_all_tasks()
         self.table.update_df(df)
+
+
+def main():
+    app = GuiTasksApp()
+    app.run()
 
 
 if __name__ == "__main__":
