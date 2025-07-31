@@ -566,7 +566,7 @@ def download_multiple_sits_chunks_gcs(
 
             task_mgr.add(task)
 
-        file_uris.append(f"gs://{bucket_name}/{gcs_save_folder}/{satellite.shortName}_{hashname}/{cluster_id}")
+        file_uris.append(f"gs://{bucket_name}/{gcs_save_folder}/{cluster_id}.csv")
 
     task_mgr.start()
 

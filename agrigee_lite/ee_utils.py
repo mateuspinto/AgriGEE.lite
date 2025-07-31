@@ -276,3 +276,27 @@ def ee_add_indexes_to_image(image: ee.Image, indexes: list[str]) -> ee.Image:
         image = image.addBands(calculated, None, True)
 
     return image
+
+
+def ee_quick_start() -> None:
+    """Quick start function to initialize Earth Engine.
+
+    First it checks if GEE_KEY environment variable is set.
+    """
+    if "GEE_KEY" in os.environ:
+        gee_key = os.environ["GEE_KEY"]
+
+        if gee_key.endswith(".json"):  # Corporative usage
+            with open(gee_key) as f:
+                ee.Initialize(
+                    json.load(f)["client_email"], str(gee_key), opt_url="https://earthengine-highvolume.googleapis.com"
+                )
+            print("Earth Engine initialized successfully using AgriGEE.lite for corporative usage.")
+        else:  # Academic usage
+            ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project=gee_key)
+            print("Earth Engine initialized successfully using AgriGEE.lite for academic usage.")
+
+    else:
+        print(
+            "Earth Engine not initialized. Please set the GEE_KEY environment variable to your Earth Engine key. You can find more information in the AgriGEE.lite documentation."
+        )

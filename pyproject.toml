@@ -1,6 +1,6 @@
 [project]
 name = "agrigee_lite"
-version = "1.0.8"
+version = "1.0.9"
 description = "Because using satellite data shouldn't require rocket science, neither in code nor in hardware."
 authors = [{ name = "Mateus Pinto da Silva", email = "mateus.p.silva@ufv.br" }]
 readme = "README.md"
@@ -30,6 +30,10 @@ classifiers = [
 [project.optional-dependencies]
 async = ["anyio>=4.9.0", "uvloop>=0.21.0"]
 visualization = ["matplotlib>=3.10.1"]
+gui_task_manager = ["textual-pandas>=0.2.3"]
+
+[project.scripts]
+agl_tm = "agrigee_lite.tgui_task_manager:main"
 
 [project.urls]
 Homepage = "https://mateuspinto.github.io/agrigee_lite/"
