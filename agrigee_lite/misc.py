@@ -24,6 +24,9 @@ def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000, max_de
         subset, depth = queue.popleft()
         n = len(subset)
 
+        if n == 0:
+            continue
+
         minx, miny, maxx, maxy = subset.total_bounds
         width = maxx - minx
         height = maxy - miny
@@ -34,15 +37,25 @@ def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000, max_de
 
         dim = "centroid_x" if depth % 2 == 0 else "centroid_y"
 
+        if subset[dim].nunique() == 1:
+            leaves.append(subset.index.to_numpy())
+            continue
+
         subset_sorted = subset.sort_values(by=dim)
-        median_idx = n // 2
-        median_val = subset_sorted.iloc[median_idx][dim]
+        median_idx = len(subset_sorted) // 2
+        try:
+            median_val = subset_sorted.iloc[median_idx][dim]
+        except IndexError:
+            leaves.append(subset.index.to_numpy())
+            continue
 
         left = subset_sorted[subset_sorted[dim] <= median_val]
         right = subset_sorted[subset_sorted[dim] > median_val]
 
-        queue.append((left, depth + 1))
-        queue.append((right, depth + 1))
+        if not left.empty:
+            queue.append((left, depth + 1))
+        if not right.empty:
+            queue.append((right, depth + 1))
 
     return leaves
 
@@ -52,6 +65,9 @@ def build_quadtree(
 ) -> list[list[int]]:
     n = len(gdf)
 
+    if n == 0:
+        return []
+
     minx, miny, maxx, maxy = gdf.total_bounds
     width = maxx - minx
     height = maxy - miny
@@ -60,16 +76,23 @@ def build_quadtree(
         return [gdf.index.to_numpy()]
 
     dim = "centroid_x" if depth % 2 == 0 else "centroid_y"
-    gdf_sorted = gdf.sort_values(by=dim)
 
-    median_idx = n // 2
-    median_val = gdf_sorted.iloc[median_idx][dim]
+    if gdf[dim].nunique() == 1:
+        return [gdf.index.to_numpy()]
+
+    gdf_sorted = gdf.sort_values(by=dim)
+    median_idx = len(gdf_sorted) // 2
+
+    try:
+        median_val = gdf_sorted.iloc[median_idx][dim]
+    except IndexError:
+        return [gdf.index.to_numpy()]
 
     left = gdf_sorted[gdf_sorted[dim] <= median_val]
     right = gdf_sorted[gdf_sorted[dim] > median_val]
 
-    left_clusters = build_quadtree(left, max_size, max_degree, depth + 1)
-    right_clusters = build_quadtree(right, max_size, max_degree, depth + 1)
+    left_clusters = build_quadtree(left, max_size, depth + 1, max_degree)
+    right_clusters = build_quadtree(right, max_size, depth + 1, max_degree)
 
     return left_clusters + right_clusters
 
