@@ -119,6 +119,10 @@ class PALSAR2ScanSAR(RadarSatellite):
             .select([self.availableBands[b] for b, _ in self.selectedBands], [b for b, _ in self.selectedBands])
         )
 
+        palsar_img = palsar_img.map(
+            lambda img: ee.Image(img).addBands(ee.Image(img).pow(2).log10().multiply(10).subtract(83), overwrite=True)
+        )
+
         if self.selectedIndices:
             palsar_img = palsar_img.map(
                 partial(ee_add_indexes_to_image, indexes=[expression for (expression, _, _) in self.selectedIndices])

@@ -15,7 +15,7 @@ from topojson import Topology
 from tqdm.std import tqdm
 
 
-def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> list[int]:
+def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000, max_degree: float = 1.0) -> list[list[int]]:
     queue: deque[tuple[gpd.GeoDataFrame, int]] = deque()
     queue.append((gdf, 0))
     leaves = []
@@ -23,7 +23,12 @@ def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> lis
     while queue:
         subset, depth = queue.popleft()
         n = len(subset)
-        if n <= max_size:
+
+        minx, miny, maxx, maxy = subset.total_bounds
+        width = maxx - minx
+        height = maxy - miny
+
+        if n <= max_size and width <= max_degree and height <= max_degree:
             leaves.append(subset.index.to_numpy())
             continue
 
@@ -42,13 +47,19 @@ def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> lis
     return leaves
 
 
-def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) -> list[int]:
+def build_quadtree(
+    gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0, max_degree: float = 1.0
+) -> list[list[int]]:
     n = len(gdf)
-    if n <= max_size:
+
+    minx, miny, maxx, maxy = gdf.total_bounds
+    width = maxx - minx
+    height = maxy - miny
+
+    if n <= max_size and width <= max_degree and height <= max_degree:
         return [gdf.index.to_numpy()]
 
     dim = "centroid_x" if depth % 2 == 0 else "centroid_y"
-
     gdf_sorted = gdf.sort_values(by=dim)
 
     median_idx = n // 2
@@ -57,8 +68,8 @@ def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) 
     left = gdf_sorted[gdf_sorted[dim] <= median_val]
     right = gdf_sorted[gdf_sorted[dim] > median_val]
 
-    left_clusters = build_quadtree(left, max_size, depth + 1)
-    right_clusters = build_quadtree(right, max_size, depth + 1)
+    left_clusters = build_quadtree(left, max_size, max_degree, depth + 1)
+    right_clusters = build_quadtree(right, max_size, max_degree, depth + 1)
 
     return left_clusters + right_clusters
 
