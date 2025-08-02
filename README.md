@@ -51,7 +51,7 @@ The lib has 3 types of elements, which are divided into modules:
 | Landsat 9 | Blue, Green, Red, Nir, Swir1, Swir2 |  |  | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
 | MODIS Terra/Acqua | Red, Nir |  |  | Worldwide | 15 -- 30 | daily (with clouds) |  |
 | Sentinel 1 | VV, VH |  |  | Worldwide* | 10** | 5 days**** | GRD, ARD*** |
-| JAXOS PalSAR 2 | HH, HV |  |  | Worldwide | 25** | 15 days | GRD |
+| JAXOS PalSAR 1/2 | HH, HV |  |  | Worldwide | 25** | 15 days | GRD |
 | Mapbiomas Brazil | 37 Land Usage Land Cover Classes | 1985-01-01 | 2023-12-31 | Brazil | 30 | 1 year |  |
 
 ## Motivations: what an average data scientist - me - thought when I started learning GEE
@@ -77,6 +77,10 @@ Yes, I was told that. The use of the term "satellite" instead of sensor, data so
 
 Absolutely not, I'm terrible at drawings and anything. I made it using GPT4, and all the rights belong to God knows who. The base art is from the Odd-Eyes Venom Dragon card from the Yu-Gi-Oh card game. The inspiration has nothing to do with venom, but rather because it is a plant dragon (agriculture), it is a fusion card (multimodal data) and it has odd-eyes (like satellites, seeing the world through different eyes). If you're a cartoonist and want to design a new mascot, I'd be more than happy to make it official.
 
+## Known Bugs
+
+- QuadTree clustering functions produce absurd results when there are very uneven geographic density distributions, for example, thousands of points in one country and a few dozen in another. Some prior geospatial partitioning is recommended.
+
 ## TO-DO
 - [x] Add Sentinel 2 as a satellite;
 - [x] Add Landsats 5, 7, 8, 9 as a satellite;
@@ -87,12 +91,12 @@ Absolutely not, I'm terrible at drawings and anything. I made it using GPT4, and
 - [x] Add Satellite Image Time Series Aggregations task download;
 - [x] Add Images online download/visualization with matplotlib;
 - [x] Add single/multiple SITS visualization
+- [x] Add smart_open[gcs] for autorecovery SITS from GCS;
+- [x] Add ALOS-2 PALSAR-2 radar;
 - [ ] Add Images online visualization with plotly;
-- [ ] Add smart_open[gcs] for autorecovery SITS from GCS;
 - [ ] Make cloud mask removable;
 - [ ] Add all other Mapbiomas;
 - [ ] Add Sentinel 1 ARD;
 - [ ] Add Sentinel 3;
-- [ ] Add ALOS-2 PALSAR-2 radar;
 - [ ] Add jurassic Landsats (1-4);
 - [ ] Add Landsat Pansharpening for image download;
