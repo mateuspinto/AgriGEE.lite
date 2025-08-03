@@ -15,6 +15,7 @@ def ee_map_bands_and_doy(
     pixel_size: int,
     subsampling_max_pixels: ee.Number,
     reducer: ee.Reducer,
+    single_image: bool = False,
 ) -> ee.Feature:
     ee_img = ee.Image(ee_img)
     ee_stats = ee_img.reduceRegion(
@@ -25,7 +26,9 @@ def ee_map_bands_and_doy(
         bestEffort=True,
     ).map(lambda _, value: ee.Number(ee.Algorithms.If(ee.Algorithms.IsEqual(value, None), 0, value)))
 
-    ee_stats = ee_stats.set("01_timestamp", ee.Date(ee_img.date()).format("YYYY-MM-dd"))
+    if not single_image:
+        ee_stats = ee_stats.set("01_timestamp", ee.Date(ee_img.date()).format("YYYY-MM-dd"))
+
     ee_stats = ee_stats.set("00_indexnum", ee_feature.get("0"))
     ee_stats = ee_stats.set("99_validPixelsCount", ee_img.get("ZZ_USER_VALID_PIXELS"))
 

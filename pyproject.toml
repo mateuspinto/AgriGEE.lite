@@ -29,7 +29,7 @@ classifiers = [
 
 [project.optional-dependencies]
 async = ["anyio>=4.9.0", "uvloop>=0.21.0"]
-visualization = ["matplotlib>=3.10.1"]
+visualization = ["matplotlib>=3.10.1", "plotly>=6.2.0"]
 gui_task_manager = ["textual-pandas>=0.2.3"]
 
 [project.scripts]

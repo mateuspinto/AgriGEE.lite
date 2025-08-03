@@ -59,3 +59,9 @@ class DataSourceSatellite(AbstractSatellite):
     def __init__(self) -> None:
         super().__init__()
         self.dateType = "dataSource"
+
+
+class SingleImageSatellite(AbstractSatellite):
+    def __init__(self) -> None:
+        super().__init__()
+        self.dateType = "singleImage"

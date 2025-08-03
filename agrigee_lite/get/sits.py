@@ -59,7 +59,10 @@ def download_single_sits(
     else:
         sits_df = sits_df.drop(columns=["geo"])
         remove_underscore_in_df(sits_df)
-        sits_df["timestamp"] = pd.to_datetime(sits_df["timestamp"])
+
+        if "timestamp" in sits_df.columns:
+            sits_df["timestamp"] = pd.to_datetime(sits_df["timestamp"])
+
         sits_df.fillna(0, inplace=True)
 
         band_columns = sorted(set(sits_df.columns.tolist()) - {"timestamp", "validPixelsCount"})
@@ -321,7 +324,7 @@ def download_multiple_sits_chunks_multithread(
                 pbar=pbar,
             )
 
-            if len(chunk_df) != 0:
+            if "timestamp" in chunk_df.columns:
                 chunk_df["timestamp"] = pd.to_datetime(chunk_df.timestamp)
 
             for col in chunk_df.columns:
