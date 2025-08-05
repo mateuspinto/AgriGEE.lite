@@ -44,15 +44,22 @@ The lib has 3 types of elements, which are divided into modules:
 
 | **Name** | **Bands** | **Start Date** | **End Date** | **Regionality** | **Pixel Size** | **Revisit Time** | **Variations** |
 |---|---|---|---|---|---|---|---|
-| Sentinel 2 | Blue, Green, Red, Re1, Re2, Re3, Nir, Re4, Swir1, Swir2 | 2016-01-01 |  | Worldwide | 10 -- 60 | 5 days (with clouds), 8 days (wo) | Surface Reflectance, Top of Atmosphere |
-| Landsat 5 | Blue, Green, Red, Nir, Swir1, Swir2 |  |  | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
-| Landsat 7 | Blue, Green, Red, Nir, Swir1, Swir2 |  |  | Worldwide* | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
-| Landsat 8 | Blue, Green, Red, Nir, Swir1, Swir2 |  |  | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
-| Landsat 9 | Blue, Green, Red, Nir, Swir1, Swir2 |  |  | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
-| MODIS Terra/Acqua | Red, Nir |  |  | Worldwide | 15 -- 30 | daily (with clouds) |  |
-| Sentinel 1 | VV, VH |  |  | Worldwide* | 10** | 5 days**** | GRD, ARD*** |
-| JAXOS PalSAR 1/2 | HH, HV |  |  | Worldwide | 25** | 15 days | GRD |
-| Mapbiomas Brazil | 37 Land Usage Land Cover Classes | 1985-01-01 | 2023-12-31 | Brazil | 30 | 1 year |  |
+| Sentinel 2 | Blue, Green, Red, Re1, Re2, Re3, Nir, Re4, Swir1, Swir2 | 2016-01-01 | (still operational) | Worldwide | 10 -- 60 | 5 days (with clouds), 8 days (wo) | Surface Reflectance, Top of Atmosphere |
+| Landsat 5 | Blue, Green, Red, Nir, Swir1, Swir2 | 1984-03-01 | 2013-05-05 | Worldwide* | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
+| Landsat 7 | Blue, Green, Red, Nir, Swir1, Swir2 | 1999-04-15 | 2022-04-06 | Worldwide* | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
+| Landsat 8 | Blue, Green, Red, Nir, Swir1, Swir2 | 2013-04-11 | (still operational) | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
+| Landsat 9 | Blue, Green, Red, Nir, Swir1, Swir2 | 2021-11-01 | (still operational) | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
+| MODIS Terra/Acqua | Red, Nir | 2000-02-18 | (still operational) | Worldwide | 15 -- 30 | daily (with clouds) |  |
+| Sentinel 1 | VV, VH - C Band | 2014-10-03 | (still operational) | Worldwide* | 10** | 5 days**** | GRD, ARD*** |
+| JAXOS PalSAR 1/2 | HH, HV - L Band | 2014-08-04 | (still operational) | Worldwide | 25** | 15 days | GRD |
+| Mapbiomas Brazil | 37 Land Usage Land Cover Classes | 1985-10-01 | 2023-10-01 | Brazil | 30 | 1 year |  |
+| ANADEM | Slope, Elevation, Aspect | (single image) | (single image) | South America | 30** | (single image) |  |
+
+### Observations
+- * Landsat 7 images began to have artifacts caused by a sensor problem from 2003-05-31.
+- ** Pixel size/spatial resolution for active sensors (or models that use active sensors) often lacks a clear value, as it depends on the angle of incidence. Here, the GEE value itself is explained, representing the highest resolution captured.
+- *** Analysis Ready Data (ARD) is an advanced post-processing method applied to a SAR. However, it is quite costly, and its usefulness must be evaluated on a case-by-case basis.
+- **** Sentinel 1 was a twin satellite, one of which went out of service due to a malfunction. Therefore, the revisit time varies greatly depending on the desired geolocation.
 
 ## Motivations: what an average data scientist - me - thought when I started learning GEE
 
