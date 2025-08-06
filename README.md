@@ -52,14 +52,15 @@ The lib has 3 types of elements, which are divided into modules:
 | MODIS Terra/Acqua | Red, Nir | 2000-02-18 | (still operational) | Worldwide | 15 -- 30 | daily (with clouds) |  |
 | Sentinel 1 | VV, VH - C Band | 2014-10-03 | (still operational) | Worldwide* | 10** | 5 days**** | GRD, ARD*** |
 | JAXOS PalSAR 1/2 | HH, HV - L Band | 2014-08-04 | (still operational) | Worldwide | 25** | 15 days | GRD |
-| Mapbiomas Brazil | 37 Land Usage Land Cover Classes | 1985-10-01 | 2023-10-01 | Brazil | 30 | 1 year |  |
-| ANADEM | Slope, Elevation, Aspect | (single image) | (single image) | South America | 30** | (single image) |  |
+| [Mapbiomas Brazil](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | 37 Land Usage Land Cover Classes | 1985-10-01 | 2023-10-01 | Brazil | 30 | 1 year |  |
+| [ANADEM](https://hge-iph.github.io/anadem/) | Slope, Elevation, Aspect | (single image) | (single image) | South America | 30** | (single image) |  |
+| [World Reference Base (2006) Soil Groups - SoilGrids](https://soilgrids.org/) | WRB Soil Classes (30 categories) | (single image) | (single image) | Worldwide | 250 | (single image) | |
 
 ### Observations
-- * Landsat 7 images began to have artifacts caused by a sensor problem from 2003-05-31.
-- ** Pixel size/spatial resolution for active sensors (or models that use active sensors) often lacks a clear value, as it depends on the angle of incidence. Here, the GEE value itself is explained, representing the highest resolution captured.
-- *** Analysis Ready Data (ARD) is an advanced post-processing method applied to a SAR. However, it is quite costly, and its usefulness must be evaluated on a case-by-case basis.
-- **** Sentinel 1 was a twin satellite, one of which went out of service due to a malfunction. Therefore, the revisit time varies greatly depending on the desired geolocation.
+- *Landsat 7 images began to have artifacts caused by a sensor problem from 2003-05-31.
+- **Pixel size/spatial resolution for active sensors (or models that use active sensors) often lacks a clear value, as it depends on the angle of incidence. Here, the GEE value itself is explained, representing the highest resolution captured.
+- ***Analysis Ready Data (ARD) is an advanced post-processing method applied to a SAR. However, it is quite costly, and its usefulness must be evaluated on a case-by-case basis.
+- ****Sentinel 1 was a twin satellite, one of which went out of service due to a malfunction. Therefore, the revisit time varies greatly depending on the desired geolocation.
 
 ## Motivations: what an average data scientist - me - thought when I started learning GEE
 
