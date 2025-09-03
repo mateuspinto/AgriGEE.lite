@@ -9,49 +9,28 @@ import numpy as np
 import pandas as pd
 
 
-def ee_get_date_value(stats: ee.Dictionary, ee_img: ee.Image, date_types: list[str] | None = None) -> ee.Dictionary:
-    if date_types is None:
-        date_types = ["doy"]
-
-    for date_type in date_types:
-        if date_type == "doy":
-            stats = stats.set("01_doy", ee_img.date().getRelative("day", "year").add(1))
-        elif date_type == "year":
-            stats = stats.set("02_year", ee_img.date().get("year"))
-        elif date_type == "fyear":
-            stats = stats.set("03_fyear", ee_img.date().getFraction("year").add(ee_img.date().get("year")))
-        elif date_type == "timestamp":
-            stats = stats.set("04_timestamp", ee.Date(ee_img.date()).format("YYYY-MM-dd"))
-        else:
-            raise ValueError(f"Unknown date_type: '{date_type}'")  # noqa: TRY003
-
-    return stats
-
-
 def ee_map_bands_and_doy(
     ee_img: ee.Image,
-    ee_geometry: ee.Geometry,
     ee_feature: ee.Feature,
     pixel_size: int,
     subsampling_max_pixels: ee.Number,
     reducer: ee.Reducer,
-    date_types: list[str] | None,
-    round_int_16: bool = False,
+    single_image: bool = False,
 ) -> ee.Feature:
     ee_img = ee.Image(ee_img)
     ee_stats = ee_img.reduceRegion(
         reducer=reducer,
-        geometry=ee_geometry,
+        geometry=ee_feature.geometry(),
         scale=pixel_size,
         maxPixels=subsampling_max_pixels,
         bestEffort=True,
     ).map(lambda _, value: ee.Number(ee.Algorithms.If(ee.Algorithms.IsEqual(value, None), 0, value)))
 
-    if round_int_16:
-        ee_stats = ee_stats.map(lambda _, value: ee.Number(value).round().int16())
+    if not single_image:
+        ee_stats = ee_stats.set("01_timestamp", ee.Date(ee_img.date()).format("YYYY-MM-dd"))
 
-    ee_stats = ee_get_date_value(ee_stats, ee_img, date_types)
     ee_stats = ee_stats.set("00_indexnum", ee_feature.get("0"))
+    ee_stats = ee_stats.set("99_validPixelsCount", ee_img.get("ZZ_USER_VALID_PIXELS"))
 
     return ee.Feature(None, ee_stats)
 
@@ -255,6 +234,12 @@ def ee_get_reducers(reducer_names: list[str] | None = None) -> ee.Reducer:  # no
 def ee_filter_img_collection_invalid_pixels(
     ee_img_collection: ee.ImageCollection, ee_geometry: ee.Geometry, pixel_size: int, min_valid_pixels: int = 20
 ) -> ee.ImageCollection:
+    min_valid_pixels = ee.Algorithms.If(
+        ee_geometry.area(0.001),
+        ee.Number(min_valid_pixels),
+        ee.Number(1),
+    )
+
     ee_img_collection = ee_img_collection.map(lambda i: ee_map_valid_pixels(i, ee_geometry, pixel_size)).filter(
         ee.Filter.gte("ZZ_USER_VALID_PIXELS", min_valid_pixels)
     )
@@ -274,15 +259,51 @@ def ee_get_number_of_pixels(ee_geometry: ee.Geometry, subsampling_max_pixels: fl
         return ee.Number(subsampling_max_pixels)
     else:
         pixel_area = ee.Number(pixel_size).pow(2)
-        total_pixels = ee_geometry.area().divide(pixel_area)
+        total_pixels = ee_geometry.area(0.001).divide(pixel_area)
         return total_pixels.multiply(subsampling_max_pixels).toInt()
 
 
 def ee_safe_remove_borders(ee_geometry: ee.Geometry, border_size: int, area_lower_bound: int) -> ee.Geometry:
     return ee.Geometry(
         ee.Algorithms.If(
-            ee_geometry.buffer(-border_size).area().gte(area_lower_bound),
-            ee_geometry.buffer(-border_size),
+            ee_geometry.buffer(-border_size, 0.001).area(0.001).gte(area_lower_bound),
+            ee_geometry.buffer(-border_size, 0.001),
             ee_geometry,
         )
     )
+
+
+def ee_add_indexes_to_image(image: ee.Image, indexes: list[str]) -> ee.Image:
+    for index in indexes:
+        calculated = image.expression(index, {"i": image})
+        image = image.addBands(calculated, None, True)
+
+    return image
+
+
+def ee_quick_start() -> None:
+    """Quick start function to initialize Earth Engine."""
+
+    if "GEE_KEY" in os.environ:
+        gee_key = os.environ["GEE_KEY"]
+
+        if gee_key.endswith(".json"):  # Corporative usage
+            credentials = ee.ServiceAccountCredentials(gee_key, gee_key)
+            ee.Initialize(credentials)
+
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gee_key
+
+            with open(gee_key) as f:
+                key_data = json.load(f)
+                print(
+                    f"Earth Engine initialized successfully using AgriGEE.lite for corporative usage. Project: {key_data.get('project_id', 'Unknown')}, Email: {key_data.get('client_email', 'Unknown')}."
+                )
+
+        else:  # Academic usage
+            ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project=gee_key)
+            print(f"Earth Engine initialized successfully using AgriGEE.lite for academic usage (project={gee_key}).")
+
+    else:
+        print(
+            "Earth Engine not initialized. Please set the GEE_KEY environment variable to your Earth Engine key. You can find more information in the AgriGEE.lite documentation."
+        )

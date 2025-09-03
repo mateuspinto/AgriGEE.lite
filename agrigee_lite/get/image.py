@@ -12,7 +12,7 @@ from tqdm.std import tqdm
 
 from agrigee_lite.ee_utils import ee_img_to_numpy
 from agrigee_lite.misc import cached
-from agrigee_lite.sat.abstract_satellite import AbstractSatellite
+from agrigee_lite.sat.abstract_satellite import AbstractSatellite, SingleImageSatellite
 
 
 # @cached
@@ -47,6 +47,10 @@ def download_multiple_images(
     )
     ee_expression = satellite.imageCollection(ee_feature)
 
+    if ee_expression.size().getInfo() == 0:
+        logger.error("No images found for the specified parameters.")
+        return np.array([]), []
+
     max_valid_pixels = ee_expression.aggregate_max("ZZ_USER_VALID_PIXELS")
     threshold = ee.Number(max_valid_pixels).multiply(invalid_images_threshold)
     ee_expression = ee_expression.filter(ee.Filter.gte("ZZ_USER_VALID_PIXELS", threshold))
@@ -65,7 +69,7 @@ def download_multiple_images(
             img = ee_img_to_numpy(
                 ee_expression.filter(ee.Filter.eq("system:index", image_index)).first().clip(ee_geometry),
                 ee_geometry,
-                10,
+                satellite.pixelSize,
             )
             return img, i, image_index  # noqa: TRY300
         except Exception as e:
@@ -99,3 +103,36 @@ def download_multiple_images(
         )
 
     return np.stack(all_images), image_names
+
+
+def download_single_image(
+    geometry: Polygon,
+    satellite: SingleImageSatellite,
+) -> np.ndarray:
+    log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
+
+    file_handler = logging.FileHandler("logging.log", mode="a")
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    file_handler.setFormatter(formatter)
+
+    queue_listener = logging.handlers.QueueListener(log_queue, file_handler)
+    queue_listener.start()
+
+    queue_handler = logging.handlers.QueueHandler(log_queue)
+    logger = logging.getLogger("logger_sits")
+    logger.setLevel(logging.ERROR)
+    logger.addHandler(queue_handler)
+    logger.propagate = False
+
+    ee_geometry = ee.Geometry(geometry.__geo_interface__)
+    ee_feature = ee.Feature(ee_geometry, {"0": 1})
+
+    try:
+        image = satellite.image(ee_feature)
+        image_clipped = image.clip(ee_geometry)
+        image_np = ee_img_to_numpy(image_clipped, ee_geometry, satellite.pixelSize)
+    except Exception as e:
+        logger.exception(f"download_single_image_{satellite.shortName} = {e}")  # noqa: TRY401
+        return np.array([])
+
+    return image_np

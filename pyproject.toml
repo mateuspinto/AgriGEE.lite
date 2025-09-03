@@ -1,6 +1,6 @@
 [project]
 name = "agrigee_lite"
-version = "1.0.3"
+version = "1.0.18"
 description = "Because using satellite data shouldn't require rocket science, neither in code nor in hardware."
 authors = [{ name = "Mateus Pinto da Silva", email = "mateus.p.silva@ufv.br" }]
 readme = "README.md"
@@ -12,8 +12,6 @@ dependencies = [
     "geopandas>=1.0.1",
     "pyarrow>=19.0.1",
     "tqdm>=4.67.1",
-    "anyio>=4.9.0",
-    "uvloop>=0.21.0",
     "smart_open[gcs]>=7.1.0",
     "pandera>=0.23.1",
     "topojson>=1.9",
@@ -28,6 +26,14 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+
+[project.optional-dependencies]
+async = ["anyio>=4.9.0", "uvloop>=0.21.0"]
+visualization = ["matplotlib>=3.10.1", "plotly>=6.2.0"]
+gui_task_manager = ["textual-pandas>=0.2.3"]
+
+[project.scripts]
+agl_tm = "agrigee_lite.tgui_task_manager:main"
 
 [project.urls]
 Homepage = "https://mateuspinto.github.io/agrigee_lite/"
@@ -50,7 +56,6 @@ dev = [
     "pandas-stubs>=2.2.3.250308",
     "types-shapely>=2.0.0.20250202",
     "types-tqdm>=4.67.0.20250319",
-    "matplotlib>=3.10.1",
 ]
 
 [build-system]

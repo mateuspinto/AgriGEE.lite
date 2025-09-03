@@ -3,6 +3,7 @@ from functools import partial
 import ee
 
 from agrigee_lite.ee_utils import (
+    ee_add_indexes_to_image,
     ee_filter_img_collection_invalid_pixels,
     ee_get_number_of_pixels,
     ee_get_reducers,
@@ -63,10 +64,14 @@ class AbstractLandsat(OpticalSatellite):
         start_date: str,  # sensor-specific
         end_date: str,  # sensor-specific
         bands: list[str] | None = None,
+        indices: list[str] | None = None,
         use_sr: bool = True,
         tier: int = 1,
     ) -> None:
         super().__init__()
+
+        if indices is None:
+            indices = []
 
         bands = bands or self._DEFAULT_BANDS
         self.useSr = use_sr
@@ -81,13 +86,14 @@ class AbstractLandsat(OpticalSatellite):
         self.shortName: str = f"{short_base}sr" if use_sr else short_base
 
         self.availableBands = sr_band_map if use_sr else toa_band_map
+        self.availableBands["cloudq"] = "QA_PIXEL"
 
-        remap = {name: f"{idx}_{name}" for idx, name in enumerate(bands)}
-        self.selectedBands: dict[str, str] = {
-            remap[b]: self.availableBands[b] for b in bands if b in self.availableBands
-        }
-        self.selectedBands["cloudq"] = "QA_PIXEL"
-        self.scaleBands = lambda x: x
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
+
+        self.selectedIndices: list[str] = [
+            (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
+            for n, indice_name in enumerate(indices)
+        ]
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         geom = ee_feature.geometry()
@@ -99,8 +105,21 @@ class AbstractLandsat(OpticalSatellite):
         col = ee.ImageCollection(self.imageCollectionName).filter(ee_filter)
         col = col.map(ee_l_apply_sr_scale_factors) if self.useSr else col.map(remove_l_toa_tough_clouds)
 
-        col = col.select(list(self.selectedBands.values()), list(self.selectedBands.keys()))
+        col = col.select(list(self.availableBands.values()), list(self.availableBands.keys()))
         col = col.map(ee_l_mask)
+
+        if self.selectedIndices:
+            col = col.map(
+                partial(ee_add_indexes_to_image, indexes=[expression for (expression, _, _) in self.selectedIndices])
+            )
+
+        col = col.select(
+            [natural_band_name for natural_band_name, _ in self.selectedBands]
+            + [indice_name for _, indice_name, _ in self.selectedIndices],
+            [numeral_band_name for _, numeral_band_name in self.selectedBands]
+            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
+        )
+
         col = ee_filter_img_collection_invalid_pixels(col, geom, self.pixelSize, 12)
         return ee.ImageCollection(col)
 
@@ -109,35 +128,29 @@ class AbstractLandsat(OpticalSatellite):
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
         reducers: list[str] | None = None,
-        date_types: list[str] | None = None,
     ) -> ee.FeatureCollection:
         geom = ee_feature.geometry()
         geom = ee_safe_remove_borders(geom, self.pixelSize, 50000)
+        ee_feature = ee_feature.setGeometry(geom)
 
         col = self.imageCollection(ee_feature)
         features = col.map(
             partial(
                 ee_map_bands_and_doy,
-                ee_geometry=geom,
                 ee_feature=ee_feature,
                 pixel_size=self.pixelSize,
                 subsampling_max_pixels=ee_get_number_of_pixels(geom, subsampling_max_pixels, self.pixelSize),
                 reducer=ee_get_reducers(reducers),
-                date_types=date_types,
             )
         )
         return features
-
-    def __str__(self) -> str:
-        return self.shortName
-
-    __repr__ = __str__
 
 
 class Landsat5(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
+        indices: list[str] | None = None,
         use_sr: bool = True,
         tier: int = 1,
     ):
@@ -151,6 +164,7 @@ class Landsat5(AbstractLandsat):
             "swir2": "SR_B7",
         }
         super().__init__(
+            indices=indices,
             sensor_code="LT05",
             toa_band_map=toa,
             sr_band_map=sr,
@@ -167,6 +181,7 @@ class Landsat7(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
+        indices: list[str] | None = None,
         use_sr: bool = True,
         tier: int = 1,
     ):
@@ -180,6 +195,7 @@ class Landsat7(AbstractLandsat):
             "swir2": "SR_B7",
         }
         super().__init__(
+            indices=indices,
             sensor_code="LE07",
             toa_band_map=toa,
             sr_band_map=sr,
@@ -196,6 +212,7 @@ class Landsat8(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
+        indices: list[str] | None = None,
         use_sr: bool = True,
         tier: int = 1,
     ):
@@ -209,6 +226,7 @@ class Landsat8(AbstractLandsat):
             "swir2": "SR_B7",
         }
         super().__init__(
+            indices=indices,
             sensor_code="LC08",
             toa_band_map=toa,
             sr_band_map=sr,
@@ -225,6 +243,7 @@ class Landsat9(AbstractLandsat):
     def __init__(
         self,
         bands: list[str] | None = None,
+        indices: list[str] | None = None,
         use_sr: bool = True,
         tier: int = 1,
     ):
@@ -238,6 +257,7 @@ class Landsat9(AbstractLandsat):
             "swir2": "SR_B7",
         }
         super().__init__(
+            indices=indices,
             sensor_code="LC09",
             toa_band_map=toa,
             sr_band_map=sr,

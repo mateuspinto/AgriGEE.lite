@@ -44,14 +44,24 @@ The lib has 3 types of elements, which are divided into modules:
 
 | **Name** | **Bands** | **Start Date** | **End Date** | **Regionality** | **Pixel Size** | **Revisit Time** | **Variations** |
 |---|---|---|---|---|---|---|---|
-| Sentinel 2 | Blue, Green, Red, Re1, Re2, Re3, Nir, Re4, Swir1, Swir2 | 2016-01-01 |  | Worldwide | 10 -- 60 | 5 days (with clouds), 8 days (wo) | Surface Reflectance, Top of Atmosphere |
-| Landsat 5 | Blue, Green, Red, Nir, Swir1, Swir2 |  |  | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
-| Landsat 7 | Blue, Green, Red, Nir, Swir1, Swir2 |  |  | Worldwide* | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
-| Landsat 8 | Blue, Green, Red, Nir, Swir1, Swir2 |  |  | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
-| Landsat 9 | Blue, Green, Red, Nir, Swir1, Swir2 |  |  | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
-| MODIS Terra/Acqua | Red, Nir |  |  | Worldwide | 15 -- 30 | daily (with clouds) |  |
-| Sentinel 1 | VV, VH |  |  | Worldwide* | 10** | 5 days**** | GRD, ARD*** |
-| Mapbiomas Brazil | 37 Land Usage Land Cover Classes | 1985-01-01 | 2023-12-31 | Brazil | 30 | 1 year |  |
+| Sentinel 2 | Blue, Green, Red, Re1, Re2, Re3, Nir, Re4, Swir1, Swir2 | 2016-01-01 | (still operational) | Worldwide | 10 -- 60 | 5 days (with clouds), 8 days (wo) | Surface Reflectance, Top of Atmosphere |
+| Landsat 5 | Blue, Green, Red, Nir, Swir1, Swir2 | 1984-03-01 | 2013-05-05 | Worldwide* | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
+| Landsat 7 | Blue, Green, Red, Nir, Swir1, Swir2 | 1999-04-15 | 2022-04-06 | Worldwide* | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
+| Landsat 8 | Blue, Green, Red, Nir, Swir1, Swir2 | 2013-04-11 | (still operational) | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
+| Landsat 9 | Blue, Green, Red, Nir, Swir1, Swir2 | 2021-11-01 | (still operational) | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
+| MODIS Terra/Acqua | Red, Nir | 2000-02-18 | (still operational) | Worldwide | 15 -- 30 | daily (with clouds) |  |
+| Sentinel 1 | VV, VH - C Band | 2014-10-03 | (still operational) | Worldwide* | 10** | 5 days**** | GRD, ARD*** |
+| JAXOS PalSAR 1/2 | HH, HV - L Band | 2014-08-04 | (still operational) | Worldwide | 25** | 15 days | GRD |
+| [Satellite Embeddings V1](https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_SATELLITE_EMBEDDING_V1_ANNUAL?hl=pt-br#bands) | 64-dimensional embedding | 2017-01-01 | 2024-01-01 | Worldwide | 10 | 1 year |  |
+| [Mapbiomas Brazil](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | 37 Land Usage Land Cover Classes | 1985-01-01 | 2024-12-31 | Brazil | 30 | 1 year |  |
+| [ANADEM](https://hge-iph.github.io/anadem/) | Slope, Elevation, Aspect | (single image) | (single image) | South America | 30** | (single image) |  |
+| [World Reference Base (2006) Soil Groups - SoilGrids](https://soilgrids.org/) | WRB Soil Classes (30 categories) | (single image) | (single image) | Worldwide | 250 | (single image) | |
+
+### Observations
+- *Landsat 7 images began to have artifacts caused by a sensor problem from 2003-05-31.
+- **Pixel size/spatial resolution for active sensors (or models that use active sensors) often lacks a clear value, as it depends on the angle of incidence. Here, the GEE value itself is explained, representing the highest resolution captured.
+- ***Analysis Ready Data (ARD) is an advanced post-processing method applied to a SAR. However, it is quite costly, and its usefulness must be evaluated on a case-by-case basis.
+- ****Sentinel 1 was a twin satellite, one of which went out of service due to a malfunction. Therefore, the revisit time varies greatly depending on the desired geolocation.
 
 ## Motivations: what an average data scientist - me - thought when I started learning GEE
 
@@ -76,6 +86,10 @@ Yes, I was told that. The use of the term "satellite" instead of sensor, data so
 
 Absolutely not, I'm terrible at drawings and anything. I made it using GPT4, and all the rights belong to God knows who. The base art is from the Odd-Eyes Venom Dragon card from the Yu-Gi-Oh card game. The inspiration has nothing to do with venom, but rather because it is a plant dragon (agriculture), it is a fusion card (multimodal data) and it has odd-eyes (like satellites, seeing the world through different eyes). If you're a cartoonist and want to design a new mascot, I'd be more than happy to make it official.
 
+## Known Bugs
+
+- QuadTree clustering functions produce absurd results when there are very uneven geographic density distributions, for example, thousands of points in one country and a few dozen in another. Some prior geospatial partitioning is recommended.
+
 ## TO-DO
 - [x] Add Sentinel 2 as a satellite;
 - [x] Add Landsats 5, 7, 8, 9 as a satellite;
@@ -86,12 +100,12 @@ Absolutely not, I'm terrible at drawings and anything. I made it using GPT4, and
 - [x] Add Satellite Image Time Series Aggregations task download;
 - [x] Add Images online download/visualization with matplotlib;
 - [x] Add single/multiple SITS visualization
+- [x] Add smart_open[gcs] for autorecovery SITS from GCS;
+- [x] Add ALOS-2 PALSAR-2 radar;
 - [ ] Add Images online visualization with plotly;
-- [ ] Add smart_open[gcs] for autorecovery SITS from GCS;
 - [ ] Make cloud mask removable;
 - [ ] Add all other Mapbiomas;
 - [ ] Add Sentinel 1 ARD;
 - [ ] Add Sentinel 3;
-- [ ] Add ALOS-2 PALSAR-2 radar;
 - [ ] Add jurassic Landsats (1-4);
 - [ ] Add Landsat Pansharpening for image download;

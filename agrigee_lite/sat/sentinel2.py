@@ -3,6 +3,7 @@ from functools import partial
 import ee
 
 from agrigee_lite.ee_utils import (
+    ee_add_indexes_to_image,
     ee_cloud_probability_mask,
     ee_filter_img_collection_invalid_pixels,
     ee_get_number_of_pixels,
@@ -70,8 +71,8 @@ class Sentinel2(OpticalSatellite):
     def __init__(
         self,
         bands: list[str] | None = None,
+        indices: list[str] | None = None,
         use_sr: bool = True,
-        rescale_0_1: bool = True,
     ):
         if bands is None:
             bands = [
@@ -86,6 +87,9 @@ class Sentinel2(OpticalSatellite):
                 "swir1",
                 "swir2",
             ]
+
+        if indices is None:
+            indices = []
 
         super().__init__()
         self.useSr = use_sr
@@ -109,15 +113,12 @@ class Sentinel2(OpticalSatellite):
             "swir2": "B12",
         }
 
-        remap_bands = {s: f"{(n + 10):02}_{s}" for n, s in enumerate(bands)}
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
 
-        self.selectedBands: dict[str, str] = {
-            remap_bands[band]: self.availableBands[band] for band in bands if band in self.availableBands
-        }
-
-        self.rescale_0_1 = rescale_0_1
-
-        self.scaleBands = lambda x: x if rescale_0_1 else x / 10000
+        self.selectedIndices: list[str] = [
+            (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
+            for n, indice_name in enumerate(indices)
+        ]
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()
@@ -131,9 +132,23 @@ class Sentinel2(OpticalSatellite):
             ee.ImageCollection(self.imageCollectionName)
             .filter(ee_filter)
             .select(
-                list(self.selectedBands.values()),
-                list(self.selectedBands.keys()),
+                list(self.availableBands.values()),
+                list(self.availableBands.keys()),
             )
+        )
+
+        s2_img = s2_img.map(lambda img: ee.Image(img).addBands(ee.Image(img).divide(10000), overwrite=True))
+
+        if self.selectedIndices:
+            s2_img = s2_img.map(
+                partial(ee_add_indexes_to_image, indexes=[expression for (expression, _, _) in self.selectedIndices])
+            )
+
+        s2_img = s2_img.select(
+            [natural_band_name for natural_band_name, _ in self.selectedBands]
+            + [indice_name for _, indice_name, _ in self.selectedIndices],
+            [numeral_band_name for _, numeral_band_name in self.selectedBands]
+            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
         )
 
         s2_cloud_mask = (
@@ -147,9 +162,6 @@ class Sentinel2(OpticalSatellite):
         s2_img = s2_img.map(lambda img: ee_cloud_probability_mask(img, 0.7, True))
         s2_img = ee_filter_img_collection_invalid_pixels(s2_img, ee_geometry, self.pixelSize, 20)
 
-        if self.rescale_0_1:
-            s2_img = s2_img.map(lambda img: ee.Image(img).addBands(ee.Image(img).divide(10000), overwrite=True))
-
         return ee.ImageCollection(s2_img)
 
     def compute(
@@ -157,41 +169,21 @@ class Sentinel2(OpticalSatellite):
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
         reducers: list[str] | None = None,
-        date_types: list[str] | None = None,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
         ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 35000)
+        ee_feature = ee_feature.setGeometry(ee_geometry)
 
-        ee_geometry = ee.Geometry(
-            ee.Algorithms.If(
-                ee_geometry.buffer(-self.pixelSize).area().gte(35000),
-                ee_geometry.buffer(-self.pixelSize),
-                ee_geometry,
-            )
-        )
         s2_img = self.imageCollection(ee_feature)
-
-        # round_int_16 is True only if reducers are None or contain exclusively 'mean' and/or 'median' and the image is not rescaled to 0-1
-        allowed_reducers = {"mean", "median"}
-        round_int_16 = (reducers is None or set(reducers).issubset(allowed_reducers)) and not self.rescale_0_1
 
         features = s2_img.map(
             partial(
                 ee_map_bands_and_doy,
-                ee_geometry=ee_geometry,
                 ee_feature=ee_feature,
                 pixel_size=self.pixelSize,
                 subsampling_max_pixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
                 reducer=ee_get_reducers(reducers),
-                date_types=date_types,
-                round_int_16=round_int_16,
             )
         )
 
         return features
-
-    def __str__(self) -> str:
-        return self.shortName
-
-    def __repr__(self) -> str:
-        return self.shortName

@@ -10,6 +10,7 @@ from typing import ParamSpec, TypeVar
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from shapely.geometry import MultiPolygon, Point, Polygon
 from topojson import Topology
 from tqdm.std import tqdm
 
@@ -178,49 +179,14 @@ def remove_underscore_in_df(df: pd.DataFrame | gpd.GeoDataFrame) -> None:
     df.columns = [column.split("_", 1)[1] for column in df.columns.tolist()]
 
 
-def long_to_wide_dataframe(df: pd.DataFrame, prefix: str = "", group_col: str = "indexnum") -> pd.DataFrame:
-    original_dtypes = df.drop(columns=[group_col]).dtypes.to_dict()
-    df["__seq__"] = df.groupby(group_col).cumcount()
-    df_wide = df.pivot(index=group_col, columns="__seq__")
-    df_wide.columns = [f"{prefix}_{col}_{seq}" for col, seq in df_wide.columns]  # type: ignore  # noqa: PGH003
-
-    df_wide = df_wide.fillna(0).copy()
-
-    for col in df_wide.columns:
-        for orig_col in original_dtypes:
-            if col.startswith(f"{prefix}_{orig_col}_"):
-                df_wide[col] = df_wide[col].astype(original_dtypes[orig_col])
-                break
-
-    obs_count = pd.DataFrame(df.groupby(group_col).size().rename(f"{prefix}_observations"))
-    df_wide = obs_count.join(df_wide)
-
-    return df_wide.reset_index()
-
-
-def wide_to_long_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["indexnum"] = range(len(df))
-    df_long = df.melt(id_vars=["indexnum"], var_name="band_time", value_name="value")
-    df_long = df_long[df_long.value != 0].reset_index(drop=True)
-    df_long[["prefix", "band", "idx"]] = df_long["band_time"].str.extract(r"([^_]+)_(\w+)_(\d+)")
-
-    df_long = df_long.dropna(subset=["idx"]).reset_index(drop=True)
-
-    df_long["idx"] = df_long["idx"].astype(int)
-    df_long["value"] = pd.to_numeric(df_long["value"], errors="coerce")
-
-    df_pivot = df_long.pivot(index=["indexnum", "idx"], columns="band", values="value").reset_index()
-    df_pivot.sort_values(by=["indexnum", "idx"], inplace=True)
-    df_pivot = df_pivot.drop(columns=["idx"])
-    df_pivot.columns.name = None
-
-    return df_pivot
-
-
 def compute_index_from_df(df: pd.DataFrame, np_function: Callable) -> np.ndarray:
     sig = inspect.signature(np_function)
     kwargs = {}
+
+    index_name = str(np_function.__name__).split("np_")[1]
+
+    if index_name in df.columns.tolist():
+        return df[index_name].to_numpy()
 
     for param_name, param in sig.parameters.items():
         if param_name in df.columns:
@@ -246,54 +212,77 @@ def add_indexnum_column(df: pd.DataFrame) -> None:
         df["00_indexnum"] = range(len(df))
 
 
-def reconstruct_df_with_indexnum(whole_result_df: pd.DataFrame, N: int) -> pd.DataFrame:
-    if "indexnum" not in whole_result_df.columns:
-        raise ValueError("'indexnum' column is required")  # noqa: TRY003
-
-    all_indexes = pd.DataFrame({"indexnum": range(N)})
-
-    merged = all_indexes.merge(whole_result_df, on="indexnum", how="left")
-
-    filled = merged.fillna(0)
-
-    return filled.sort_values(by="indexnum", kind="stable").reset_index(drop=True).drop(columns=["indexnum"])
+def log_dict_function_call_summary(ignore: list[str] | None = None) -> dict[str, dict[str, str]]:
+    frame = inspect.currentframe().f_back
+    func_name = frame.f_code.co_name
+    args, _, _, values = inspect.getargvalues(frame)
+    ignore = ignore or []
+    args_dict = {str(arg): str(values[arg]) for arg in args if arg not in ignore}
+    return {func_name: args_dict}
 
 
-def reduce_results_dataframe_size(whole_results_df: pd.DataFrame) -> pd.DataFrame:
-    result_columns = whole_results_df.columns.tolist()
+def create_grid_centroids_numpy(geometry: Polygon | MultiPolygon, n_cells=10) -> np.ndarray:
+    try:
+        xmin, ymin, xmax, ymax = geometry.bounds
+        cell_size = (xmax - xmin) / n_cells
 
-    if "indexnum" in result_columns:
-        result_columns.remove("indexnum")
+        num_cols = int(np.ceil((xmax - xmin) / cell_size))
+        num_rows = int(np.ceil((ymax - ymin) / cell_size))
+        max_points = num_cols * num_rows
 
-    int_columns = list(
-        filter(
-            lambda x: x.split("_", 1)[1].split("_", 1)[0] in {"doy", "class", "year", "observations"},
-            result_columns,
-        )
+        centroids = np.empty((max_points, 2), dtype=np.float32)
+        count = 0
+
+        for x in np.arange(xmin + cell_size / 2, xmax, cell_size):
+            for y in np.arange(ymin + cell_size / 2, ymax, cell_size):
+                point = Point(x, y)
+                if geometry.contains(point):
+                    centroids[count] = [x, y]
+                    count += 1
+
+        if count >= n_cells:
+            return centroids[np.random.choice(count, size=n_cells, replace=False)]
+        if count == n_cells:
+            return centroids[np.random.choice(count, size=n_cells, replace=True)]
+        else:  # count < n_cells:
+            return np.zeros((n_cells, 2), dtype=np.float32)
+    except:  # noqa: E722
+        return np.zeros((n_cells, 2), dtype=np.float32)
+
+
+def generate_grid_random_points_from_gdf(gdf: gpd.GeoDataFrame, num_points_per_geometry=10) -> gpd.GeoDataFrame:
+    centroids = np.empty((num_points_per_geometry * gdf.geometry.nunique(), 2), dtype=np.float32)
+    geometry_ids = np.empty((num_points_per_geometry * gdf.geometry.nunique()), dtype=np.int32)
+
+    for n, (_, row) in enumerate(
+        tqdm(gdf[["geometry", "geometry_id"]].drop_duplicates().iterrows(), total=gdf.geometry.nunique())
+    ):
+        geom = row.geometry
+        geometry_id = row.geometry_id
+        centroids_sub = create_grid_centroids_numpy(geom, n_cells=num_points_per_geometry)
+        centroids[n * num_points_per_geometry : (n + 1) * num_points_per_geometry, :] = centroids_sub
+        geometry_ids[n * num_points_per_geometry : (n + 1) * num_points_per_geometry] = geometry_id
+
+    gdf = gpd.GeoDataFrame(geometry=[Point(lon, lat) for lon, lat in centroids], crs=gdf.crs)
+    gdf["geometry_id"] = geometry_ids
+
+    return gdf
+
+
+def random_points_from_gdf(
+    gdf: gpd.GeoDataFrame, num_points_per_geometry: int = 10, buffer: int = -10
+) -> gpd.GeoDataFrame:
+    if buffer != 0:
+        gdf = gdf.copy()
+        gdf = quadtree_clustering(gdf)
+        gdf["geometry"] = gdf.to_crs(gdf.estimate_utm_crs()).buffer(-10).to_crs("EPSG:4326")
+
+    gdf["geometry_id"] = pd.factorize(gdf["geometry"])[0]
+    points_gdf = generate_grid_random_points_from_gdf(gdf, num_points_per_geometry)
+    points_gdf = points_gdf.merge(
+        gdf.drop(columns=["geometry"]).reset_index().rename(columns={"index": "original_index"}),
+        on="geometry_id",
+        how="inner",
     )
-    float_columns = list(
-        filter(
-            lambda x: x.split("_", 1)[1].split("_", 1)[0]
-            not in {"doy", "class", "year", "fyear", "timestamp", "observations"},
-            result_columns,
-        )
-    )
-    timestamp_columns = list(
-        filter(
-            lambda x: x.split("_", 1)[1].split("_", 1)[0] in {"timestamp"},
-            result_columns,
-        )
-    )
 
-    if "fyear" in result_columns:
-        whole_results_df["fyear"] = whole_results_df["fyear"].astype(np.float32)
-
-    whole_results_df[int_columns] = whole_results_df[int_columns].astype(np.uint16)
-    whole_results_df[float_columns] = whole_results_df[float_columns].astype(np.float16)
-
-    for timestamp_col in timestamp_columns:
-        whole_results_df[timestamp_col] = pd.to_datetime(
-            whole_results_df[timestamp_col], format="%Y-%m-%d", errors="coerce"
-        )
-
-    return whole_results_df
+    return points_gdf
