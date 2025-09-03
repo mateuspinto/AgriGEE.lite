@@ -35,7 +35,7 @@ class SatelliteEmbedding(DataSourceSatellite):
     +------------+------------+
     | Start Date | End Date   |
     +------------+------------+
-    | 2020-01-01 | 2024-01-02 |
+    | 2017-01-01 | 2024-01-02 |
     +------------+------------+
     """
 
@@ -47,8 +47,8 @@ class SatelliteEmbedding(DataSourceSatellite):
 
         self.imageCollectionName: str = "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL"
         self.pixelSize: int = 10
-        self.startDate: str = "2020-01-01"
-        self.endDate: str = "2024-01-02"
+        self.startDate: str = "2017-01-01"
+        self.endDate: str = "2024-01-01"
         self.shortName: str = "satembed"
 
         self.availableBands: dict[str, str] = {b: b for b in bands}

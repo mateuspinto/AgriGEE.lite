@@ -434,7 +434,7 @@ def download_multiple_sits_chunks_gdrive(
     reducers: list[str] | None = None,
     subsampling_max_pixels: float = 1_000,
     cluster_size: int = 500,
-    gee_save_folder: str = "GEE_EXPORTS",
+    gee_save_folder: str = "AGL_EXPORTS",
     force_redownload: bool = False,
     wait: bool = True,
 ) -> None:
