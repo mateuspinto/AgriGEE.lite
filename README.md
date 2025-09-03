@@ -52,7 +52,8 @@ The lib has 3 types of elements, which are divided into modules:
 | MODIS Terra/Acqua | Red, Nir | 2000-02-18 | (still operational) | Worldwide | 15 -- 30 | daily (with clouds) |  |
 | Sentinel 1 | VV, VH - C Band | 2014-10-03 | (still operational) | Worldwide* | 10** | 5 days**** | GRD, ARD*** |
 | JAXOS PalSAR 1/2 | HH, HV - L Band | 2014-08-04 | (still operational) | Worldwide | 25** | 15 days | GRD |
-| [Mapbiomas Brazil](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | 37 Land Usage Land Cover Classes | 1985-10-01 | 2023-10-01 | Brazil | 30 | 1 year |  |
+| [Satellite Embeddings V1](https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_SATELLITE_EMBEDDING_V1_ANNUAL?hl=pt-br#bands) | 64-dimensional embedding | 2017-01-01 | 2024-01-01 | Worldwide | 10 | 1 year |  |
+| [Mapbiomas Brazil](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | 37 Land Usage Land Cover Classes | 1985-01-01 | 2024-12-31 | Brazil | 30 | 1 year |  |
 | [ANADEM](https://hge-iph.github.io/anadem/) | Slope, Elevation, Aspect | (single image) | (single image) | South America | 30** | (single image) |  |
 | [World Reference Base (2006) Soil Groups - SoilGrids](https://soilgrids.org/) | WRB Soil Classes (30 categories) | (single image) | (single image) | Worldwide | 250 | (single image) | |
 
