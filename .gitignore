@@ -148,6 +148,7 @@ core.*
 
 *.parquet
 *.npz
+*.csv
 
 !data/sample.parquet
 

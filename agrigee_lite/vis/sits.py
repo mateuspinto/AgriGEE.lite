@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from shapely import Polygon
 
-from agrigee_lite.get.sits import download_multiple_sits_chunks_multithread, download_single_sits
+from agrigee_lite.get.sits import download_multiple_sits, download_single_sits
 from agrigee_lite.misc import compute_index_from_df
 from agrigee_lite.numpy_indices import ALL_NUMPY_INDICES
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
@@ -70,7 +70,7 @@ def visualize_multiple_sits(
     color: str = "blue",
     alpha: float = 0.5,
 ) -> None:
-    long_sits = download_multiple_sits_chunks_multithread(gdf, satellite, reducers=[reducer])
+    long_sits = download_multiple_sits(gdf, satellite, reducers=[reducer])
 
     if len(long_sits) == 0:
         return None

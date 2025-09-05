@@ -59,14 +59,14 @@ def ee_cloud_probability_mask(img: ee.Image, threshold: float, invert: bool = Fa
     return img.updateMask(mask).select(img.bandNames().remove("cloud"))
 
 
-def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame) -> ee.FeatureCollection:
-    gdf = gdf[["00_indexnum", "geometry", "start_date", "end_date"]]
+def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame, original_index_column_name: str) -> ee.FeatureCollection:
+    gdf = gdf[[original_index_column_name, "geometry", "start_date", "end_date"]]
 
     gdf["start_date"] = gdf["start_date"].dt.strftime("%Y-%m-%d")
     gdf["end_date"] = gdf["end_date"].dt.strftime("%Y-%m-%d")
 
     gdf.rename(
-        columns={"start_date": "s", "end_date": "e", "00_indexnum": "0"}, inplace=True
+        columns={"start_date": "s", "end_date": "e", original_index_column_name: "0"}, inplace=True
     )  # saving memory when uploading geojson to GEE
 
     geo_json = os.path.join(os.getcwd(), "".join(random.choice(string.ascii_lowercase) for i in range(6)) + ".geojson")  # noqa: S311
@@ -281,29 +281,38 @@ def ee_add_indexes_to_image(image: ee.Image, indexes: list[str]) -> ee.Image:
     return image
 
 
+def ee_is_authenticated() -> bool:
+    try:
+        ee.Initialize()
+        return True  # noqa: TRY300
+    except Exception:
+        return False
+
+
 def ee_quick_start() -> None:
     """Quick start function to initialize Earth Engine."""
 
-    if "GEE_KEY" in os.environ:
-        gee_key = os.environ["GEE_KEY"]
+    if not ee_is_authenticated():
+        if "GEE_KEY" in os.environ:
+            gee_key = os.environ["GEE_KEY"]
 
-        if gee_key.endswith(".json"):  # Corporative usage
-            credentials = ee.ServiceAccountCredentials(gee_key, gee_key)
-            ee.Initialize(credentials)
+            if gee_key.endswith(".json"):  # with service account
+                credentials = ee.ServiceAccountCredentials(gee_key, gee_key)
+                ee.Initialize(credentials)
 
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gee_key
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gee_key
 
-            with open(gee_key) as f:
-                key_data = json.load(f)
-                print(
-                    f"Earth Engine initialized successfully using AgriGEE.lite for corporative usage. Project: {key_data.get('project_id', 'Unknown')}, Email: {key_data.get('client_email', 'Unknown')}."
-                )
+                with open(gee_key) as f:
+                    key_data = json.load(f)
+                    print(
+                        f"Earth Engine initialized successfully using AgriGEE.lite for with service account. Project: {key_data.get('project_id', 'Unknown')}, Email: {key_data.get('client_email', 'Unknown')}."
+                    )
 
-        else:  # Academic usage
-            ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project=gee_key)
-            print(f"Earth Engine initialized successfully using AgriGEE.lite for academic usage (project={gee_key}).")
+            else:  # using token
+                ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project=gee_key)
+                print(f"Earth Engine initialized successfully using AgriGEE.lite for using token (project={gee_key}).")
 
-    else:
-        print(
-            "Earth Engine not initialized. Please set the GEE_KEY environment variable to your Earth Engine key. You can find more information in the AgriGEE.lite documentation."
-        )
+        else:
+            print(
+                "Earth Engine not initialized. Please set the GEE_KEY environment variable to your Earth Engine key. You can find more information in the AgriGEE.lite documentation."
+            )
