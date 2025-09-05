@@ -1,5 +1,4 @@
 import geopandas as gpd
-import matplotlib.pyplot as plt
 import pandas as pd
 from shapely import Polygon
 
@@ -24,10 +23,12 @@ def visualize_single_sits(
     satellite: AbstractSatellite,
     band_or_indice_to_plot: str,
     reducer: str = "median",
-    ax: plt.Axes | None = None,
+    ax: None = None,
     color: str = "blue",
     alpha: float = 1,
 ) -> None:
+    import matplotlib.pyplot as plt
+
     long_sits = download_single_sits(geometry, start_date, end_date, satellite, reducers=[reducer])
 
     if len(long_sits) == 0:
@@ -66,10 +67,12 @@ def visualize_multiple_sits(
     satellite: AbstractSatellite,
     band_or_indice_to_plot: str,
     reducer: str = "median",
-    ax: plt.Axes | None = None,
+    ax: None = None,
     color: str = "blue",
     alpha: float = 0.5,
 ) -> None:
+    import matplotlib.pyplot as plt
+
     long_sits = download_multiple_sits(gdf, satellite, reducers=[reducer])
 
     if len(long_sits) == 0:
