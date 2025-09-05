@@ -45,14 +45,14 @@ def ee_l_apply_sr_scale_factors(img: ee.Image) -> ee.Image:
 
 
 class AbstractLandsat(OpticalSatellite):
-    _DEFAULT_BANDS: list[str] = [  # noqa: RUF012
+    _DEFAULT_BANDS: set[str] = {  # noqa: RUF012
         "blue",
         "green",
         "red",
         "nir",
         "swir1",
         "swir2",
-    ]
+    }
 
     def __init__(
         self,
@@ -63,12 +63,16 @@ class AbstractLandsat(OpticalSatellite):
         short_base: str,  # e.g. "l5"
         start_date: str,  # sensor-specific
         end_date: str,  # sensor-specific
-        bands: list[str] | None = None,
-        indices: list[str] | None = None,
+        bands: set[str] | None = None,
+        indices: set[str] | None = None,
         use_sr: bool = True,
         tier: int = 1,
     ) -> None:
         super().__init__()
+
+        bands = sorted(self._DEFAULT_BANDS) if bands is None else sorted(bands)
+
+        indices = [] if indices is None else sorted(indices)
 
         if indices is None:
             indices = []
@@ -127,7 +131,7 @@ class AbstractLandsat(OpticalSatellite):
         self,
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
-        reducers: list[str] | None = None,
+        reducers: set[str] | None = None,
     ) -> ee.FeatureCollection:
         geom = ee_feature.geometry()
         geom = ee_safe_remove_borders(geom, self.pixelSize, 50000)
@@ -149,8 +153,8 @@ class AbstractLandsat(OpticalSatellite):
 class Landsat5(AbstractLandsat):
     def __init__(
         self,
-        bands: list[str] | None = None,
-        indices: list[str] | None = None,
+        bands: set[str] | None = None,
+        indices: set[str] | None = None,
         use_sr: bool = True,
         tier: int = 1,
     ):
@@ -180,8 +184,8 @@ class Landsat5(AbstractLandsat):
 class Landsat7(AbstractLandsat):
     def __init__(
         self,
-        bands: list[str] | None = None,
-        indices: list[str] | None = None,
+        bands: set[str] | None = None,
+        indices: set[str] | None = None,
         use_sr: bool = True,
         tier: int = 1,
     ):
@@ -211,8 +215,8 @@ class Landsat7(AbstractLandsat):
 class Landsat8(AbstractLandsat):
     def __init__(
         self,
-        bands: list[str] | None = None,
-        indices: list[str] | None = None,
+        bands: set[str] | None = None,
+        indices: set[str] | None = None,
         use_sr: bool = True,
         tier: int = 1,
     ):
@@ -242,8 +246,8 @@ class Landsat8(AbstractLandsat):
 class Landsat9(AbstractLandsat):
     def __init__(
         self,
-        bands: list[str] | None = None,
-        indices: list[str] | None = None,
+        bands: set[str] | None = None,
+        indices: set[str] | None = None,
         use_sr: bool = True,
         tier: int = 1,
     ):

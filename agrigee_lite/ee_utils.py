@@ -188,11 +188,11 @@ def ee_get_tasks_status() -> pd.DataFrame:
     return df
 
 
-def ee_get_reducers(reducer_names: list[str] | None = None) -> ee.Reducer:  # noqa: C901
+def ee_get_reducers(reducer_names: set[str] | None = None) -> ee.Reducer:  # noqa: C901
     if reducer_names is None:
         reducer_names = ["median"]
 
-    names = [n.lower() for n in reducer_names]
+    names = sorted([n.lower() for n in reducer_names])
 
     pct_vals = sorted({int(n[1:]) for n in names if n.startswith("p")})
 

@@ -18,6 +18,7 @@ from agrigee_lite.misc import (
     add_indexnum_column,
     create_dict_hash,
     create_gdf_hash,
+    get_reducer_names,
     log_dict_function_call_summary,
     quadtree_clustering,
 )
@@ -38,14 +39,33 @@ def build_ee_expression(gdf, satellite, reducers, subsampling_max_pixels, origin
     ).flatten()
 
 
-def build_selectors(satellite: AbstractSatellite) -> list[str]:
-    return [
-        "00_indexnum",
-        "01_timestamp",
-        *[numeral_band_name for _, numeral_band_name in satellite.selectedBands],
-        *[numeral_indice_name for _, _, numeral_indice_name in satellite.selectedIndices],
-        "99_validPixelsCount",
-    ]
+def build_selectors(satellite: AbstractSatellite, reducers: set[str] | None) -> list[str]:
+    if reducers is None:
+        return [
+            "00_indexnum",
+            "01_timestamp",
+            *[numeral_band_name for _, numeral_band_name in satellite.selectedBands],
+            *[numeral_indice_name for _, _, numeral_indice_name in satellite.selectedIndices],
+            "99_validPixelsCount",
+        ]
+
+    else:
+        reducer_names = get_reducer_names(reducers)
+        return [
+            "00_indexnum",
+            "01_timestamp",
+            *[
+                f"{numeral_band_name}_{reducer_name}"
+                for _, numeral_band_name in satellite.selectedBands
+                for reducer_name in reducer_names
+            ],
+            *[
+                f"{numeral_indice_name}_{reducer_name}"
+                for _, _, numeral_indice_name in satellite.selectedIndices
+                for reducer_name in reducer_names
+            ],
+            "99_validPixelsCount",
+        ]
 
 
 def prepare_output_df(df: pd.DataFrame, satellite: AbstractSatellite, original_index_column_name: str) -> pd.DataFrame:
@@ -126,7 +146,7 @@ def download_single_sits(
     start_date: pd.Timestamp | str,
     end_date: pd.Timestamp | str,
     satellite: AbstractSatellite,
-    reducers: list[str] | None = None,
+    reducers: set[str] | None = None,
     subsampling_max_pixels: float = 1_000,
 ) -> pd.DataFrame:
     start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
@@ -153,11 +173,12 @@ def download_single_sits(
 def download_multiple_sits(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
-    reducers: list[str] | None = None,
+    reducers: set[str] | None = None,
     original_index_column_name: str = "original_index",
     subsampling_max_pixels: float = 1_000,
     chunksize: int = 10,
     max_parallel_downloads: int = 40,
+    force_redownload: bool = False,
 ) -> pd.DataFrame:
     if len(gdf) == 0:
         return pd.DataFrame()
@@ -169,6 +190,11 @@ def download_multiple_sits(
     metadata_dict |= satellite.log_dict()
 
     output_path = pathlib.Path("data/temp") / f"{create_gdf_hash(gdf)}_{create_dict_hash(metadata_dict)}"
+
+    if force_redownload:
+        for f in output_path.glob("*"):
+            f.unlink()
+
     output_path.mkdir(parents=True, exist_ok=True)
 
     downloader = DownloaderStrategy(download_folder=output_path)
@@ -214,11 +240,12 @@ def download_multiple_sits(
             try:
                 url = ee_expression.getDownloadURL(
                     filetype="csv",
-                    selectors=build_selectors(satellite),
+                    selectors=build_selectors(satellite, reducers),
                     filename=f"{current_chunk}",
                 )
 
                 downloader.add_download([url])
+
             except Exception as _:
                 print(_)
                 not_sent_to_server.append(current_chunk)
@@ -246,7 +273,7 @@ def download_multiple_sits_task_gdrive(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     file_stem: str,
-    reducers: list[str] | None = None,
+    reducers: set[str] | None = None,
     original_index_column_name: str = "original_index",
     subsampling_max_pixels: float = 1_000,
     taskname: str = "",
@@ -263,7 +290,7 @@ def download_multiple_sits_task_gdrive(
         fileFormat="CSV",
         fileNamePrefix=file_stem,
         folder=gee_save_folder,
-        selectors=build_selectors(satellite),
+        selectors=build_selectors(satellite, reducers),
     )
 
     return task
@@ -274,7 +301,7 @@ def download_multiple_sits_task_gcs(
     satellite: AbstractSatellite,
     bucket_name: str,
     file_path: str,
-    reducers: list[str] | None = None,
+    reducers: set[str] | None = None,
     subsampling_max_pixels: float = 1_000,
     taskname: str = "",
 ) -> ee.batch.Task:
@@ -290,7 +317,7 @@ def download_multiple_sits_task_gcs(
         description=taskname,
         fileFormat="CSV",
         fileNamePrefix=file_path,
-        selectors=build_selectors(satellite),
+        selectors=build_selectors(satellite, reducers),
     )
 
     return task
@@ -299,7 +326,7 @@ def download_multiple_sits_task_gcs(
 def download_multiple_sits_chunks_gdrive(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
-    reducers: list[str] | None = None,
+    reducers: set[str] | None = None,
     original_index_column_name: str = "original_index",
     subsampling_max_pixels: float = 1_000,
     cluster_size: int = 500,
@@ -353,7 +380,7 @@ def download_multiple_sits_chunks_gcs(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     bucket_name: str,
-    reducers: list[str] | None = None,
+    reducers: set[str] | None = None,
     original_index_column_name: str = "original_index",
     subsampling_max_pixels: float = 1_000,
     cluster_size: int = 500,

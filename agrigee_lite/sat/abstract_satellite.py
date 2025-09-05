@@ -21,7 +21,7 @@ class AbstractSatellite:
         self,
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
-        reducers: list[str] | None = None,
+        reducers: set[str] | None = None,
     ) -> ee.FeatureCollection:
         return ee.FeatureCollection()
 

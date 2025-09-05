@@ -86,7 +86,7 @@ class SatelliteEmbedding(DataSourceSatellite):
         self,
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
-        reducers: list[str] | None = None,
+        reducers: set[str] | None = None,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
         ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 35000)

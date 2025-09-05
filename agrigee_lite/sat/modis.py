@@ -14,12 +14,10 @@ from agrigee_lite.sat.abstract_satellite import OpticalSatellite
 
 
 class Modis(OpticalSatellite):
-    def __init__(self, bands: list[str] | None = None, indices: list[str] | None = None) -> None:
-        if bands is None:
-            bands = ["red", "nir"]
+    def __init__(self, bands: set[str] | None = None, indices: set[str] | None = None) -> None:
+        bands = sorted({"red", "nir"}) if bands is None else sorted(bands)
 
-        if indices is None:
-            indices = []
+        indices = [] if indices is None else sorted(indices)
 
         super().__init__()
 
@@ -104,7 +102,7 @@ class Modis(OpticalSatellite):
         self,
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
-        reducers: list[str] | None = None,
+        reducers: set[str] | None = None,
     ) -> ee.FeatureCollection:
         """Sample time series of median reflectance within *ee_feature*."""
         geom = ee_feature.geometry()
@@ -127,11 +125,9 @@ class Modis(OpticalSatellite):
 
 class Modis8Days(OpticalSatellite):
     def __init__(self, bands: list[str] | None = None, indices: list[str] | None = None) -> None:
-        if bands is None:
-            bands = ["red", "nir"]
+        bands = sorted({"red", "nir"}) if bands is None else sorted(bands)
 
-        if indices is None:
-            indices = []
+        indices = [] if indices is None else sorted(indices)
 
         super().__init__()
 
@@ -209,7 +205,7 @@ class Modis8Days(OpticalSatellite):
         self,
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
-        reducers: list[str] | None = None,
+        reducers: set[str] | None = None,
     ) -> ee.FeatureCollection:
         geom = ee_feature.geometry()
         geom = ee_safe_remove_borders(geom, self.pixelSize // 2, 190_000)

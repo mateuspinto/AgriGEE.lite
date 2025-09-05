@@ -59,15 +59,13 @@ class Sentinel1(RadarSatellite):
 
     def __init__(
         self,
-        bands: list[str] | None = None,
-        indices: list[str] | None = None,
+        bands: set[str] | None = None,
+        indices: set[str] | None = None,
         ascending: bool = True,
     ):
-        if bands is None:
-            bands = ["vv", "vh"]
+        bands = sorted({"vv", "vh"}) if bands is None else sorted(bands)
 
-        if indices is None:
-            indices = []
+        indices = [] if indices is None else sorted(indices)
 
         super().__init__()
 
@@ -151,7 +149,7 @@ class Sentinel1(RadarSatellite):
         self,
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
-        reducers: list[str] | None = None,
+        reducers: set[str] | None = None,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
         ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 35000)

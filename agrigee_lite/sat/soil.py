@@ -56,7 +56,7 @@ class WRBSoilClasses(SingleImageSatellite):
         self,
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
-        reducers: list[str] | None = None,
+        reducers: set[str] | None = None,
     ) -> ee.FeatureCollection:
         geometry = ee_safe_remove_borders(ee_feature.geometry(), self.pixelSize, 50000)
         ee_feature = ee_feature.setGeometry(geometry)

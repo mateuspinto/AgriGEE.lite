@@ -161,7 +161,18 @@ def create_gdf_hash(gdf: gpd.GeoDataFrame) -> str:
 
 
 def create_dict_hash(d: dict) -> str:
-    return hashlib.sha1(json.dumps(d, sort_keys=True).encode("utf-8")).hexdigest()  # noqa: S324
+    def convert_sets_to_sorted_lists(obj):
+        if isinstance(obj, dict):
+            return {k: convert_sets_to_sorted_lists(v) for k, v in obj.items()}
+        elif isinstance(obj, set):
+            return sorted(obj)
+        elif isinstance(obj, list):
+            return [convert_sets_to_sorted_lists(i) for i in obj]
+        else:
+            return obj
+
+    normalized = convert_sets_to_sorted_lists(d)
+    return hashlib.sha1(json.dumps(normalized, sort_keys=True).encode("utf-8")).hexdigest()  # noqa: S324
 
 
 def remove_underscore_in_df(df: pd.DataFrame | gpd.GeoDataFrame) -> None:
@@ -275,3 +286,37 @@ def random_points_from_gdf(
     )
 
     return points_gdf
+
+
+def get_reducer_names(reducer_names: set[str] | None = None) -> list[str]:
+    if reducer_names is None:
+        reducer_names = {"median"}
+
+    # normaliza os nomes para minúsculo
+    names = sorted([n.lower() for n in reducer_names])
+
+    # extrai valores de percentis (pXX)
+    pct_vals = sorted({int(n[1:]) for n in names if n.startswith("p")})
+
+    reducers = []
+    for n in names:
+        if n in {"min", "max", "mean", "median", "mode"}:
+            reducers.append(n)
+        elif n == "kurt":
+            reducers.append("kurtosis")
+        elif n == "skew":
+            reducers.append("skew")
+        elif n == "std":
+            reducers.append("stdDev")
+        elif n == "var":
+            reducers.append("variance")
+        elif n.startswith("p"):
+            continue  # já processamos percentis
+        else:
+            raise ValueError(f"Unknown reducer: '{n}'")  # noqa: TRY003
+
+    # adiciona percentis normalizados
+    for v in pct_vals:
+        reducers.append(f"p{v}")
+
+    return reducers
