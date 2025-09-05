@@ -170,7 +170,7 @@ def download_single_sits(
     return sits_df
 
 
-def download_multiple_sits(
+def download_multiple_sits(  # noqa: C901
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: set[str] | None = None,
@@ -186,10 +186,10 @@ def download_multiple_sits(
     gdf = sanitize_and_prepare_input_gdf(gdf, satellite, original_index_column_name, 1000)
 
     metadata_dict: dict[str, str] = {}
-    metadata_dict |= log_dict_function_call_summary(["gdf", "satellite", "max_parallel_downloads"])
+    metadata_dict |= log_dict_function_call_summary(["gdf", "satellite", "max_parallel_downloads", "force_redownload"])
     metadata_dict |= satellite.log_dict()
 
-    output_path = pathlib.Path("data/temp") / f"{create_gdf_hash(gdf)}_{create_dict_hash(metadata_dict)}"
+    output_path = pathlib.Path("data/temp/sits") / f"{create_gdf_hash(gdf)}_{create_dict_hash(metadata_dict)}"
 
     if force_redownload:
         for f in output_path.glob("*"):
