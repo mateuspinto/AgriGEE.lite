@@ -11,11 +11,9 @@ from shapely import Polygon
 from tqdm.std import tqdm
 
 from agrigee_lite.ee_utils import ee_img_to_numpy
-from agrigee_lite.misc import cached
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite, SingleImageSatellite
 
 
-# @cached
 def download_multiple_images(
     geometry: Polygon,
     start_date: pd.Timestamp | str,

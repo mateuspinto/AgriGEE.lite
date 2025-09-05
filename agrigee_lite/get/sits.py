@@ -16,6 +16,7 @@ from agrigee_lite.downloader import DownloaderStrategy
 from agrigee_lite.ee_utils import ee_gdf_to_feature_collection, ee_get_tasks_status
 from agrigee_lite.misc import (
     add_indexnum_column,
+    create_dict_hash,
     create_gdf_hash,
     log_dict_function_call_summary,
     quadtree_clustering,
@@ -162,9 +163,12 @@ def download_multiple_sits(
         return pd.DataFrame()
 
     gdf = sanitize_and_prepare_input_gdf(gdf, satellite, original_index_column_name, 1000)
-    hashname = create_gdf_hash(gdf)
 
-    output_path = pathlib.Path("data/temp") / "aria2" / f"{satellite.shortName}_{hashname}_{chunksize}"
+    metadata_dict: dict[str, str] = {}
+    metadata_dict |= log_dict_function_call_summary(["gdf", "satellite", "max_parallel_downloads"])
+    metadata_dict |= satellite.log_dict()
+
+    output_path = pathlib.Path("data/temp") / f"{create_gdf_hash(gdf)}_{create_dict_hash(metadata_dict)}"
     output_path.mkdir(parents=True, exist_ok=True)
 
     downloader = DownloaderStrategy(download_folder=output_path)
@@ -176,7 +180,7 @@ def download_multiple_sits(
 
     pbar = tqdm(
         total=len(initial_download_chunks) * chunksize,
-        desc=f"Building download URLs ({satellite.shortName}_{hashname}_{chunksize})",
+        desc=f"Building download URLs ({output_path.name})",
         unit="feature",
         smoothing=0,
     )

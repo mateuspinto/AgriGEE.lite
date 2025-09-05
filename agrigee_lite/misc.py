@@ -1,11 +1,10 @@
 import concurrent.futures
 import hashlib
 import inspect
+import json
 import warnings
 from collections import deque
 from collections.abc import Callable
-from functools import lru_cache, wraps
-from typing import ParamSpec, TypeVar
 
 import geopandas as gpd
 import numpy as np
@@ -161,18 +160,8 @@ def create_gdf_hash(gdf: gpd.GeoDataFrame) -> str:
     return hashlib.sha1(hash_values).hexdigest()  # type: ignore  # noqa: PGH003, S324
 
 
-P = ParamSpec("P")
-R = TypeVar("R")
-
-
-def cached(func: Callable[P, R]) -> Callable[P, R]:
-    cached_func = lru_cache()(func)
-
-    @wraps(func)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        return cached_func(*args, **kwargs)  # type: ignore  # noqa: PGH003
-
-    return wrapper
+def create_dict_hash(d: dict) -> str:
+    return hashlib.sha1(json.dumps(d, sort_keys=True).encode("utf-8")).hexdigest()  # noqa: S324
 
 
 def remove_underscore_in_df(df: pd.DataFrame | gpd.GeoDataFrame) -> None:
