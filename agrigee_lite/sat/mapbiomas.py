@@ -5,7 +5,83 @@ from agrigee_lite.sat.abstract_satellite import DataSourceSatellite
 
 
 class MapBiomas(DataSourceSatellite):
-    def __init__(self) -> None:
+    """
+    Satellite abstraction for MapBiomas Brazil Collection 10 Land Use and Land Cover (LULC) data.
+
+    This class wraps the official MapBiomas Collection 10 LULC classification product for Brazil.
+    The dataset provides annual land use and land cover classifications from 1985 to 2023 at 30-meter resolution,
+    with majority class (`10_class`) and percent agreement (`11_percent`) bands.
+
+    It is suitable for long-term land cover trend analysis, ecosystem monitoring, and environmental assessments.
+
+    Parameters
+    ----------
+    border_pixels_to_erode : float, default=1
+        Number of border pixels (in pixels) to erode from the input geometry before analysis.
+        Helps remove classification noise from edges. Use 0 to disable.
+    min_area_to_keep_border : int, default=50000
+        Minimum area in square meters to retain the eroded region.
+        Used to avoid discarding small geometries entirely.
+
+    Bands
+    -----
+    +-------------+------------------------+-------------------------------------------------------------+
+    | Band Name   | Type                   | Description                                                 |
+    +-------------+------------------------+-------------------------------------------------------------+
+    | 10_class    | Categorical (int)      | Most frequent land use/cover class for the pixel/year       |
+    | 11_percent  | Float (0-1)            | Proportion of classification votes for the majority class   |
+    +-------------+------------------------+-------------------------------------------------------------+
+
+    Classes
+    -------
+    Each integer value in the `10_class` band corresponds to a LULC class defined by MapBiomas.
+    Refer to `self.classes` for full label and color mapping. Examples include:
+    - 3: Forest Formation
+    - 14: Farming
+    - 24: Urban Area
+    - 26: Water
+    - 39: Soybean
+    - 46: Coffee
+
+    Processing Overview
+    -------------------
+    1. The MapBiomas classification image (`mapbiomas_brazil_collection10_coverage_v2`) is loaded.
+    2. For each year between the start and end date of the input feature:
+    - The modal (most frequent) class is computed (`10_class`)
+    - Its pixel agreement (% of pixels matching that class) is calculated (`11_percent`)
+    3. Optionally, the geometry is eroded to avoid edge noise.
+    4. Final features are returned as an annual time series of LULC summaries.
+
+    Dataset Information
+    -------------------
+    +-------------------------+------------------------------------------------------+
+    | Field                   | Value                                                |
+    +-------------------------+------------------------------------------------------+
+    | Dataset                 | MapBiomas Brazil Collection 10                       |
+    | Temporal Coverage       | 1985 - 2023                                          |
+    | Spatial Resolution      | 30 meters                                            |
+    | Projection              | EPSG: 4674 (SIRGAS 2000)                             |
+    | Source Imagery          | Landsat (TM, ETM+, OLI)                              |
+    | Classification Method   | Random Forest + Temporal Filtering                   |
+    +-------------------------+------------------------------------------------------+
+
+    Notes
+    -----
+    - Official MapBiomas dataset (Earth Engine):
+    https://developers.google.com/earth-engine/datasets/catalog/projects_mapbiomas-public_assets_brazil_lulc_collection10_mapbiomas_brazil_collection10_coverage_v2
+
+    - ATBD (Algorithm Theoretical Basis Document) Collection 10:
+    https://mapbiomas.org/downloads?cama_set_language=en
+
+    - Only the majority class (`classification_YEAR`) is used here — secondary confidence or transitions are not included.
+
+    """
+
+    def __init__(
+        self,
+        border_pixels_to_erode: float = 1,
+        min_area_to_keep_border: int = 50_000,
+    ) -> None:
         super().__init__()
         self.imageAsset: str = (
             "projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_coverage_v2"
@@ -60,6 +136,10 @@ class MapBiomas(DataSourceSatellite):
             75: {"label": "Photovoltaic Power Plant (beta)", "color": "#c12100"},
         }
 
+        self.minAreaToKeepBorder = min_area_to_keep_border
+        self.borderPixelsToErode = border_pixels_to_erode
+        self.toDownloadSelectors = ["10_class", "11_percent"]
+
     def compute(
         self,
         ee_feature: ee.Feature,
@@ -67,8 +147,12 @@ class MapBiomas(DataSourceSatellite):
         reducers: set[str] | None = None,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
-        ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 50000)
-        ee_feature = ee_feature.setGeometry(ee_geometry)
+
+        if self.borderPixelsToErode != 0:
+            ee_geometry = ee_safe_remove_borders(
+                ee_geometry, round(self.borderPixelsToErode * self.pixelSize), self.minAreaToKeepBorder
+            )
+            ee_feature = ee_feature.setGeometry(ee_geometry)
 
         mb_image = ee.Image(self.imageAsset)
         mb_image = ee_map_valid_pixels(mb_image, ee_geometry, self.pixelSize)
