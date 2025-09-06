@@ -138,6 +138,11 @@ class Sentinel1GRD(RadarSatellite):
             for n, indice_name in enumerate(indices)
         ]
 
+        self.toDownloadSelectors = (
+            [numeral_band_name for _, numeral_band_name in self.selectedBands]
+            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
+        )
+
     @staticmethod
     def _mask_edge(img: ee.Image) -> ee.Image:
         """

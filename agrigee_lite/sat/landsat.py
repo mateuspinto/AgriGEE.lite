@@ -108,6 +108,11 @@ class AbstractLandsat(OpticalSatellite):
         self.minAreaToKeepBorder = min_area_to_keep_border
         self.borderPixelsToErode = border_pixels_to_erode
 
+        self.toDownloadSelectors = (
+            [numeral_band_name for _, numeral_band_name in self.selectedBands]
+            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
+        )
+
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         geom = ee_feature.geometry()
         ee_filter = ee.Filter.And(
@@ -231,12 +236,12 @@ class Landsat5(AbstractLandsat):
     +-----------+----------+-----------+------------------------+
     | Band Name | TOA Name | SR Name   | Spectral Wavelength    |
     +-----------+----------+-----------+------------------------+
-    | blue      | B1       | SR_B1     | 450–520 nm             |
-    | green     | B2       | SR_B2     | 520–600 nm             |
-    | red       | B3       | SR_B3     | 630–690 nm             |
-    | nir       | B4       | SR_B4     | 770–900 nm             |
-    | swir1     | B5       | SR_B5     | 1550–1750 nm           |
-    | swir2     | B7       | SR_B7     | 2090–2350 nm           |
+    | blue      | B1       | SR_B1     | 450-520 nm             |
+    | green     | B2       | SR_B2     | 520-600 nm             |
+    | red       | B3       | SR_B3     | 630-690 nm             |
+    | nir       | B4       | SR_B4     | 770-900 nm             |
+    | swir1     | B5       | SR_B5     | 1550-1750 nm           |
+    | swir2     | B7       | SR_B7     | 2090-2350 nm           |
     +-----------+----------+-----------+------------------------+
 
     Notes
@@ -353,12 +358,12 @@ class Landsat7(AbstractLandsat):
     +-----------+----------+-----------+------------------------+
     | Band Name | TOA Name | SR Name   | Spectral Wavelength    |
     +-----------+----------+-----------+------------------------+
-    | blue      | B1       | SR_B1     | 450–520 nm             |
-    | green     | B2       | SR_B2     | 520–600 nm             |
-    | red       | B3       | SR_B3     | 630–690 nm             |
-    | nir       | B4       | SR_B4     | 770–900 nm             |
-    | swir1     | B5       | SR_B5     | 1550–1750 nm           |
-    | swir2     | B7       | SR_B7     | 2090–2350 nm           |
+    | blue      | B1       | SR_B1     | 450-520 nm             |
+    | green     | B2       | SR_B2     | 520-600 nm             |
+    | red       | B3       | SR_B3     | 630-690 nm             |
+    | nir       | B4       | SR_B4     | 770-900 nm             |
+    | swir1     | B5       | SR_B5     | 1550-1750 nm           |
+    | swir2     | B7       | SR_B7     | 2090-2350 nm           |
     +-----------+----------+-----------+------------------------+
 
     Notes
@@ -475,12 +480,12 @@ class Landsat8(AbstractLandsat):
     +-----------+----------+-----------+------------------------+
     | Band Name | TOA Name | SR Name   | Spectral Wavelength    |
     +-----------+----------+-----------+------------------------+
-    | blue      | B2       | SR_B2     | 450–515 nm             |
-    | green     | B3       | SR_B3     | 525–600 nm             |
-    | red       | B4       | SR_B4     | 630–680 nm             |
-    | nir       | B5       | SR_B5     | 845–885 nm             |
-    | swir1     | B6       | SR_B6     | 1560–1660 nm           |
-    | swir2     | B7       | SR_B7     | 2100–2300 nm           |
+    | blue      | B2       | SR_B2     | 450-515 nm             |
+    | green     | B3       | SR_B3     | 525-600 nm             |
+    | red       | B4       | SR_B4     | 630-680 nm             |
+    | nir       | B5       | SR_B5     | 845-885 nm             |
+    | swir1     | B6       | SR_B6     | 1560-1660 nm           |
+    | swir2     | B7       | SR_B7     | 2100-2300 nm           |
     +-----------+----------+-----------+------------------------+
 
     Notes
@@ -598,12 +603,12 @@ class Landsat9(AbstractLandsat):
     +-----------+----------+-----------+------------------------+
     | Band Name | TOA Name | SR Name   | Spectral Wavelength    |
     +-----------+----------+-----------+------------------------+
-    | blue      | B2       | SR_B2     | 450–515 nm             |
-    | green     | B3       | SR_B3     | 525–600 nm             |
-    | red       | B4       | SR_B4     | 630–680 nm             |
-    | nir       | B5       | SR_B5     | 845–885 nm             |
-    | swir1     | B6       | SR_B6     | 1560–1660 nm           |
-    | swir2     | B7       | SR_B7     | 2100–2300 nm           |
+    | blue      | B2       | SR_B2     | 450-515 nm             |
+    | green     | B3       | SR_B3     | 525-600 nm             |
+    | red       | B4       | SR_B4     | 630-680 nm             |
+    | nir       | B5       | SR_B5     | 845-885 nm             |
+    | swir1     | B6       | SR_B6     | 1560-1660 nm           |
+    | swir2     | B7       | SR_B7     | 2100-2300 nm           |
     +-----------+----------+-----------+------------------------+
 
     Notes

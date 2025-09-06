@@ -72,8 +72,8 @@ class ModisDaily(OpticalSatellite):
     +-----------+----------------+----------------+------------------------+
     | Band Name | Original Band  | Resolution     | Spectral Wavelength    |
     +-----------+----------------+----------------+------------------------+
-    | red       | sur_refl_b01   | 250 meters     | 620–670 nm             |
-    | nir       | sur_refl_b02   | 250 meters     | 841–876 nm             |
+    | red       | sur_refl_b01   | 250 meters     | 620-670 nm             |
+    | nir       | sur_refl_b02   | 250 meters     | 841-876 nm             |
     +-----------+----------------+----------------+------------------------+
 
     Notes
@@ -129,6 +129,11 @@ class ModisDaily(OpticalSatellite):
         self.minValidPixelCount = min_valid_pixel_count
         self.minAreaToKeepBorder = min_area_to_keep_border
         self.borderPixelsToErode = border_pixels_to_erode
+
+        self.toDownloadSelectors = (
+            [numeral_band_name for _, numeral_band_name in self.selectedBands]
+            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
+        )
 
     @staticmethod
     def _mask_modis_clouds(img: ee.Image) -> ee.Image:
@@ -227,7 +232,7 @@ class Modis8Days(OpticalSatellite):
     indices : list of str, optional
         List of spectral indices to compute from selected bands.
     use_cloud_mask : bool, default=True
-        Whether to apply a cloud mask based on the QA 'State' band (bits 0–1).
+        Whether to apply a cloud mask based on the QA 'State' band (bits 0-1).
         If True, only pixels with cloud state == 0 (clear) are retained.
     min_valid_pixel_count : int, default=2
         Minimum number of valid (non-cloud) pixels required to retain an image.
@@ -238,7 +243,7 @@ class Modis8Days(OpticalSatellite):
 
     Cloud Masking
     -------------
-    Cloudy pixels are masked using bits 0–1 of the 'State' QA band, which encode cloud state:
+    Cloudy pixels are masked using bits 0-1 of the 'State' QA band, which encode cloud state:
         - 00: clear
         - 01: cloudy
         - 10: mixed
@@ -272,8 +277,8 @@ class Modis8Days(OpticalSatellite):
     +-----------+----------------+----------------+------------------------+
     | Band Name | Original Band  | Resolution     | Spectral Wavelength    |
     +-----------+----------------+----------------+------------------------+
-    | red       | sur_refl_b01   | 250 meters     | 620–670 nm             |
-    | nir       | sur_refl_b02   | 250 meters     | 841–876 nm             |
+    | red       | sur_refl_b01   | 250 meters     | 620-670 nm             |
+    | nir       | sur_refl_b02   | 250 meters     | 841-876 nm             |
     +-----------+----------------+----------------+------------------------+
 
     Notes
@@ -325,6 +330,11 @@ class Modis8Days(OpticalSatellite):
         self.minValidPixelCount = min_valid_pixel_count
         self.minAreaToKeepBorder = min_area_to_keep_border
         self.borderPixelsToErode = border_pixels_to_erode
+
+        self.toDownloadSelectors = (
+            [numeral_band_name for _, numeral_band_name in self.selectedBands]
+            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
+        )
 
     @staticmethod
     def _mask_modis8days_clouds(img: ee.Image) -> ee.Image:

@@ -44,8 +44,7 @@ def build_selectors(satellite: AbstractSatellite, reducers: set[str] | None) -> 
         return [
             "00_indexnum",
             "01_timestamp",
-            *[numeral_band_name for _, numeral_band_name in satellite.selectedBands],
-            *[numeral_indice_name for _, _, numeral_indice_name in satellite.selectedIndices],
+            *satellite.toDownloadSelectors,
             "99_validPixelsCount",
         ]
 
@@ -81,8 +80,8 @@ def prepare_output_df(df: pd.DataFrame, satellite: AbstractSatellite, original_i
     if "timestamp" in df.columns:
         df["timestamp"] = pd.to_datetime(df["timestamp"], format="%Y-%m-%d")
 
-    df = df.sort_values(by=["indexnum"], kind="stable")
-    df = df.reset_index(drop=True)
+    if "timestamp" in df.columns and df["timestamp"].isna().all():
+        df = df.drop(columns=["timestamp"])
 
     if "indexnum" in df.columns and (df["indexnum"] == 0).all():
         df = df.drop(columns=["indexnum"])

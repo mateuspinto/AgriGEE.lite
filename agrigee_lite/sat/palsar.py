@@ -120,6 +120,11 @@ class PALSAR2ScanSAR(RadarSatellite):
         self.minAreaToKeepBorder = min_area_to_keep_border
         self.borderPixelsToErode = border_pixels_to_erode
 
+        self.toDownloadSelectors = (
+            [numeral_band_name for _, numeral_band_name in self.selectedBands]
+            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
+        )
+
     @staticmethod
     def _mask_quality(img: ee.Image) -> ee.Image:
         """

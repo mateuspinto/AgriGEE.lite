@@ -60,6 +60,8 @@ def ee_cloud_probability_mask(img: ee.Image, threshold: float, invert: bool = Fa
 
 
 def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame, original_index_column_name: str) -> ee.FeatureCollection:
+    gdf = gdf.copy()
+
     gdf = gdf[[original_index_column_name, "geometry", "start_date", "end_date"]]
 
     gdf["start_date"] = gdf["start_date"].dt.strftime("%Y-%m-%d")
