@@ -18,6 +18,17 @@ class SatelliteEmbedding(DataSourceSatellite):
 
     IMPORTANT: It always returns the center point value as the median (in order to maintain z-sphere normalization) and the standard deviation of the geometry without the borders.
 
+    Parameters
+    ----------
+    bands : list of str, optional
+        List of bands to select. Defaults to all 64 embeddings.
+    min_valid_pixel_count : int, default=1
+        Minimum number of valid (non-eroded) pixels required to retain an image.
+    border_pixels_to_erode : float, default=1
+        Number of pixels to erode from the geometry border.
+    min_area_to_keep_border : int, default=35_000
+        Minimum area (in m²) required to retain geometry after border erosion.
+
     Satellite Information
     ---------------------
     +-----------------------------+-----------------------+
@@ -37,9 +48,20 @@ class SatelliteEmbedding(DataSourceSatellite):
     +------------+------------+
     | 2017-01-01 | 2024-01-02 |
     +------------+------------+
+
+    Notes
+    ----------------
+    Satellite Embedding V1:
+        - Dataset: https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_SATELLITE_EMBEDDING_V1_ANNUAL?hl=pt-br#bands
     """
 
-    def __init__(self, bands: list[str] | None = None):
+    def __init__(
+        self,
+        bands: list[str] | None = None,
+        min_valid_pixel_count: int = 1,
+        border_pixels_to_erode: float = 1,
+        min_area_to_keep_border: int = 35000,
+    ):
         super().__init__()
 
         if bands is None:
@@ -53,6 +75,10 @@ class SatelliteEmbedding(DataSourceSatellite):
 
         self.availableBands: dict[str, str] = {b: b for b in bands}
         self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
+
+        self.minValidPixelCount = min_valid_pixel_count
+        self.minAreaToKeepBorder = min_area_to_keep_border
+        self.borderPixelsToErode = border_pixels_to_erode
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()
@@ -78,7 +104,7 @@ class SatelliteEmbedding(DataSourceSatellite):
             [renamed for _, renamed in self.selectedBands],
         )
 
-        imgcol = ee_filter_img_collection_invalid_pixels(imgcol, ee_geometry, self.pixelSize, 20)
+        imgcol = ee_filter_img_collection_invalid_pixels(imgcol, ee_geometry, self.pixelSize, self.minValidPixelCount)
 
         return imgcol
 
@@ -89,8 +115,12 @@ class SatelliteEmbedding(DataSourceSatellite):
         reducers: set[str] | None = None,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
-        ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 35000)
-        ee_feature = ee_feature.setGeometry(ee_geometry)
+
+        if self.borderPixelsToErode != 0:
+            ee_geometry = ee_safe_remove_borders(
+                ee_geometry, round(self.borderPixelsToErode * self.pixelSize), self.minAreaToKeepBorder
+            )
+            ee_feature = ee_feature.setGeometry(ee_geometry)
 
         imgcol = self.imageCollection(ee_feature)
 

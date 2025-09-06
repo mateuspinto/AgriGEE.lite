@@ -15,50 +15,84 @@ from agrigee_lite.sat.abstract_satellite import RadarSatellite
 
 class PALSAR2ScanSAR(RadarSatellite):
     """
-    Satellite abstraction for ALOS PALSAR-2 ScanSAR (Level2.2).
+    Satellite abstraction for ALOS PALSAR-2 ScanSAR (Level 2.2).
 
-    The PALSAR-2 onboard ALOS-2 provides L-band SAR observations.
-    This class filters and preprocesses the ScanSAR (25m resolution) dataset.
+    PALSAR-2 is an L-band Synthetic Aperture Radar (SAR) sensor onboard the ALOS-2 satellite,
+    operated by JAXA. This class provides preprocessing and abstraction for the Level 2.2
+    ScanSAR data product with 25-meter resolution. Optionally applies the MSK quality mask.
 
     Parameters
     ----------
-    bands : list of str, optional
-        List of bands to select. Default is ['HH'].
-    indices : list of str, optional
-        List of custom radar indices (e.g. ratios). Default is empty.
+    bands : set of str, optional
+        Set of bands to select. Defaults to ['hh', 'hv'].
+    indices : set of str, optional
+        Radar indices to compute (e.g., polarization ratios). Defaults to [].
+    use_quality_mask : bool, default=True
+        Whether to apply the MSK bitmask quality filter. If False, all pixels are retained,
+        including those marked as low-quality or invalid.
+    min_valid_pixel_count : int, default=20
+        Minimum number of valid (non-cloud) pixels required to retain an image.
+    border_pixels_to_erode : float, default=1
+        Number of pixels to erode from the geometry border.
+    min_area_to_keep_border : int, default=35_000
+        Minimum area (in m²) required to retain geometry after border erosion.
+
+    Quality Masking
+    ---------------
+    When `use_quality_mask=True`, the `MSK` band is used to filter out invalid pixels.
+    The first 3 bits of the `MSK` band indicate data quality:
+        - 1 → Valid
+        - 5 → Invalid
+    Only pixels with value 1 are retained.
 
     Satellite Information
     ---------------------
-    +----------------------------+-----------------------------+
-    | Name                       | ALOS PALSAR-2 ScanSAR       |
-    | Revisit Time              | ~14 days                    |
-    | Pixel Size                | ~25 meters                  |
-    | Coverage                  | Japan + some global areas   |
-    +----------------------------+-----------------------------+
+    +----------------------------+-------------------------------+
+    | Field                      | Value                         |
+    +----------------------------+-------------------------------+
+    | Name                       | ALOS PALSAR-2 ScanSAR         |
+    | Sensor                     | PALSAR-2 (L-band SAR)         |
+    | Platform                   | ALOS-2                        |
+    | Revisit Time               | ~14 days                      |
+    | Pixel Size                 | ~25 meters                    |
+    | Coverage                   | Japan + selected global areas |
+    +----------------------------+-------------------------------+
 
     Collection Dates
     ----------------
-    +------------------+------------+--------+
-    | Collection Type  | Start Date | End    |
-    +------------------+------------+--------+
-    | Level 2.2 ScanSAR| 2014-08-04 | present|
-    +------------------+------------+--------+
+    +----------------+-------------+------------+
+    | Collection     | Start Date  | End Date   |
+    +----------------+-------------+------------+
+    | Level 2.2      | 2014-08-04  | present    |
+    +----------------+-------------+------------+
 
     Band Information
-    ------------
-    +--------+--------+--------------+----------------------+
-    | Band   | Type   | Resolution   | Notes                |
-    +--------+--------+--------------+----------------------+
-    | HH     | L-band | ~25 m        | Horizontal transmit/receive |
-    | HV     | L-band | ~25 m        | Horizontal transmit, vertical receive |
-    | MSK    | Mask   | ~25 m        | Quality bitmask      |
-    +--------+--------+--------------+----------------------+
+    ----------------
+    +-----------+---------+------------+-------------------------------------------+
+    | Band Name | Type    | Resolution | Description                               |
+    +-----------+---------+------------+-------------------------------------------+
+    | hh        | L-band  | ~25 m      | Horizontal transmit and receive           |
+    | hv        | L-band  | ~25 m      | Horizontal transmit, vertical receive     |
+    | msk       | Bitmask | ~25 m      | MSK quality band (used only if enabled)   |
+    +-----------+---------+------------+-------------------------------------------+
+
+    Notes
+    -----
+    - Earth Engine Dataset:
+        https://developers.google.com/earth-engine/datasets/catalog/JAXA_ALOS_PALSAR-2_Level2_2_ScanSAR
+
+    - MSK Quality Mask Details (bit pattern):
+        https://www.eorc.jaxa.jp/ALOS/en/palsar_fnf/data/Format_PALSAR-2.html
     """
 
     def __init__(
         self,
         bands: set[str] | None = None,
         indices: set[str] | None = None,
+        use_quality_mask: bool = True,
+        min_valid_pixel_count: int = 20,
+        border_pixels_to_erode: float = 1,
+        min_area_to_keep_border: int = 35000,
     ):
         bands = sorted({"hh", "hv"}) if bands is None else sorted(bands)
 
@@ -80,6 +114,11 @@ class PALSAR2ScanSAR(RadarSatellite):
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
             for n, indice_name in enumerate(indices)
         ]
+
+        self.use_quality_mask = use_quality_mask
+        self.minValidPixelCount = min_valid_pixel_count
+        self.minAreaToKeepBorder = min_area_to_keep_border
+        self.borderPixelsToErode = border_pixels_to_erode
 
     @staticmethod
     def _mask_quality(img: ee.Image) -> ee.Image:
@@ -110,11 +149,13 @@ class PALSAR2ScanSAR(RadarSatellite):
 
         ee_filter = ee.Filter.And(ee.Filter.bounds(ee_geometry), ee.Filter.date(ee_start, ee_end))
 
-        palsar_img = (
-            ee.ImageCollection(self.imageCollectionName)
-            .filter(ee_filter)
-            .map(self._mask_quality)
-            .select([self.availableBands[b] for b, _ in self.selectedBands], [b for b, _ in self.selectedBands])
+        palsar_img = ee.ImageCollection(self.imageCollectionName).filter(ee_filter)
+
+        if self.use_quality_mask:
+            palsar_img = palsar_img.map(self._mask_quality)
+
+        palsar_img = palsar_img.select(
+            [self.availableBands[b] for b, _ in self.selectedBands], [b for b, _ in self.selectedBands]
         )
 
         palsar_img = palsar_img.map(
@@ -144,8 +185,12 @@ class PALSAR2ScanSAR(RadarSatellite):
         reducers: set[str] | None = None,
     ) -> ee.FeatureCollection:
         ee_geometry = ee_feature.geometry()
-        ee_geometry = ee_safe_remove_borders(ee_geometry, self.pixelSize, 35000)
-        ee_feature = ee_feature.setGeometry(ee_geometry)
+
+        if self.borderPixelsToErode != 0:
+            ee_geometry = ee_safe_remove_borders(
+                ee_geometry, round(self.borderPixelsToErode * self.pixelSize), self.minAreaToKeepBorder
+            )
+            ee_feature = ee_feature.setGeometry(ee_geometry)
 
         palsar_img = self.imageCollection(ee_feature)
 
