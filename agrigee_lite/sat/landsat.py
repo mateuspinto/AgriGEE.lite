@@ -145,7 +145,7 @@ class AbstractLandsat(OpticalSatellite):
             + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
         )
 
-        col = ee_filter_img_collection_invalid_pixels(col, geom, self.pixelSize, self.min_valid_pixel_count)
+        col = ee_filter_img_collection_invalid_pixels(col, geom, self.pixelSize, self.minValidPixelCount)
         return ee.ImageCollection(col)
 
     def compute(
@@ -272,6 +272,9 @@ class Landsat5(AbstractLandsat):
         use_sr: bool = True,
         tier: int = 1,
         use_cloud_mask: bool = True,
+        min_valid_pixel_count: int = 12,
+        border_pixels_to_erode: float = 1,
+        min_area_to_keep_border: int = 50_000,
     ):
         toa = {"blue": "B1", "green": "B2", "red": "B3", "nir": "B4", "swir1": "B5", "swir2": "B7"}
         sr = {
@@ -294,6 +297,9 @@ class Landsat5(AbstractLandsat):
             use_sr=use_sr,
             tier=tier,
             use_cloud_mask=use_cloud_mask,
+            min_valid_pixel_count=min_valid_pixel_count,
+            border_pixels_to_erode=border_pixels_to_erode,
+            min_area_to_keep_border=min_area_to_keep_border,
         )
 
 
@@ -394,6 +400,9 @@ class Landsat7(AbstractLandsat):
         use_sr: bool = True,
         tier: int = 1,
         use_cloud_mask: bool = True,
+        min_valid_pixel_count: int = 12,
+        border_pixels_to_erode: float = 1,
+        min_area_to_keep_border: int = 50_000,
     ):
         toa = {"blue": "B1", "green": "B2", "red": "B3", "nir": "B4", "swir1": "B5", "swir2": "B7"}
         sr = {
@@ -416,6 +425,9 @@ class Landsat7(AbstractLandsat):
             use_sr=use_sr,
             tier=tier,
             use_cloud_mask=use_cloud_mask,
+            min_valid_pixel_count=min_valid_pixel_count,
+            border_pixels_to_erode=border_pixels_to_erode,
+            min_area_to_keep_border=min_area_to_keep_border,
         )
 
 
@@ -516,6 +528,9 @@ class Landsat8(AbstractLandsat):
         use_sr: bool = True,
         tier: int = 1,
         use_cloud_mask: bool = True,
+        min_valid_pixel_count: int = 12,
+        border_pixels_to_erode: float = 1,
+        min_area_to_keep_border: int = 50_000,
     ):
         toa = {"blue": "B2", "green": "B3", "red": "B4", "nir": "B5", "swir1": "B6", "swir2": "B7"}
         sr = {
@@ -538,6 +553,9 @@ class Landsat8(AbstractLandsat):
             use_sr=use_sr,
             tier=tier,
             use_cloud_mask=use_cloud_mask,
+            min_valid_pixel_count=min_valid_pixel_count,
+            border_pixels_to_erode=border_pixels_to_erode,
+            min_area_to_keep_border=min_area_to_keep_border,
         )
 
 
@@ -639,6 +657,9 @@ class Landsat9(AbstractLandsat):
         use_sr: bool = True,
         tier: int = 1,
         use_cloud_mask: bool = True,
+        min_valid_pixel_count: int = 12,
+        border_pixels_to_erode: float = 1,
+        min_area_to_keep_border: int = 50_000,
     ):
         toa = {"blue": "B2", "green": "B3", "red": "B4", "nir": "B5", "swir1": "B6", "swir2": "B7"}
         sr = {
@@ -661,6 +682,9 @@ class Landsat9(AbstractLandsat):
             use_sr=use_sr,
             tier=tier,
             use_cloud_mask=use_cloud_mask,
+            min_valid_pixel_count=min_valid_pixel_count,
+            border_pixels_to_erode=border_pixels_to_erode,
+            min_area_to_keep_border=min_area_to_keep_border,
         )
 
 
@@ -672,5 +696,8 @@ class Landsat10(AbstractLandsat):
         use_sr: bool = True,
         tier: int = 1,
         use_cloud_mask: bool = True,
+        min_valid_pixel_count: int = 12,
+        border_pixels_to_erode: float = 1,
+        min_area_to_keep_border: int = 50_000,
     ):
         raise NotImplementedError("HAHA FUNNY. Landsat 10 does not exist (yet).")

@@ -49,6 +49,7 @@ class UnifiedSatellite(OpticalSatellite):
         ).isoformat()
 
         self.pixelSize = min(satellite_a.pixelSize, satellite_b.pixelSize)
+        self.shortName = f"unified_{satellite_a.shortName}_{satellite_b.shortName}"
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         sat_a = self.sat_a.imageCollection(ee_feature)
@@ -94,3 +95,9 @@ class UnifiedSatellite(OpticalSatellite):
         )
 
         return features
+
+    def log_dict(self) -> dict:
+        d = {}
+        d["sat_a"] = self.sat_a.log_dict()
+        d["sat_b"] = self.sat_b.log_dict()
+        return d

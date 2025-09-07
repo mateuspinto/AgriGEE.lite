@@ -94,7 +94,6 @@ class ANADEM(SingleImageSatellite):
     def _build_to_download_selectors(self) -> list[str]:
         selectors = []
 
-        # Aliases selecionados (neste caso iguais aos nomes das bandas)
         band_aliases = [alias for _, alias in self.selectedBands]
 
         if "elevation" in band_aliases:
