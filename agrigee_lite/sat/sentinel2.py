@@ -140,10 +140,9 @@ class Sentinel2(OpticalSatellite):
         self.minAreaToKeepBorder = min_area_to_keep_border
         self.borderPixelsToErode = border_pixels_to_erode
 
-        self.toDownloadSelectors = (
-            [numeral_band_name for _, numeral_band_name in self.selectedBands]
-            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
-        )
+        self.toDownloadSelectors = [numeral_band_name for _, numeral_band_name in self.selectedBands] + [
+            numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices
+        ]
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()

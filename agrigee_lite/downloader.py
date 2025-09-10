@@ -21,42 +21,54 @@ class DownloaderStrategy:
             while not self.is_downloader_running():
                 time.sleep(1)
 
-        self.download_gids = []
+        self.downloads_map = {}  # {meu_id: gid}
 
     def is_downloader_running(self) -> bool:
         try:
             self.aria2.get_downloads()
         except:  # noqa: E722
             return False
-
         return True
 
-    def add_download(self, urls: list[str]) -> None:
-        self.download_gids.append(self.aria2.add_uris(urls, {"dir": str(self.download_folder.absolute()) + "/"}).gid)
+    def add_download(self, items: list[tuple[int | str, str]]) -> None:
+        for meu_id, url in items:
+            if meu_id in self.downloads_map:
+                try:
+                    existing_download = self.aria2.get_download(self.downloads_map[meu_id])
+                    if existing_download.status != "error":
+                        raise Exception(
+                            f"Download with id={meu_id} already exists with status='{existing_download.status}'."
+                        )
+                except Exception as e:
+                    raise Exception(f"Error checking existing download for id={meu_id}: {e}")
+
+            download = self.aria2.add_uris([url], {"dir": str(self.download_folder.absolute()) + "/"})
+            self.downloads_map[meu_id] = download.gid
 
     @property
-    def downloads(self) -> list[aria2p.Download]:
-        return [self.aria2.get_download(gid) for gid in self.download_gids]
+    def downloads(self) -> dict[str, aria2p.Download]:
+        items_copy = list(self.downloads_map.items())
+        return {meu_id: self.aria2.get_download(gid) for meu_id, gid in items_copy}
 
     @property
     def num_unfinished_downloads(self) -> int:
-        return sum(d.status == "active" for d in self.downloads)
+        return sum(d.status == "active" for d in self.downloads.values())
 
     @property
     def num_downloads_with_error(self) -> int:
-        return sum(d.status == "error" for d in self.downloads)
+        return sum(d.status == "error" for d in self.downloads.values())
 
     @property
     def num_completed_downloads(self) -> int:
-        return sum(d.status == "complete" for d in self.downloads)
+        return sum(d.status == "complete" for d in self.downloads.values())
 
     @property
-    def failed_downloads(self) -> list[int]:
-        return [i for i, d in enumerate(self.downloads) if d.status == "error"]
+    def failed_downloads(self) -> list[str]:
+        return [meu_id for meu_id, d in self.downloads.items() if d.status == "error"]
 
     @property
     def is_empty(self) -> bool:
-        return len(self.downloads) == 0
+        return len(self.downloads_map) == 0
 
     def reset_downloads(self) -> None:
-        self.download_gids = []
+        self.downloads_map.clear()

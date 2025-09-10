@@ -50,6 +50,9 @@ class UnifiedSatellite(OpticalSatellite):
 
         self.pixelSize = min(satellite_a.pixelSize, satellite_b.pixelSize)
         self.shortName = f"unified_{satellite_a.shortName}_{satellite_b.shortName}"
+        self.toDownloadSelectors = [
+            f"8{selector}{satellite_a.shortName}" for selector in satellite_a.toDownloadSelectors
+        ] + [f"7{selector}{satellite_b.shortName}" for selector in satellite_b.toDownloadSelectors]
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         sat_a = self.sat_a.imageCollection(ee_feature)

@@ -1,3 +1,4 @@
+import logging
 import pathlib
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -86,10 +87,9 @@ def download_multiple_images(  # noqa: C901
         try:
             img = ee.Image(ee_expression.filter(ee.Filter.eq("system:index", image_indexes[chunk_index])).first())
             url = img.getDownloadURL({"name": str(chunk_index), "region": ee_geometry})
-            downloader.add_download([url])
+            downloader.add_download([(chunk_index, url)])
             return chunk_index, True  # noqa: TRY300
-        except Exception as e:
-            print(f"[Erro] Chunk {chunk_index}: {e}")
+        except Exception as _:
             return chunk_index, False
 
     while downloader.num_completed_downloads < len(pending_chunks):
@@ -101,6 +101,7 @@ def download_multiple_images(  # noqa: C901
                 chunk, success = future.result()
                 if not success:
                     failed_chunks.append(chunk)
+                    logging.warning(f"Download images - {output_path} - Failed to initiate download for chunk {chunk}.")
 
                 update_pbar()
 

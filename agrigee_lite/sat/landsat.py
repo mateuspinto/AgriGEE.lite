@@ -131,20 +131,19 @@ class AbstractLandsat(OpticalSatellite):
         self.usePanSharpening = use_pan_sharpening
         self.toaCloudFilterStrength = toa_cloud_filter_strength
 
-        self.toDownloadSelectors = (
-            [numeral_band_name for _, numeral_band_name in self.selectedBands]
-            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
-        )
+        self.toDownloadSelectors = [numeral_band_name for _, numeral_band_name in self.selectedBands] + [
+            numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices
+        ]
 
-    def ee_l_pan_sharpen(self, image: ee.Image) -> ee.Image:
-        rgb = image.select(["red", "green", "blue"]).resample("bicubic").reproject(crs=image.select("pan").projection())
+    def ee_l_pan_sharpen(self, image: ee.Image, geometry: ee.Geometry) -> ee.Image:
+        rgb = image.select(["red", "green", "blue"]).resample("bicubic")
         hsv = rgb.rgbToHsv()
 
         pan = image.select("pan")
 
         sharpened = ee.Image.cat([hsv.select("hue"), hsv.select("saturation"), pan]).hsvToRgb()
 
-        return image.addBands(sharpened, ["red", "green", "blue"], overwrite=True)
+        return image.addBands(sharpened, ["red", "green", "blue"], overwrite=True).clip(geometry)
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         geom = ee_feature.geometry()
@@ -164,7 +163,7 @@ class AbstractLandsat(OpticalSatellite):
         col = col.select(list(self.availableBands.values()), list(self.availableBands.keys()))
 
         if self.usePanSharpening:
-            col = col.map(self.ee_l_pan_sharpen)
+            col = col.map(partial(self.ee_l_pan_sharpen, geometry=geom))
 
         if self.useCloudMask:
             col = col.map(ee_l_mask)

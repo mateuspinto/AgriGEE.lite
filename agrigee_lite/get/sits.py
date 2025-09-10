@@ -1,5 +1,6 @@
 import getpass
 import json
+import logging
 import pathlib
 import time
 from functools import partial
@@ -102,7 +103,7 @@ def sanitize_and_prepare_input_gdf(
 
     if original_index_column_name == "original_index":
         gdf = gdf.reset_index().rename(columns={"index": original_index_column_name})
-        print(f"Column '{original_index_column_name}' created to store original index.")
+        logging.info(f"Column '{original_index_column_name}' created to store original index.")
 
     schema = pa.DataFrameSchema(
         {
@@ -124,11 +125,11 @@ def sanitize_and_prepare_input_gdf(
 
     pct_none = 100 * count_none / len(gdf)
     if pct_none > 0:
-        print(f"{pct_none:.2f}% of the data do not intersect the satellite period.")
+        logging.warning(f"{pct_none:.2f}% of the data do not intersect the satellite period.")
 
     pct_partial = 100 * count_partial / len(gdf)
     if pct_partial > 0:
-        print(f"{pct_partial:.2f}% of the data partially intersect the satellite period.")
+        logging.info(f"{pct_partial:.2f}% of the data partially intersect the satellite period.")
 
     if pct_none == 100:
         return gpd.GeoDataFrame()
@@ -201,6 +202,7 @@ def download_multiple_sits(  # noqa: C901
     num_chunks = (len(gdf) + chunksize - 1) // chunksize
 
     already_downloaded_files = [int(x.stem) for x in output_path.glob("*.csv")]
+    logging.info(output_path, "-", len(already_downloaded_files), "chunks already downloaded and will be skipped.")
     initial_download_chunks = sorted(set(range(num_chunks)) - set(already_downloaded_files))
 
     pbar = tqdm(
@@ -225,9 +227,6 @@ def download_multiple_sits(  # noqa: C901
 
         for current_chunk in to_download_chunks:
             while downloader.num_unfinished_downloads >= max_parallel_downloads:
-                print(
-                    "Sleeping", downloader.num_unfinished_downloads, "downloads in progress...", max_parallel_downloads
-                )
                 time.sleep(1)
                 update_pbar()
 
@@ -243,10 +242,10 @@ def download_multiple_sits(  # noqa: C901
                     filename=f"{current_chunk}",
                 )
 
-                downloader.add_download([url])
+                downloader.add_download([(current_chunk, url)])
 
             except Exception as _:
-                print(_)
+                logging.exception(output_path, "- Chunk id =", current_chunk, " - Failed to get download URL.")
                 not_sent_to_server.append(current_chunk)
 
             update_pbar()
@@ -387,7 +386,7 @@ def download_multiple_sits_chunks_gcs(
     wait: bool = True,
 ) -> None | pd.DataFrame:
     if len(gdf) == 0:
-        print("Empty GeoDataFrame, nothing to download")
+        logging.warning("Empty GeoDataFrame, nothing to download")
         return None
 
     gdf = sanitize_and_prepare_input_gdf(gdf, satellite, original_index_column_name, cluster_size)
