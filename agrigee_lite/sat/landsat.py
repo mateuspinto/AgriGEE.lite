@@ -136,14 +136,14 @@ class AbstractLandsat(OpticalSatellite):
         ]
 
     def ee_l_pan_sharpen(self, image: ee.Image, geometry: ee.Geometry) -> ee.Image:
-        rgb = image.select(["red", "green", "blue"]).resample("bicubic")
-        hsv = rgb.rgbToHsv()
+        pan = image.select("pan").clip(geometry)
 
-        pan = image.select("pan")
+        rgb = image.select(["red", "green", "blue"]).reproject(crs=pan.projection())
+        hsv = rgb.rgbToHsv()
 
         sharpened = ee.Image.cat([hsv.select("hue"), hsv.select("saturation"), pan]).hsvToRgb()
 
-        return image.addBands(sharpened, ["red", "green", "blue"], overwrite=True).clip(geometry)
+        return image.addBands(sharpened, ["red", "green", "blue"], overwrite=True).mask(image.select("red").mask())
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         geom = ee_feature.geometry()
