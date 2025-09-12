@@ -130,10 +130,9 @@ class ModisDaily(OpticalSatellite):
         self.minAreaToKeepBorder = min_area_to_keep_border
         self.borderPixelsToErode = border_pixels_to_erode
 
-        self.toDownloadSelectors = (
-            [numeral_band_name for _, numeral_band_name in self.selectedBands]
-            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
-        )
+        self.toDownloadSelectors = [numeral_band_name for _, numeral_band_name in self.selectedBands] + [
+            numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices
+        ]
 
     @staticmethod
     def _mask_modis_clouds(img: ee.Image) -> ee.Image:
@@ -331,16 +330,15 @@ class Modis8Days(OpticalSatellite):
         self.minAreaToKeepBorder = min_area_to_keep_border
         self.borderPixelsToErode = border_pixels_to_erode
 
-        self.toDownloadSelectors = (
-            [numeral_band_name for _, numeral_band_name in self.selectedBands]
-            + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
-        )
+        self.toDownloadSelectors = [numeral_band_name for _, numeral_band_name in self.selectedBands] + [
+            numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices
+        ]
 
     @staticmethod
     def _mask_modis8days_clouds(img: ee.Image) -> ee.Image:
         """Mask cloudy pixels based on bits 0-1 of 'State' QA band."""
         qa = img.select("State")
-        cloud_state = qa.bitwiseAnd(3)  # 3 == 0b11 → isola os bits 0 e 1
+        cloud_state = qa.bitwiseAnd(3)  # 3 == 0b11
         return img.updateMask(cloud_state.eq(0))
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:

@@ -286,9 +286,10 @@ def ee_add_indexes_to_image(image: ee.Image, indexes: list[str]) -> ee.Image:
 def ee_is_authenticated() -> bool:
     try:
         ee.Initialize()
-        return True  # noqa: TRY300
     except Exception:
         return False
+    else:
+        return True
 
 
 def ee_quick_start() -> None:

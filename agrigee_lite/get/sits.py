@@ -10,13 +10,11 @@ import geopandas as gpd
 import pandas as pd
 import pandera.pandas as pa
 from shapely import Polygon
-from smart_open import open  # noqa: A004
 from tqdm.std import tqdm
 
 from agrigee_lite.downloader import DownloaderStrategy
 from agrigee_lite.ee_utils import ee_gdf_to_feature_collection, ee_get_tasks_status
 from agrigee_lite.misc import (
-    add_indexnum_column,
     create_dict_hash,
     create_gdf_hash,
     get_reducer_names,
@@ -244,7 +242,11 @@ def download_multiple_sits(  # noqa: C901
 
                 downloader.add_download([(current_chunk, url)])
 
-            except Exception as _:
+            except KeyboardInterrupt:
+                pbar.close()
+                raise
+
+            except ee.ee_exception.EEException:
                 logging.exception(output_path, "- Chunk id =", current_chunk, " - Failed to get download URL.")
                 not_sent_to_server.append(current_chunk)
 
@@ -306,7 +308,6 @@ def download_multiple_sits_task_gcs(
     if taskname == "":
         taskname = file_path
 
-    add_indexnum_column(gdf)
     ee_expression = build_ee_expression(gdf, satellite, reducers, subsampling_max_pixels)
 
     task = ee.batch.Export.table.toCloudStorage(
@@ -385,6 +386,8 @@ def download_multiple_sits_chunks_gcs(
     force_redownload: bool = False,
     wait: bool = True,
 ) -> None | pd.DataFrame:
+    from smart_open import open  # noqa: A004
+
     if len(gdf) == 0:
         logging.warning("Empty GeoDataFrame, nothing to download")
         return None

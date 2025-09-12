@@ -175,10 +175,6 @@ def create_dict_hash(d: dict) -> str:
     return hashlib.sha1(json.dumps(normalized, sort_keys=True).encode("utf-8")).hexdigest()  # noqa: S324
 
 
-def remove_underscore_in_df(df: pd.DataFrame | gpd.GeoDataFrame) -> None:
-    df.columns = [column.split("_", 1)[1] for column in df.columns.tolist()]
-
-
 def compute_index_from_df(df: pd.DataFrame, np_function: Callable) -> np.ndarray:
     sig = inspect.signature(np_function)
     kwargs = {}
