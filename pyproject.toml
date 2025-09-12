@@ -1,6 +1,6 @@
 [project]
 name = "agrigee_lite"
-version = "2.0.0"
+version = "2.0.1"
 description = "Because using satellite data should not be rocket science."
 authors = [{ name = "Mateus Pinto da Silva", email = "mateus.p.silva@ufv.br" }]
 readme = "README.md"
@@ -13,6 +13,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "pandera>=0.26.1",
     "topojson>=1.9",
+    "aria2p>=0.12.1",
 ]
 classifiers = [
     "Intended Audience :: Developers",
