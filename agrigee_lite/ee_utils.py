@@ -59,16 +59,21 @@ def ee_cloud_probability_mask(img: ee.Image, threshold: float, invert: bool = Fa
     return img.updateMask(mask).select(img.bandNames().remove("cloud"))
 
 
-def ee_gdf_to_feature_collection(gdf: gpd.GeoDataFrame, original_index_column_name: str) -> ee.FeatureCollection:
+def ee_gdf_to_feature_collection(
+    gdf: gpd.GeoDataFrame,
+    original_index_column_name: str,
+    start_date_column_name: str = "start_date",
+    end_date_column_name: str = "end_date",
+) -> ee.FeatureCollection:
     gdf = gdf.copy()
 
-    gdf = gdf[[original_index_column_name, "geometry", "start_date", "end_date"]]
+    gdf = gdf[[original_index_column_name, "geometry", start_date_column_name, end_date_column_name]]
 
-    gdf["start_date"] = gdf["start_date"].dt.strftime("%Y-%m-%d")
-    gdf["end_date"] = gdf["end_date"].dt.strftime("%Y-%m-%d")
+    gdf[start_date_column_name] = gdf[start_date_column_name].dt.strftime("%Y-%m-%d")
+    gdf[end_date_column_name] = gdf[end_date_column_name].dt.strftime("%Y-%m-%d")
 
     gdf.rename(
-        columns={"start_date": "s", "end_date": "e", original_index_column_name: "0"}, inplace=True
+        columns={start_date_column_name: "s", end_date_column_name: "e", original_index_column_name: "0"}, inplace=True
     )  # saving memory when uploading geojson to GEE
 
     geo_json = os.path.join(os.getcwd(), "".join(random.choice(string.ascii_lowercase) for i in range(6)) + ".geojson")  # noqa: S311

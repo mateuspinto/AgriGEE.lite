@@ -25,8 +25,16 @@ from agrigee_lite.sat.abstract_satellite import AbstractSatellite, OpticalSatell
 from agrigee_lite.task_manager import GEETaskManager
 
 
-def build_ee_expression(gdf, satellite, reducers, subsampling_max_pixels, original_index_column_name):
-    fc = ee_gdf_to_feature_collection(gdf, original_index_column_name)
+def build_ee_expression(
+    gdf,
+    satellite,
+    reducers,
+    subsampling_max_pixels,
+    original_index_column_name,
+    start_date_column_name="start_date",
+    end_date_column_name="end_date",
+):
+    fc = ee_gdf_to_feature_collection(gdf, original_index_column_name, start_date_column_name, end_date_column_name)
     return ee.FeatureCollection(
         fc.map(
             partial(
@@ -95,7 +103,12 @@ def prepare_output_df(df: pd.DataFrame, satellite: AbstractSatellite, original_i
 
 
 def sanitize_and_prepare_input_gdf(
-    gdf: gpd.GeoDataFrame, satellite: AbstractSatellite, original_index_column_name: str, cluster_size: int
+    gdf: gpd.GeoDataFrame,
+    satellite: AbstractSatellite,
+    original_index_column_name: str,
+    cluster_size: int,
+    start_date_column_name: str = "start_date",
+    end_date_column_name: str = "end_date",
 ) -> gpd.GeoDataFrame:
     gdf = gdf.copy()
 
@@ -106,16 +119,22 @@ def sanitize_and_prepare_input_gdf(
     schema = pa.DataFrameSchema(
         {
             "geometry": pa.Column("geometry", nullable=False),
-            "start_date": pa.Column(pa.DateTime, nullable=False),
-            "end_date": pa.Column(pa.DateTime, nullable=False),
+            start_date_column_name: pa.Column(pa.DateTime, nullable=False),
+            end_date_column_name: pa.Column(pa.DateTime, nullable=False),
             original_index_column_name: pa.Column(gdf[original_index_column_name].dtype),
         },
         unique=[original_index_column_name],
     )
     schema.validate(gdf, lazy=True)
 
-    mask_no_intersection = (gdf.end_date < satellite.startDate) | (gdf.start_date > satellite.endDate)
-    mask_total_intersection = (gdf.start_date >= satellite.startDate) & (gdf.end_date <= satellite.endDate)
+    gdf = gdf[["geometry", start_date_column_name, end_date_column_name, original_index_column_name]]
+
+    mask_no_intersection = (gdf[end_date_column_name] < satellite.startDate) | (
+        gdf[start_date_column_name] > satellite.endDate
+    )
+    mask_total_intersection = (gdf[start_date_column_name] >= satellite.startDate) & (
+        gdf[end_date_column_name] <= satellite.endDate
+    )
     mask_partial_intersection = ~(mask_no_intersection | mask_total_intersection)
 
     count_none = mask_no_intersection.sum()
@@ -173,6 +192,8 @@ def download_multiple_sits(  # noqa: C901
     satellite: AbstractSatellite,
     reducers: set[str] | None = None,
     original_index_column_name: str = "original_index",
+    start_date_column_name: str = "start_date",
+    end_date_column_name: str = "end_date",
     subsampling_max_pixels: float = 1_000,
     chunksize: int = 10,
     max_parallel_downloads: int = 40,
@@ -181,13 +202,18 @@ def download_multiple_sits(  # noqa: C901
     if len(gdf) == 0:
         return pd.DataFrame()
 
-    gdf = sanitize_and_prepare_input_gdf(gdf, satellite, original_index_column_name, 1000)
+    gdf = sanitize_and_prepare_input_gdf(
+        gdf, satellite, original_index_column_name, 1000, start_date_column_name, end_date_column_name
+    )
 
     metadata_dict: dict[str, str] = {}
     metadata_dict |= log_dict_function_call_summary(["gdf", "satellite", "max_parallel_downloads", "force_redownload"])
     metadata_dict |= satellite.log_dict()
 
-    output_path = pathlib.Path("data/temp/sits") / f"{create_gdf_hash(gdf)}_{create_dict_hash(metadata_dict)}"
+    output_path = (
+        pathlib.Path("data/temp/sits")
+        / f"{create_gdf_hash(gdf, start_date_column_name, end_date_column_name)}_{create_dict_hash(metadata_dict)}"
+    )
 
     if force_redownload:
         for f in output_path.glob("*"):
@@ -230,7 +256,13 @@ def download_multiple_sits(  # noqa: C901
 
             sub = gdf.iloc[current_chunk * chunksize : (current_chunk + 1) * chunksize]
             ee_expression = build_ee_expression(
-                sub, satellite, reducers, subsampling_max_pixels, original_index_column_name
+                sub,
+                satellite,
+                reducers,
+                subsampling_max_pixels,
+                original_index_column_name,
+                start_date_column_name,
+                end_date_column_name,
             )
 
             try:
@@ -275,6 +307,8 @@ def download_multiple_sits_task_gdrive(
     file_stem: str,
     reducers: set[str] | None = None,
     original_index_column_name: str = "original_index",
+    start_date_column_name: str = "start_date",
+    end_date_column_name: str = "end_date",
     subsampling_max_pixels: float = 1_000,
     taskname: str = "",
     gee_save_folder: str = "AGL_EXPORTS",
@@ -282,7 +316,15 @@ def download_multiple_sits_task_gdrive(
     if taskname == "":
         taskname = file_stem
 
-    ee_expression = build_ee_expression(gdf, satellite, reducers, subsampling_max_pixels, original_index_column_name)
+    ee_expression = build_ee_expression(
+        gdf,
+        satellite,
+        reducers,
+        subsampling_max_pixels,
+        original_index_column_name,
+        start_date_column_name,
+        end_date_column_name,
+    )
 
     task = ee.batch.Export.table.toDrive(
         collection=ee_expression,
@@ -302,13 +344,24 @@ def download_multiple_sits_task_gcs(
     bucket_name: str,
     file_path: str,
     reducers: set[str] | None = None,
+    original_index_column_name: str = "original_index",
+    start_date_column_name: str = "start_date",
+    end_date_column_name: str = "end_date",
     subsampling_max_pixels: float = 1_000,
     taskname: str = "",
 ) -> ee.batch.Task:
     if taskname == "":
         taskname = file_path
 
-    ee_expression = build_ee_expression(gdf, satellite, reducers, subsampling_max_pixels)
+    ee_expression = build_ee_expression(
+        gdf,
+        satellite,
+        reducers,
+        subsampling_max_pixels,
+        original_index_column_name,
+        start_date_column_name,
+        end_date_column_name,
+    )
 
     task = ee.batch.Export.table.toCloudStorage(
         bucket=bucket_name,
@@ -327,6 +380,8 @@ def download_multiple_sits_chunks_gdrive(
     satellite: AbstractSatellite,
     reducers: set[str] | None = None,
     original_index_column_name: str = "original_index",
+    start_date_column_name: str = "start_date",
+    end_date_column_name: str = "end_date",
     subsampling_max_pixels: float = 1_000,
     cluster_size: int = 500,
     gee_save_folder: str = "AGL_EXPORTS",
@@ -336,7 +391,9 @@ def download_multiple_sits_chunks_gdrive(
     if len(gdf) == 0:
         return None
 
-    gdf = sanitize_and_prepare_input_gdf(gdf, satellite, original_index_column_name, cluster_size)
+    gdf = sanitize_and_prepare_input_gdf(
+        gdf, satellite, original_index_column_name, cluster_size, start_date_column_name, end_date_column_name
+    )
 
     task_mgr = GEETaskManager()
 
@@ -347,7 +404,7 @@ def download_multiple_sits_chunks_gdrive(
     )  # The task is the same, no matter who started it
 
     username = getpass.getuser().replace("_", "")
-    hashname = create_gdf_hash(gdf)
+    hashname = create_gdf_hash(gdf, start_date_column_name, end_date_column_name)
 
     for cluster_id in tqdm(
         sorted(gdf.cluster_id.unique()), desc=f"Creating GEE tasks ({satellite.shortName}_{hashname}_{cluster_size})"
@@ -362,6 +419,9 @@ def download_multiple_sits_chunks_gdrive(
                 satellite,
                 f"{satellite.shortName}_{hashname}_{cluster_id}",
                 reducers=reducers,
+                original_index_column_name=original_index_column_name,
+                start_date_column_name=start_date_column_name,
+                end_date_column_name=end_date_column_name,
                 subsampling_max_pixels=subsampling_max_pixels,
                 taskname=f"agl_{username}_sits_{satellite.shortName}_{hashname}_{cluster_id}",
                 gee_save_folder=gee_save_folder,
@@ -381,6 +441,8 @@ def download_multiple_sits_chunks_gcs(
     bucket_name: str,
     reducers: set[str] | None = None,
     original_index_column_name: str = "original_index",
+    start_date_column_name: str = "start_date",
+    end_date_column_name: str = "end_date",
     subsampling_max_pixels: float = 1_000,
     cluster_size: int = 500,
     force_redownload: bool = False,
@@ -392,7 +454,9 @@ def download_multiple_sits_chunks_gcs(
         logging.warning("Empty GeoDataFrame, nothing to download")
         return None
 
-    gdf = sanitize_and_prepare_input_gdf(gdf, satellite, original_index_column_name, cluster_size)
+    gdf = sanitize_and_prepare_input_gdf(
+        gdf, satellite, original_index_column_name, cluster_size, start_date_column_name, end_date_column_name
+    )
 
     task_mgr = GEETaskManager()
     tasks_df = ee_get_tasks_status()
@@ -402,7 +466,7 @@ def download_multiple_sits_chunks_gcs(
     )  # The task is the same, no matter who started it
 
     username = getpass.getuser().replace("_", "")
-    hashname = create_gdf_hash(gdf)
+    hashname = create_gdf_hash(gdf, start_date_column_name, end_date_column_name)
 
     gcs_save_folder = f"agl/{satellite.shortName}_{hashname}"
     metadata_dict: dict[str, str] = {}
@@ -429,10 +493,13 @@ def download_multiple_sits_chunks_gcs(
             task = download_multiple_sits_task_gcs(
                 gdf[gdf.cluster_id == cluster_id],
                 satellite,
-                reducers=reducers,
-                subsampling_max_pixels=subsampling_max_pixels,
                 bucket_name=bucket_name,
                 file_path=f"{gcs_save_folder}/{cluster_id}",
+                reducers=reducers,
+                original_index_column_name=original_index_column_name,
+                start_date_column_name=start_date_column_name,
+                end_date_column_name=end_date_column_name,
+                subsampling_max_pixels=subsampling_max_pixels,
                 taskname=f"agl_{username}_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}",
             )
 

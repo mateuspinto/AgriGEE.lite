@@ -30,7 +30,7 @@ You can also download aggregations, such as spatial median aggregations of indic
 
 For more examples, see the examples folder.
 
-Finally, the library features **multithreaded downloading**, which allows downloading on average **16-22 time series per second** (assuming 1-year series, cloud-free for Sentinel 2 Surface Reflectance).
+Finally, the library features **multithreaded downloading**, which allows downloading on average **16-22 time series per second** (assuming 1-year series, cloud-free for Sentinel 2 BOA).
 
 The lib has 3 types of elements, which are divided into modules:
 
@@ -44,24 +44,64 @@ The lib has 3 types of elements, which are divided into modules:
 
 | **Name** | **Bands** | **Start Date** | **End Date** | **Regionality** | **Pixel Size** | **Revisit Time** | **Variations** |
 |---|---|---|---|---|---|---|---|
-| Sentinel 2 | Blue, Green, Red, Re1, Re2, Re3, Nir, Re4, Swir1, Swir2 | 2016-01-01 | (still operational) | Worldwide | 10 -- 60 | 5 days (with clouds), 8 days (wo) | Surface Reflectance, Top of Atmosphere |
-| Landsat 5 | Blue, Green, Red, Nir, Swir1, Swir2 | 1984-03-01 | 2013-05-05 | Worldwide* | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
-| Landsat 7 | Blue, Green, Red, Nir, Swir1, Swir2 | 1999-04-15 | 2022-04-06 | Worldwide* | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
-| Landsat 8 | Blue, Green, Red, Nir, Swir1, Swir2 | 2013-04-11 | (still operational) | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
-| Landsat 9 | Blue, Green, Red, Nir, Swir1, Swir2 | 2021-11-01 | (still operational) | Worldwide | 15 -- 30 | 16 days | Surface Reflectance, Top of Atmosphere; Tier 1 and Tier 2; |
-| MODIS Terra/Acqua | Red, Nir | 2000-02-18 | (still operational) | Worldwide | 15 -- 30 | daily (with clouds) |  |
+| Sentinel 2 | Blue, Green, Red, Re1, Re2, Re3, Nir, Re4, Swir1, Swir2 | 2016-01-01 | (still operational) | Worldwide | 10 -- 60 | 5 days | BOA, TOA |
+| Landsat 5 | Blue, Green, Red, Nir, Swir1, Swir2 | 1984-03-01 | 2013-05-05 | Worldwide* | 15 -- 30 | 16 days | BOA, TOA; Tier 1 and Tier 2; |
+| Landsat 7 | Blue, Green, Red, Nir, Swir1, Swir2, Pan | 1999-04-15 | 2022-04-06 | Worldwide* | 15 -- 30 | 16 days | BOA, TOA; Tier 1 and Tier 2; Pan-sharpened|
+| Landsat 8 | Blue, Green, Red, Nir, Swir1, Swir2, Pan | 2013-04-11 | (still operational) | Worldwide | 15 -- 30 | 16 days | BOA, TOA; Tier 1 and Tier 2; Pan-sharpened|
+| Landsat 9 | Blue, Green, Red, Nir, Swir1, Swir2, Pan | 2021-11-01 | (still operational) | Worldwide | 15 -- 30 | 16 days | BOA, TOA; Tier 1 and Tier 2; Pan-sharpened|
+| MODIS Daily, 8 days | Red, Nir | 2000-02-18 | (still operational) | Worldwide | 15 -- 30 | daily/8 days |  |
 | Sentinel 1 | VV, VH - C Band | 2014-10-03 | (still operational) | Worldwide* | 10** | 5 days**** | GRD, ARD*** |
 | JAXOS PalSAR 1/2 | HH, HV - L Band | 2014-08-04 | (still operational) | Worldwide | 25** | 15 days | GRD |
 | [Satellite Embeddings V1](https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_SATELLITE_EMBEDDING_V1_ANNUAL?hl=pt-br#bands) | 64-dimensional embedding | 2017-01-01 | 2024-01-01 | Worldwide | 10 | 1 year |  |
 | [Mapbiomas Brazil](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | 37 Land Usage Land Cover Classes | 1985-01-01 | 2024-12-31 | Brazil | 30 | 1 year |  |
 | [ANADEM](https://hge-iph.github.io/anadem/) | Slope, Elevation, Aspect | (single image) | (single image) | South America | 30** | (single image) |  |
-| [World Reference Base (2006) Soil Groups - SoilGrids](https://soilgrids.org/) | WRB Soil Classes (30 categories) | (single image) | (single image) | Worldwide | 250 | (single image) | |
+| [SoilGrids classes](https://soilgrids.org/) | WRB Soil Classes (30 categories) | (single image) | (single image) | Worldwide | 250 | (single image) | |
 
 ### Observations
 - *Landsat 7 images began to have artifacts caused by a sensor problem from 2003-05-31.
 - **Pixel size/spatial resolution for active sensors (or models that use active sensors) often lacks a clear value, as it depends on the angle of incidence. Here, the GEE value itself is explained, representing the highest resolution captured.
 - ***Analysis Ready Data (ARD) is an advanced post-processing method applied to a SAR. However, it is quite costly, and its usefulness must be evaluated on a case-by-case basis.
 - ****Sentinel 1 was a twin satellite, one of which went out of service due to a malfunction. Therefore, the revisit time varies greatly depending on the desired geolocation.
+
+## Available indices
+
+| **Index Name** | **Full Name**                                            | **Required Bands**        | **Sensor Type** | **Equation**                                                                          | **Description**                               |
+| ---------- | ---------------------------------------------------- | --------------------- | ----------- | --------------------------------------------------------------------------------- | ----------------------------------------- |
+| NDVI       | Normalized Difference Vegetation Index               | NIR, RED              | Optical     | $\frac{NIR - RED}{NIR + RED}$                                                     | Vegetation greenness                      |
+| GNDVI      | Green Normalized Difference Vegetation Index         | NIR, GREEN            | Optical     | $\frac{NIR - GREEN}{NIR + GREEN}$                                                 | Vegetation health (chlorophyll)           |
+| NDWI       | Normalized Difference Water Index                    | NIR, SWIR1            | Optical     | $\frac{NIR - SWIR1}{NIR + SWIR1}$                                                 | Water content                             |
+| MNDWI      | Modified Normalized Difference Water Index           | GREEN, SWIR1          | Optical     | $\frac{GREEN - SWIR1}{GREEN + SWIR1}$                                             | Water body detection                      |
+| SAVI       | Soil Adjusted Vegetation Index                       | NIR, RED              | Optical     | $\frac{(NIR - RED)}{(NIR + RED + 0.5)} \times 1.5$                                | Vegetation, reduces soil effect           |
+| EVI        | Enhanced Vegetation Index                            | NIR, RED, BLUE        | Optical     | $2.5 \times \frac{NIR - RED}{NIR + 6 \times RED - 7.5 \times BLUE + 1}$           | Vegetation, minimizes atmospheric effects |
+| EVI2       | Two-band Enhanced Vegetation Index                   | NIR, RED              | Optical     | $2.5 \times \frac{NIR - RED}{NIR + 2.4 \times RED + 1}$                           | Simplified EVI, no blue band              |
+| MSAVI      | Modified Soil Adjusted Vegetation Index              | NIR, RED              | Optical     | $\frac{2 \times NIR + 1 - \sqrt{(2 \times NIR + 1)^2 - 8 \times (NIR - RED)}}{2}$ | Vegetation in areas with bare soil        |
+| NDRE       | Normalized Difference Red Edge Index                 | NIR, RE1              | Optical     | $\frac{NIR - RE1}{NIR + RE1}$                                                     | Chlorophyll content in leaves             |
+| MCARI      | Modified Chlorophyll Absorption in Reflectance Index | NIR, RED, GREEN       | Optical     | $\left[(NIR - RED) - 0.2 \times (NIR - GREEN)\right] \times \frac{NIR}{RED}$      | Leaf chlorophyll content                  |
+| GCI        | Green Chlorophyll Index                              | NIR, GREEN            | Optical     | $\frac{NIR}{GREEN} - 1$                                                           | Chlorophyll concentration                 |
+| BSI        | Bare Soil Index                                      | BLUE, RED, NIR, SWIR1 | Optical     | $\frac{(SWIR1 + RED) - (NIR + BLUE)}{(SWIR1 + RED) + (NIR + BLUE)}$               | Bare soil index                           |
+| CI Red     | Red Chlorophyll Index                                | NIR, RED              | Optical     | $\frac{NIR}{RED} - 1$                                                             | Chlorophyll index (red)                   |
+| CI Green   | Green Chlorophyll Index                              | NIR, GREEN            | Optical     | $\frac{NIR}{GREEN} - 1$                                                           | Chlorophyll index (green)                 |
+| OSAVI      | Optimized Soil Adjusted Vegetation Index             | NIR, RED              | Optical     | $\frac{NIR - RED}{NIR + RED + 0.16}$                                              | Like SAVI, for low vegetation             |
+| ARVI       | Atmospherically Resistant Vegetation Index           | NIR, RED, BLUE        | Optical     | $\frac{NIR - (2 \times RED - BLUE)}{NIR + (2 \times RED - BLUE)}$                 | Vegetation, reduces atmospheric effects   |
+| VHVV       | VH/VV Ratio                                          | VH, VV                | Radar       | $\frac{VH}{VV}$                                                                   | Vegetation structure (Sentinel-1)         |
+| HHHV       | HH/HV Ratio                                          | HH, HV                | Radar       | $\frac{HH - HV}{HH + HV}$                                                         | Vegetation structure (PALSAR)             |
+| RVI        | Radar Vegetation Index                               | HH, HV                | Radar       | $4 \times \frac{HV}{HH + HV}$                                                     | Radar vegetation index (PALSAR)           |
+| RAVI       | Radar Adapted Vegetation Index                       | VV, VH                | Radar       | $4 \times \frac{VH}{VV + VH}$                                                     | Radar vegetation index (Sentinel-1)       |
+
+## Avaiable reductors
+
+| Name to Use | Full Name          | Description                                                                                                |
+| ----------- | ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| min         | Minimum            | Returns the smallest value in the set                                                                      |
+| max         | Maximum            | Returns the largest value in the set                                                                       |
+| mean        | Mean               | Returns the average of all values                                                                          |
+| median      | Median             | Returns the median (middle) value                                                                          |
+| kurt        | Kurtosis           | Returns the kurtosis (measure of "tailedness")                                                             |
+| skew        | Skewness           | Returns the skewness (measure of asymmetry)                                                                |
+| std         | Standard Deviation | Returns the standard deviation                                                                             |
+| var         | Variance           | Returns the variance                                                                                       |
+| mode        | Mode               | Returns the most frequent value                                                                            |
+| pXX         | Percentile XX      | Returns the XX-th percentile (e.g., `p10` for 10th percentile). You can pass multiple, e.g., `p10`, `p90`. |
 
 ## Motivations: what an average data scientist - me - thought when I started learning GEE
 

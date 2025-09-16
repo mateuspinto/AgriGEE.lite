@@ -146,8 +146,8 @@ def quadtree_clustering(
     return gdf
 
 
-def create_gdf_hash(gdf: gpd.GeoDataFrame) -> str:
-    gdf_copy = gdf[["geometry", "start_date", "end_date"]].copy()
+def create_gdf_hash(gdf: gpd.GeoDataFrame, start_date_column_name: str, end_date_column_name: str) -> str:
+    gdf_copy = gdf[["geometry", start_date_column_name, end_date_column_name]].copy()
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -280,6 +280,7 @@ def random_points_from_gdf(
         on="geometry_id",
         how="inner",
     )
+    points_gdf = points_gdf[points_gdf.geometry.x != 0].reset_index(drop=True)
 
     return points_gdf
 
