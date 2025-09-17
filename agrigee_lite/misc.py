@@ -256,7 +256,7 @@ def get_reducer_names(reducer_names: set[str] | None = None) -> list[str]:
     if reducer_names is None:
         reducer_names = {"median"}
 
-    # normaliza os nomes para minúsculo
+    # normalize names to lowercase
     names = sorted([n.lower() for n in reducer_names])
 
     # extrai valores de percentis (pXX)
