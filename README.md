@@ -2,37 +2,74 @@
 
 ![mascote](https://github.com/user-attachments/assets/908400d6-c68f-4c26-98ae-0887cdb34d11)
 
+## Overview
 
-AgriGEE.lite is an Earth Engine wrapper that allows easy download of **Analysis Ready Multimodal Data (ARD)**, focused on downloading **time series** of **agricultural** and native vegetation data.
+AgriGEE.lite is a high-performance **Google Earth Engine (GEE) wrapper** designed to simplify and accelerate the download of **Analysis Ready Multimodal Data (ARD)** for agricultural and vegetation monitoring. The library focuses on making satellite data as accessible as reading a CSV file with pandas, removing the complexity typically associated with Earth Engine programming.
 
-For example, to download and view a time series of cloud-free Sentinel 2 imagery cropped to a specific field and date range, only a few lines of code are required. Here’s an example:
+### What makes AgriGEE.lite special?
+
+- **Simplified API**: Download satellite time series with just a few lines of code
+- **High Performance**: Utilizes **aria2 downloader** under the hood, achieving **16-22 time series downloads per second**
+- **Multimodal Support**: Seamlessly integrates optical satellites, radar sensors, and derived products
+- **Vegetation/Agricultural Focus**: Optimized for crop monitoring, vegetation analysis, and land use applications
+- **GeoPandas Integration**: Built to work natively with spatial geodataframes
+
+### Quick Start Example
+
+To download and view a cloud-free Sentinel-2 time series for a specific field and date range:
 
 ```python
 import agrigee_lite as agl
+import geopandas as gpd
 import ee
 
 ee.Initialize()
 
+# Load your area of interest
 gdf = gpd.read_parquet("data/sample.parquet")
-row = gdf.iloc[0]
+geometry = gdf.iloc[0].geometry
 
+# Define satellite and download time series
 satellite = agl.sat.Sentinel2(bands=["red", "green", "blue"])
-agl.vis.images(row.geometry, row.start_date, row.end_date, satellite)
+time_series = agl.get.sits(geometry, "2022-10-01", "2023-10-01", satellite)
 ```
 
-Through this example, it is already possible to understand the basic functioning of the lib. The **entire lib was designed to be used in conjunction with [GeoPandas](https://geopandas.org/en/stable/)**, and a basic knowledge of it is necessary.
+This example demonstrates the library's core philosophy: **spatial data analysis should be simple and fast**. The **entire library is designed to work seamlessly with [GeoPandas](https://geopandas.org/en/stable/)**, making it essential to have basic knowledge of this framework.
 
-![{Sentinel 2 RGB Agricultural Area from Mato Grosso, Brazil}](https://github.com/user-attachments/assets/f01c1b9b-03c2-43ff-9e00-3b687048659c)
+### Advanced Capabilities
 
-You can also download aggregations, such as spatial median aggregations of indices. Here's an example with median from multiple satellites:
+You can also download temporal aggregations, such as spatial median aggregations of vegetation indices from multiple satellites:
 
 ![{Multiple satellites EVI2 time series}](https://github.com/user-attachments/assets/dccd7d52-6047-4734-8d83-e6ea4de35808)
 
-For more examples, see the examples folder.
+For synchronized multi-satellite analysis, you can use the TwoSatelliteFusion class:
 
-Finally, the library features **multithreaded downloading**, which allows downloading on average **16-22 time series per second** (assuming 1-year series, cloud-free for Sentinel 2 BOA).
+```python
+# Combine Landsat 8 and Sentinel-2 data for synchronized analysis
+landsat8 = agl.sat.Landsat8(bands=["red", "green", "blue", "nir"])
+sentinel2 = agl.sat.Sentinel2(bands=["red", "green", "blue", "nir"])
+fusion_sat = agl.sat.TwoSatelliteFusion(landsat8, sentinel2)
 
-The lib has 3 types of elements, which are divided into modules:
+# Download synchronized time series with both satellites' data
+fused_time_series = agl.get.sits(geometry, "2022-01-01", "2022-12-31", fusion_sat)
+```
+
+For more comprehensive examples, see the examples folder.
+
+## High-Performance Downloads with aria2
+
+One of AgriGEE.lite's key features is its use of **aria2**, a lightweight multi-protocol & multi-source command-line download utility. This integration provides:
+
+- **Parallel Downloads**: Multiple simultaneous connections for faster data retrieval
+- **Resume Capability**: Automatic resumption of interrupted downloads
+- **Optimized Performance**: Achieving **16-22 time series per second** (for 1-year cloud-free Sentinel-2 BOA series)
+- **Reliability**: Robust error handling and retry mechanisms
+
+The aria2 integration runs transparently behind the scenes, requiring no additional configuration from users while dramatically improving download speeds compared to traditional sequential downloading methods.
+
+## Library Architecture
+
+AgriGEE.lite is organized into three main modules:
 
 - agl.sat = Data sources, usually coming from satellites/sensors. When defining a sensor, it is possible to choose which bands you want to view/download, or whether you want to use atmospheric corrections or not. By default, all bands are downloaded, and all atmospheric corrections and harmonizations are used.
 
@@ -56,12 +93,14 @@ The lib has 3 types of elements, which are divided into modules:
 | [Mapbiomas Brazil](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | 37 Land Usage Land Cover Classes | 1985-01-01 | 2024-12-31 | Brazil | 30 | 1 year |  |
 | [ANADEM](https://hge-iph.github.io/anadem/) | Slope, Elevation, Aspect | (single image) | (single image) | South America | 30** | (single image) |  |
 | [SoilGrids classes](https://soilgrids.org/) | WRB Soil Classes (30 categories) | (single image) | (single image) | Worldwide | 250 | (single image) | |
+| Two Satellite Fusion ***** | Intersect common observations from two satellites | (depends on input satellites) | (depends on input satellites) | (depends on input satellites) | (finest of the two satellites) | (depends on input satellites) | |
 
 ### Observations
 - *Landsat 7 images began to have artifacts caused by a sensor problem from 2003-05-31.
 - **Pixel size/spatial resolution for active sensors (or models that use active sensors) often lacks a clear value, as it depends on the angle of incidence. Here, the GEE value itself is explained, representing the highest resolution captured.
 - ***Analysis Ready Data (ARD) is an advanced post-processing method applied to a SAR. However, it is quite costly, and its usefulness must be evaluated on a case-by-case basis.
 - ****Sentinel 1 was a twin satellite, one of which went out of service due to a malfunction. Therefore, the revisit time varies greatly depending on the desired geolocation.
+- *****Two Satellite Fusion is a meta-satellite that combines data from exactly two optical satellites (e.g., Landsat 8 + Sentinel-2). It automatically finds common observation dates, harmonizes the datasets, and creates synchronized time series with bands from both satellites distinguished by prefixes.
 
 ## Available indices
 
@@ -103,49 +142,85 @@ The lib has 3 types of elements, which are divided into modules:
 | mode        | Mode               | Returns the most frequent value                                                                            |
 | pXX         | Percentile XX      | Returns the XX-th percentile (e.g., `p10` for 10th percentile). You can pass multiple, e.g., `p10`, `p90`. |
 
-## Motivations: what an average data scientist - me - thought when I started learning GEE
+## Motivation: Simplifying Earth Engine for Everyone
 
-My journey with GEE started two and a half years ago. GEE is excellent, it allows you to use several different satellite data, but it is very complex to code. In addition to using A LOT of boilerplate code, the errors are extremely confusing, since the tool is executed server-side, most likely with a pure functional language (like Haskell). During my master's degree, I struggled a lot writing codes for GEE. Furthermore, harmonizing all satellites at the same time is difficult. Typically, each satellite has a different range of values ​​and cloud masks. Tired of having to rewrite similar codes, I decided to create a lib with a simple goal: using satellite data should be as simple as reading a CSV in Pandas, and you shouldn't need to be a Remote Sensing expert to achieve it.
+My journey with Google Earth Engine began two and a half years ago. While GEE is an incredibly powerful platform that provides access to petabytes of satellite data, it comes with significant complexity challenges:
 
+- **Steep Learning Curve**: GEE requires extensive boilerplate code and deep understanding of its functional programming paradigms
+- **Cryptic Error Messages**: Server-side execution often produces confusing errors that are difficult to debug
+- **Harmonization Complexity**: Each satellite has different value ranges, cloud masking approaches, and preprocessing requirements
+- **Inconsistent APIs**: Different sensors require different coding approaches, making it hard to switch between data sources
 
-## Objectives and target audience
+During my master's degree, I found myself constantly rewriting similar code patterns for different projects. This frustration led to a simple but ambitious goal: **making satellite data as easy to use as reading a CSV with pandas, without requiring users to be remote sensing experts**.
 
-The main objective of the lib is to be a simple, direct and high-performance way to download satellite data, both for academic and commercial use. Did you like it? Give it a star. Want to contribute? Open your Pull Request, I will be happy to include it.
+## Objectives and Target Audience
 
-## Questions possibly asked
+AgriGEE.lite aims to be a **simple, direct, and high-performance solution** for downloading satellite data, serving both **academic research** and **commercial applications**. The library is designed for:
 
-### But isn't it just a case of using STAC? Why pay Google?
+- **Data Scientists** who need satellite data but don't want to become GEE experts
+- **Agricultural Researchers** studying crop monitoring and vegetation dynamics
+- **Environmental Consultants** requiring rapid access to earth observation data
+- **Students and Educators** learning remote sensing applications
+- **Commercial Users** developing scalable earth observation solutions
 
-This is a tempting proposition, and it actually makes sense for large scale projects. However, processing satellite data locally can easily escalate to hell, especially for countries with huge agricultural areas like Australia, the United States or Brazil. So, you have to do the math to figure out whether it is cheaper or not to use GEE than to have your own processing infrastructure than STAC. However, GEE is completely free for students and non-commercial projects.
+### Contributing
 
-### "Hello, I am a Remote Sensing expert, and I believe that the term satellite is not the most appropriate, radars do not have bands and.... "
+Found this project helpful? ⭐ **Give it a star!**
+Want to contribute? 🚀 **Open a Pull Request** - we welcome all contributions!
 
-Yes, I was told that. The use of the term "satellite" instead of sensor, data source or something else is intended to simplify things, even though it is not the most correct term. Note that even Mapbiomas, a WONDERFUL project that is made using models and AMAZING PEOPLE (❤️) is called a satellite, and is treated exactly the same as Sentinel 2 or any Landsat. The same goes for the idea of ​​"bands" in a radar like Sentinel 1. The more standardized it is, the easier it is to keep the library code working. However, note that your help to the project is VERY WELCOME.
+## Frequently Asked Questions
 
-### The library mascot is cute! Did you make it?
+### Why use Google Earth Engine instead of STAC?
 
-Absolutely not, I'm terrible at drawings and anything. I made it using GPT4, and all the rights belong to God knows who. The base art is from the Odd-Eyes Venom Dragon card from the Yu-Gi-Oh card game. The inspiration has nothing to do with venom, but rather because it is a plant dragon (agriculture), it is a fusion card (multimodal data) and it has odd-eyes (like satellites, seeing the world through different eyes). If you're a cartoonist and want to design a new mascot, I'd be more than happy to make it official.
+While STAC (SpatioTemporal Asset Catalog) is an excellent approach that makes sense for large-scale infrastructure projects, processing satellite data locally can quickly become overwhelming, especially for regions with vast agricultural areas like Australia, the United States, or Brazil.
+
+Key considerations:
+- **Infrastructure Costs**: Building and maintaining your own processing infrastructure vs. GEE usage costs
+- **Processing Complexity**: GEE handles complex atmospheric corrections, cloud masking, and data harmonization automatically
+- **Scalability**: GEE's planetary-scale computing capabilities vs. local processing limitations
+- **Free Tier**: GEE is completely free for academic research and non-commercial projects
+
+The choice depends on your specific use case, scale, and budget requirements.
+
+### About Terminology: "Satellites" vs. "Sensors"
+
+Remote sensing experts often note that terms like "satellite" for radar data or "bands" for SAR aren't technically precise. However, we've chosen standardized terminology to:
+
+- **Simplify the API**: Consistent naming across all data sources reduces cognitive load
+- **Improve Accessibility**: Non-experts can work with different sensors using the same patterns
+- **Maintain Code Consistency**: Unified interfaces make the library easier to maintain and extend
+
+Even excellent projects like MapBiomas (which uses models and algorithms) are treated as "satellites" in our framework. We welcome technical accuracy improvements, but prioritize usability and consistency. **Your contributions to improve both aspects are very welcome!**
+
+### About Our Mascot
+
+The AgriGEE.lite mascot was created using AI tools, with artwork inspired by the "Odd-Eyes Venom Dragon" from Yu-Gi-Oh. The symbolism represents:
+
+- 🌱 **Plant Dragon**: Agricultural focus
+- 🔀 **Fusion Card**: Multimodal data integration
+- 👀 **Odd-Eyes**: Multiple satellite perspectives on Earth
+
+If you're an artist interested in creating a new mascot design, we'd love to make it official!
 
 ## Known Bugs
 
 - QuadTree clustering functions produce absurd results when there are very uneven geographic density distributions, for example, thousands of points in one country and a few dozen in another. Some prior geospatial partitioning is recommended.
 
-## TO-DO
-- [x] Add Sentinel 2 as a satellite;
-- [x] Add Landsats 5, 7, 8, 9 as a satellite;
-- [x] Add Sentinel 1 GRD as a satellite;
-- [x] Add Mapbiomas Brazil as a satellite (data source);
-- [x] Add MODIS Terra/Acqua;
-- [x] Add Satellite Image Time Series Aggregations online download;
-- [x] Add Satellite Image Time Series Aggregations task download;
-- [x] Add Images online download/visualization with matplotlib;
-- [x] Add single/multiple SITS visualization
-- [x] Add smart_open[gcs] for autorecovery SITS from GCS;
-- [x] Add ALOS-2 PALSAR-2 radar;
-- [ ] Add Images online visualization with plotly;
-- [ ] Make cloud mask removable;
-- [ ] Add all other Mapbiomas;
-- [ ] Add Sentinel 1 ARD;
-- [ ] Add Sentinel 3;
-- [ ] Add jurassic Landsats (1-4);
-- [ ] Add Landsat Pansharpening for image download;
+## Development Roadmap
+
+### ✅ Completed Features
+- [x] **Optical Satellites**: Sentinel-2, Landsat 5/7/8/9 support
+- [x] **Radar Sensors**: Sentinel-1 GRD, ALOS-2 PALSAR-2
+- [x] **Derived Products**: MapBiomas Brazil, MODIS Terra/Aqua
+- [x] **Time Series**: Satellite Image Time Series (SITS) with aggregations
+- [x] **Downloads**: Online and task-based download methods with **aria2 integration**
+- [x] **Visualizations**: matplotlib-based plotting for images and time series
+- [x] **Cloud Recovery**: smart_open[gcs] integration for automatic data recovery
+- [x] **Advanced Processing**: Configurable cloud masking, Landsat pan-sharpening
+
+### 🚧 In Development
+- [ ] **Enhanced Visualizations**: plotly-based interactive plotting
+- [ ] **Expanded Coverage**: All MapBiomas collections (Amazon, Cerrado, etc.)
+- [ ] **Advanced Radar**: Sentinel-1 ARD (Analysis Ready Data)
+- [ ] **Ocean Monitoring**: Sentinel-3 OLCI/SLSTR sensors
+- [ ] **Historical Data**: Landsat 1-4 for long-term analysis

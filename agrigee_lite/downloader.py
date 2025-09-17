@@ -38,11 +38,11 @@ class DownloaderStrategy:
                 try:
                     existing_download = self.aria2.get_download(self.downloads_map[my_id])
                     if existing_download.status != "error":
-                        raise Exception(
+                        raise Exception(  # noqa: TRY002, TRY003, TRY301
                             f"Download with id={my_id} already exists with status='{existing_download.status}'."
                         )
                 except Exception as e:
-                    raise Exception(f"Error checking existing download for id={my_id}: {e}")
+                    raise Exception(f"Error checking existing download for id={my_id}: {e}")  # noqa: B904, TRY002, TRY003
 
             download = self.aria2.add_uris([url], {"dir": str(self.download_folder.absolute()) + "/"})
             self.downloads_map[my_id] = download.gid

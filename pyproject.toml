@@ -1,6 +1,6 @@
 [project]
 name = "agrigee_lite"
-version = "2.0.6"
+version = "2.0.7"
 description = "Because using satellite data should not be rocket science."
 authors = [{ name = "Mateus Pinto da Silva", email = "mateus.p.silva@ufv.br" }]
 readme = "README.md"
@@ -153,4 +153,6 @@ exclude = [
     "agrigee_lite/**/*.pyc",
     "agrigee_lite/**/*.pyo",
     "agrigee_lite/**/__pycache__/**",
+    "docs/*",
+    "mkdocs.yml",
 ]

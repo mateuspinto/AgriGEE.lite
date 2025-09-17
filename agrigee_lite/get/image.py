@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import ee
 import numpy as np
 import pandas as pd
-from shapely import MultiPolygon, Polygon
+from shapely import MultiPolygon, Point, Polygon
 from tqdm.std import tqdm
 
 from agrigee_lite.downloader import DownloaderStrategy
@@ -23,7 +23,37 @@ def download_multiple_images(  # noqa: C901
     invalid_images_threshold: float = 0.5,
     max_parallel_downloads: int = 40,
     force_redownload: bool = False,
-):
+    image_indices: list[int] | None = None,
+) -> list[str]:
+    """
+    Download multiple satellite images for a given geometry and date range.
+
+    Parameters
+    ----------
+    geometry : Polygon or MultiPolygon
+        The area of interest as a shapely Polygon or MultiPolygon.
+    start_date : pd.Timestamp or str
+        Start date for image collection.
+    end_date : pd.Timestamp or str
+        End date for image collection.
+    satellite : AbstractSatellite
+        The satellite configuration to use for image collection.
+    invalid_images_threshold : float, optional
+        Threshold for filtering images based on valid pixels (0.0-1.0), by default 0.5.
+    max_parallel_downloads : int, optional
+        Maximum number of parallel downloads, by default 40.
+    force_redownload : bool, optional
+        Whether to force re-download of existing files, by default False.
+    image_indices : list[int] or None, optional
+        List of specific image indices to download (e.g., [0, 1] for first two images).
+        If None, all images in the date range will be downloaded, by default None.
+
+    Returns
+    -------
+    list[str]
+        List of image names (dates in YYYY-MM-DD format) that were downloaded.
+    """
+
     start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
     end_date = end_date.strftime("%Y-%m-%d") if isinstance(end_date, pd.Timestamp) else end_date
 
@@ -60,6 +90,17 @@ def download_multiple_images(  # noqa: C901
     image_names = ee_expression.aggregate_array("ZZ_USER_TIME_DUMMY").getInfo()
     image_indexes = ee_expression.aggregate_array("system:index").getInfo()
 
+    # Filter images by indices if provided
+    if image_indices is not None:
+        # Ensure indices are valid
+        valid_indices = [i for i in image_indices if 0 <= i < len(image_indexes)]
+        if not valid_indices:
+            print("No valid image indices provided.")
+            return np.array([]), []
+
+        image_names = [image_names[i] for i in valid_indices]
+        image_indexes = [image_indexes[i] for i in valid_indices]
+
     output_path = pathlib.Path("data/temp/images") / f"{create_dict_hash(metadata_dict)}"
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -86,7 +127,10 @@ def download_multiple_images(  # noqa: C901
     def download_task(chunk_index):
         try:
             img = ee.Image(ee_expression.filter(ee.Filter.eq("system:index", image_indexes[chunk_index])).first())
-            url = img.getDownloadURL({"name": str(chunk_index), "region": ee_geometry})
+            # Use only the image date as filename (GEE standard format)
+            image_date = image_names[chunk_index]
+            filename = f"{image_date}"
+            url = img.getDownloadURL({"name": filename, "region": ee_geometry})
             downloader.add_download([(chunk_index, url)])
             return chunk_index, True  # noqa: TRY300
         except Exception as _:
@@ -122,9 +166,24 @@ def download_multiple_images(  # noqa: C901
 
 
 def download_single_image(
-    geometry: Polygon,
+    geometry: Polygon | MultiPolygon | Point,
     satellite: SingleImageSatellite,
 ) -> np.ndarray:
+    """
+    Download a single satellite image for a given geometry.
+
+    Parameters
+    ----------
+    geometry : Polygon, MultiPolygon, or Point
+        The area or point of interest for image extraction.
+    satellite : SingleImageSatellite
+        The satellite configuration object for single image extraction.
+
+    Returns
+    -------
+    np.ndarray
+        NumPy array containing the satellite image data. Returns empty array if download fails.
+    """
     ee_geometry = ee.Geometry(geometry.__geo_interface__)
     ee_feature = ee.Feature(ee_geometry, {"0": 1})
 
@@ -132,8 +191,8 @@ def download_single_image(
         image = satellite.image(ee_feature)
         image_clipped = image.clip(ee_geometry)
         image_np = ee_img_to_numpy(image_clipped, ee_geometry, satellite.pixelSize)
-    except Exception as e:
-        print(f"download_single_image_{satellite.shortName} = {e}")
+    except Exception:
+        logging.exception(f"Failed to download single image for satellite {satellite.shortName}")
         return np.array([])
 
     return image_np

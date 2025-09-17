@@ -9,7 +9,7 @@ import ee
 import geopandas as gpd
 import pandas as pd
 import pandera.pandas as pa
-from shapely import Polygon
+from shapely import MultiPolygon, Point, Polygon
 from tqdm.std import tqdm
 
 from agrigee_lite.downloader import DownloaderStrategy
@@ -26,14 +26,39 @@ from agrigee_lite.task_manager import GEETaskManager
 
 
 def build_ee_expression(
-    gdf,
-    satellite,
-    reducers,
-    subsampling_max_pixels,
-    original_index_column_name,
-    start_date_column_name="start_date",
-    end_date_column_name="end_date",
-):
+    gdf: gpd.GeoDataFrame,
+    satellite: AbstractSatellite,
+    reducers: set[str] | None,
+    subsampling_max_pixels: float,
+    original_index_column_name: str,
+    start_date_column_name: str = "start_date",
+    end_date_column_name: str = "end_date",
+) -> ee.FeatureCollection:
+    """
+    Build Earth Engine expression for satellite time series computation.
+
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        Input GeoDataFrame containing geometries and date information.
+    satellite : AbstractSatellite
+        Satellite configuration object.
+    reducers : set[str] or None
+        Set of reducer names to apply to the computation.
+    subsampling_max_pixels : float
+        Maximum pixels for sampling: >1 = absolute count, ≤1 = fraction of area (e.g., 0.5 = 50% sampling).
+    original_index_column_name : str
+        Name of the column containing original indices.
+    start_date_column_name : str, optional
+        Name of the start date column, by default "start_date".
+    end_date_column_name : str, optional
+        Name of the end date column, by default "end_date".
+
+    Returns
+    -------
+    ee.FeatureCollection
+        Earth Engine FeatureCollection with computed satellite time series.
+    """
     fc = ee_gdf_to_feature_collection(gdf, original_index_column_name, start_date_column_name, end_date_column_name)
     return ee.FeatureCollection(
         fc.map(
@@ -75,6 +100,23 @@ def build_selectors(satellite: AbstractSatellite, reducers: set[str] | None) -> 
 
 
 def prepare_output_df(df: pd.DataFrame, satellite: AbstractSatellite, original_index_column_name: str) -> pd.DataFrame:
+    """
+    Prepare and clean output DataFrame from satellite time series data.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw DataFrame from satellite time series computation.
+    satellite : AbstractSatellite
+        Satellite configuration object used for data processing.
+    original_index_column_name : str
+        Name of the column to restore original indices.
+
+    Returns
+    -------
+    pd.DataFrame
+        Cleaned and processed DataFrame with proper column names and data types.
+    """
     df = df.copy()
 
     df = df.drop(columns=["geo"], errors="ignore")
@@ -110,6 +152,29 @@ def sanitize_and_prepare_input_gdf(
     start_date_column_name: str = "start_date",
     end_date_column_name: str = "end_date",
 ) -> gpd.GeoDataFrame:
+    """
+    Sanitize and prepare input GeoDataFrame for satellite time series processing.
+
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        Input GeoDataFrame with geometries and temporal information.
+    satellite : AbstractSatellite
+        Satellite configuration object.
+    original_index_column_name : str
+        Name of the column to store original indices.
+    cluster_size : int
+        Maximum size for spatial clustering.
+    start_date_column_name : str, optional
+        Name of the start date column, by default "start_date".
+    end_date_column_name : str, optional
+        Name of the end date column, by default "end_date".
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Sanitized GeoDataFrame with clustering applied and invalid data filtered.
+    """
     gdf = gdf.copy()
 
     if original_index_column_name == "original_index":
@@ -159,13 +224,41 @@ def sanitize_and_prepare_input_gdf(
 
 
 def download_single_sits(
-    geometry: Polygon,
+    geometry: Polygon | MultiPolygon | Point,
     start_date: pd.Timestamp | str,
     end_date: pd.Timestamp | str,
     satellite: AbstractSatellite,
     reducers: set[str] | None = None,
     subsampling_max_pixels: float = 1_000,
 ) -> pd.DataFrame:
+    """
+    Download satellite time series for a single geometry.
+
+    Parameters
+    ----------
+    geometry : Polygon, MultiPolygon, or Point
+        The area or point of interest for data extraction.
+    start_date : pd.Timestamp or str
+        Start date for time series collection.
+    end_date : pd.Timestamp or str
+        End date for time series collection.
+    satellite : AbstractSatellite
+        Satellite configuration object.
+    reducers : set[str] or None, optional
+        Set of reducer names to apply, by default None.
+    subsampling_max_pixels : float, optional
+        Maximum pixels for sampling: >1 = absolute count, ≤1 = fraction of area (e.g., 0.5 = 50% sampling), by default 1_000.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing satellite time series data.
+
+    Raises
+    ------
+    ValueError
+        If the requested period does not intersect with satellite's temporal range.
+    """
     start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
     end_date = end_date.strftime("%Y-%m-%d") if isinstance(end_date, pd.Timestamp) else end_date
 
@@ -199,6 +292,37 @@ def download_multiple_sits(  # noqa: C901
     max_parallel_downloads: int = 40,
     force_redownload: bool = False,
 ) -> pd.DataFrame:
+    """
+    Download satellite time series for multiple geometries using parallel processing.
+
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        GeoDataFrame containing geometries and temporal information.
+    satellite : AbstractSatellite
+        Satellite configuration object.
+    reducers : set[str] or None, optional
+        Set of reducer names to apply, by default None.
+    original_index_column_name : str, optional
+        Name of the column to store original indices, by default "original_index".
+    start_date_column_name : str, optional
+        Name of the start date column, by default "start_date".
+    end_date_column_name : str, optional
+        Name of the end date column, by default "end_date".
+    subsampling_max_pixels : float, optional
+        Maximum pixels for sampling: >1 = absolute count, ≤1 = fraction of area (e.g., 0.5 = 50% sampling), by default 1_000.
+    chunksize : int, optional
+        Number of features to process per chunk, by default 10.
+    max_parallel_downloads : int, optional
+        Maximum number of parallel downloads, by default 40.
+    force_redownload : bool, optional
+        Whether to force re-download of existing data, by default False.
+
+    Returns
+    -------
+    pd.DataFrame
+        Combined DataFrame containing satellite time series for all geometries.
+    """
     if len(gdf) == 0:
         return pd.DataFrame()
 
@@ -301,80 +425,6 @@ def download_multiple_sits(  # noqa: C901
     return whole_result_df
 
 
-def download_multiple_sits_task_gdrive(
-    gdf: gpd.GeoDataFrame,
-    satellite: AbstractSatellite,
-    file_stem: str,
-    reducers: set[str] | None = None,
-    original_index_column_name: str = "original_index",
-    start_date_column_name: str = "start_date",
-    end_date_column_name: str = "end_date",
-    subsampling_max_pixels: float = 1_000,
-    taskname: str = "",
-    gee_save_folder: str = "AGL_EXPORTS",
-) -> ee.batch.Task:
-    if taskname == "":
-        taskname = file_stem
-
-    ee_expression = build_ee_expression(
-        gdf,
-        satellite,
-        reducers,
-        subsampling_max_pixels,
-        original_index_column_name,
-        start_date_column_name,
-        end_date_column_name,
-    )
-
-    task = ee.batch.Export.table.toDrive(
-        collection=ee_expression,
-        description=taskname,
-        fileFormat="CSV",
-        fileNamePrefix=file_stem,
-        folder=gee_save_folder,
-        selectors=build_selectors(satellite, reducers),
-    )
-
-    return task
-
-
-def download_multiple_sits_task_gcs(
-    gdf: gpd.GeoDataFrame,
-    satellite: AbstractSatellite,
-    bucket_name: str,
-    file_path: str,
-    reducers: set[str] | None = None,
-    original_index_column_name: str = "original_index",
-    start_date_column_name: str = "start_date",
-    end_date_column_name: str = "end_date",
-    subsampling_max_pixels: float = 1_000,
-    taskname: str = "",
-) -> ee.batch.Task:
-    if taskname == "":
-        taskname = file_path
-
-    ee_expression = build_ee_expression(
-        gdf,
-        satellite,
-        reducers,
-        subsampling_max_pixels,
-        original_index_column_name,
-        start_date_column_name,
-        end_date_column_name,
-    )
-
-    task = ee.batch.Export.table.toCloudStorage(
-        bucket=bucket_name,
-        collection=ee_expression,
-        description=taskname,
-        fileFormat="CSV",
-        fileNamePrefix=file_path,
-        selectors=build_selectors(satellite, reducers),
-    )
-
-    return task
-
-
 def download_multiple_sits_chunks_gdrive(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
@@ -388,8 +438,103 @@ def download_multiple_sits_chunks_gdrive(
     force_redownload: bool = False,
     wait: bool = True,
 ) -> None:
+    """
+    Download satellite time series using Google Earth Engine tasks to Google Drive.
+
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        GeoDataFrame containing geometries and temporal information.
+    satellite : AbstractSatellite
+        Satellite configuration object.
+    reducers : set[str] or None, optional
+        Set of reducer names to apply, by default None.
+    original_index_column_name : str, optional
+        Name of the column to store original indices, by default "original_index".
+    start_date_column_name : str, optional
+        Name of the start date column, by default "start_date".
+    end_date_column_name : str, optional
+        Name of the end date column, by default "end_date".
+    subsampling_max_pixels : float, optional
+        Maximum pixels for sampling: >1 = absolute count, ≤1 = fraction of area (e.g., 0.5 = 50% sampling), by default 1_000.
+    cluster_size : int, optional
+        Maximum cluster size for spatial grouping, by default 500.
+    gee_save_folder : str, optional
+        Google Drive folder name for saving exports, by default "AGL_EXPORTS".
+    force_redownload : bool, optional
+        Whether to force re-download of existing data, by default False.
+    wait : bool, optional
+        Whether to wait for task completion, by default True.
+    """
     if len(gdf) == 0:
         return None
+
+    def download_multiple_sits_task_gdrive(
+        gdf: gpd.GeoDataFrame,
+        satellite: AbstractSatellite,
+        file_stem: str,
+        reducers: set[str] | None = None,
+        original_index_column_name: str = "original_index",
+        start_date_column_name: str = "start_date",
+        end_date_column_name: str = "end_date",
+        subsampling_max_pixels: float = 1_000,
+        taskname: str = "",
+        gee_save_folder: str = "AGL_EXPORTS",
+    ) -> ee.batch.Task:
+        """
+        Create a Google Earth Engine export task to Google Drive.
+
+        Parameters
+        ----------
+        gdf : gpd.GeoDataFrame
+            GeoDataFrame containing geometries and temporal information.
+        satellite : AbstractSatellite
+            Satellite configuration object.
+        file_stem : str
+            Base filename for the exported file.
+        reducers : set[str] or None, optional
+            Set of reducer names to apply, by default None.
+        original_index_column_name : str, optional
+            Name of the column to store original indices, by default "original_index".
+        start_date_column_name : str, optional
+            Name of the start date column, by default "start_date".
+        end_date_column_name : str, optional
+            Name of the end date column, by default "end_date".
+        subsampling_max_pixels : float, optional
+            Maximum pixels for sampling: >1 = absolute count, ≤1 = fraction of area (e.g., 0.5 = 50% sampling), by default 1_000.
+        taskname : str, optional
+            Custom task name, by default "".
+        gee_save_folder : str, optional
+            Google Drive folder name, by default "AGL_EXPORTS".
+
+        Returns
+        -------
+        ee.batch.Task
+            Earth Engine export task object.
+        """
+        if taskname == "":
+            taskname = file_stem
+
+        ee_expression = build_ee_expression(
+            gdf,
+            satellite,
+            reducers,
+            subsampling_max_pixels,
+            original_index_column_name,
+            start_date_column_name,
+            end_date_column_name,
+        )
+
+        task = ee.batch.Export.table.toDrive(
+            collection=ee_expression,
+            description=taskname,
+            fileFormat="CSV",
+            fileNamePrefix=file_stem,
+            folder=gee_save_folder,
+            selectors=build_selectors(satellite, reducers),
+        )
+
+        return task
 
     gdf = sanitize_and_prepare_input_gdf(
         gdf, satellite, original_index_column_name, cluster_size, start_date_column_name, end_date_column_name
@@ -448,11 +593,112 @@ def download_multiple_sits_chunks_gcs(
     force_redownload: bool = False,
     wait: bool = True,
 ) -> None | pd.DataFrame:
+    """
+    Download satellite time series using Google Earth Engine tasks to Google Cloud Storage.
+
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        GeoDataFrame containing geometries and temporal information.
+    satellite : AbstractSatellite
+        Satellite configuration object.
+    bucket_name : str
+        Google Cloud Storage bucket name for exports.
+    reducers : set[str] or None, optional
+        Set of reducer names to apply, by default None.
+    original_index_column_name : str, optional
+        Name of the column to store original indices, by default "original_index".
+    start_date_column_name : str, optional
+        Name of the start date column, by default "start_date".
+    end_date_column_name : str, optional
+        Name of the end date column, by default "end_date".
+    subsampling_max_pixels : float, optional
+        Maximum pixels for sampling: >1 = absolute count, ≤1 = fraction of area (e.g., 0.5 = 50% sampling), by default 1_000.
+    cluster_size : int, optional
+        Maximum cluster size for spatial grouping, by default 500.
+    force_redownload : bool, optional
+        Whether to force re-download of existing data, by default False.
+    wait : bool, optional
+        Whether to wait for task completion, by default True.
+
+    Returns
+    -------
+    None or pd.DataFrame
+        If wait is True, returns DataFrame with combined results.
+        If wait is False, returns None.
+    """
     from smart_open import open  # noqa: A004
 
     if len(gdf) == 0:
         logging.warning("Empty GeoDataFrame, nothing to download")
         return None
+
+    def download_multiple_sits_task_gcs(
+        gdf: gpd.GeoDataFrame,
+        satellite: AbstractSatellite,
+        bucket_name: str,
+        file_path: str,
+        reducers: set[str] | None = None,
+        original_index_column_name: str = "original_index",
+        start_date_column_name: str = "start_date",
+        end_date_column_name: str = "end_date",
+        subsampling_max_pixels: float = 1_000,
+        taskname: str = "",
+    ) -> ee.batch.Task:
+        """
+        Create a Google Earth Engine export task to Google Cloud Storage.
+
+        Parameters
+        ----------
+        gdf : gpd.GeoDataFrame
+            GeoDataFrame containing geometries and temporal information.
+        satellite : AbstractSatellite
+            Satellite configuration object.
+        bucket_name : str
+            Google Cloud Storage bucket name.
+        file_path : str
+            File path within the bucket for the exported file.
+        reducers : set[str] or None, optional
+            Set of reducer names to apply, by default None.
+        original_index_column_name : str, optional
+            Name of the column to store original indices, by default "original_index".
+        start_date_column_name : str, optional
+            Name of the start date column, by default "start_date".
+        end_date_column_name : str, optional
+            Name of the end date column, by default "end_date".
+        subsampling_max_pixels : float, optional
+            Maximum pixels for sampling: >1 = absolute count, ≤1 = fraction of area (e.g., 0.5 = 50% sampling), by default 1_000.
+        taskname : str, optional
+            Custom task name, by default "".
+
+        Returns
+        -------
+        ee.batch.Task
+            Earth Engine export task object.
+        """
+        if taskname == "":
+            taskname = file_path
+
+        ee_expression = build_ee_expression(
+            gdf,
+            satellite,
+            reducers,
+            subsampling_max_pixels,
+            original_index_column_name,
+            start_date_column_name,
+            end_date_column_name,
+        )
+
+        task = ee.batch.Export.table.toCloudStorage(
+            bucket=bucket_name,
+            collection=ee_expression,
+            description=taskname,
+            fileFormat="CSV",
+            fileNamePrefix=file_path,
+            selectors=build_selectors(satellite, reducers),
+        )
+
+        return task
 
     gdf = sanitize_and_prepare_input_gdf(
         gdf, satellite, original_index_column_name, cluster_size, start_date_column_name, end_date_column_name

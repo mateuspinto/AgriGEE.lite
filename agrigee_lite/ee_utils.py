@@ -17,6 +17,34 @@ def ee_map_bands_and_doy(
     reducer: ee.Reducer,
     single_image: bool = False,
 ) -> ee.Feature:
+    """
+    Extract band statistics from an Earth Engine image for a given feature geometry.
+
+    This function applies statistical reducers to all bands of an Earth Engine image
+    within the geometry of a given feature. It handles metadata extraction including
+    timestamps and valid pixel counts, making it suitable for time series analysis.
+
+    Parameters
+    ----------
+    ee_img : ee.Image
+        Earth Engine image to process.
+    ee_feature : ee.Feature
+        Earth Engine feature providing the geometry for spatial reduction.
+    pixel_size : int
+        Spatial resolution in meters for the reduction operation.
+    subsampling_max_pixels : ee.Number
+        Maximum number of pixels to include in the reduction.
+    reducer : ee.Reducer
+        Earth Engine reducer to apply (e.g., median, mean, max).
+    single_image : bool, optional
+        Whether to skip timestamp extraction for single image processing, by default False.
+
+    Returns
+    -------
+    ee.Feature
+        Earth Engine feature containing the reduced statistics as properties.
+        Includes band values, timestamp (if not single_image), index number, and valid pixel count.
+    """
     ee_img = ee.Image(ee_img)
     ee_stats = ee_img.reduceRegion(
         reducer=reducer,
@@ -36,6 +64,28 @@ def ee_map_bands_and_doy(
 
 
 def ee_map_valid_pixels(img: ee.Image, ee_geometry: ee.Geometry, pixel_size: int) -> ee.Image:
+    """
+    Add valid pixel count metadata to an Earth Engine image.
+
+    Counts the number of valid (non-cloud/non-satelliteError) pixels within a geometry and adds this
+    information as metadata to the image. This is useful for quality assessment
+    and filtering images with insufficient valid data.
+
+    Parameters
+    ----------
+    img : ee.Image
+        Input Earth Engine image to analyze.
+    ee_geometry : ee.Geometry
+        Geometry defining the area of interest for pixel counting.
+    pixel_size : int
+        Spatial resolution in meters for the pixel counting operation.
+
+    Returns
+    -------
+    ee.Image
+        The original image with added "ZZ_USER_VALID_PIXELS" property containing
+        the count of valid pixels within the specified geometry.
+    """
     mask = ee.Image(img).select([0]).gt(0)
 
     valid_pixels = ee.Number(
@@ -54,6 +104,28 @@ def ee_map_valid_pixels(img: ee.Image, ee_geometry: ee.Geometry, pixel_size: int
 
 
 def ee_cloud_probability_mask(img: ee.Image, threshold: float, invert: bool = False) -> ee.Image:
+    """
+    Apply cloud probability masking to an Earth Engine image.
+
+    Masks pixels based on cloud probability values, typically from cloud detection
+    algorithms. Pixels with cloud probability above (or below if inverted) the
+    threshold are masked out. The cloud band is removed from the output.
+
+    Parameters
+    ----------
+    img : ee.Image
+        Input image containing a "cloud" band with probability values.
+    threshold : float
+        Cloud probability threshold (0.0 to 1.0 or 0 to 100 depending on data).
+    invert : bool, optional
+        If True, mask pixels with probability >= threshold (typical use).
+        If False, mask pixels with probability < threshold, by default False.
+
+    Returns
+    -------
+    ee.Image
+        Masked image with cloud band removed and cloud pixels masked out.
+    """
     mask = img.select(["cloud"]).gte(threshold) if invert else img.select(["cloud"]).lt(threshold)
 
     return img.updateMask(mask).select(img.bandNames().remove("cloud"))
@@ -65,6 +137,38 @@ def ee_gdf_to_feature_collection(
     start_date_column_name: str = "start_date",
     end_date_column_name: str = "end_date",
 ) -> ee.FeatureCollection:
+    """
+    Convert a GeoPandas GeoDataFrame to an Earth Engine FeatureCollection.
+
+    Transforms a GeoDataFrame with temporal and spatial information into an Earth Engine
+    FeatureCollection suitable for server-side processing. The function handles coordinate
+    system conversion, temporary file creation, and proper geodesic geometry settings.
+
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        Input GeoDataFrame containing geometries and temporal information.
+    original_index_column_name : str
+        Name of the column containing original feature indices.
+    start_date_column_name : str, optional
+        Name of the start date column, by default "start_date".
+    end_date_column_name : str, optional
+        Name of the end date column, by default "end_date".
+
+    Returns
+    -------
+    ee.FeatureCollection
+        Earth Engine FeatureCollection with renamed properties:
+        - Original index column → "0"
+        - Start date column → "s"
+        - End date column → "e"
+        Non-point geometries are automatically set as geodesic for accurate processing.
+
+    Notes
+    -----
+    This function creates temporary GeoJSON files that are automatically cleaned up.
+    Input CRS is converted to EPSG:4326 for Earth Engine compatibility.
+    """
     gdf = gdf.copy()
 
     gdf = gdf[[original_index_column_name, "geometry", start_date_column_name, end_date_column_name]]
@@ -95,6 +199,35 @@ def ee_gdf_to_feature_collection(
 
 
 def ee_img_to_numpy(ee_img: ee.Image, ee_geometry: ee.Geometry, scale: int) -> np.ndarray:
+    """
+    Convert an Earth Engine image to a NumPy array for local processing.
+
+    Downloads an Earth Engine image within a specified geometry and converts it
+    to a NumPy array. The function handles coordinate system transformations,
+    determines appropriate chip size, and cleans invalid values (NaN, Inf).
+
+    Parameters
+    ----------
+    ee_img : ee.Image
+        Earth Engine image to convert.
+    ee_geometry : ee.Geometry
+        Geometry defining the spatial extent for image extraction.
+        Will be converted to bounds for rectangular extraction.
+    scale : int
+        Spatial resolution in meters for the downloaded image.
+
+    Returns
+    -------
+    np.ndarray
+        NumPy array containing the image data as float32.
+        Invalid values (NaN, Inf) are replaced with 0.
+        Shape depends on the geometry size and requested scale.
+
+    Notes
+    -----
+    The function automatically calculates appropriate chip dimensions based on
+    geometry perimeter and scale. Very small geometries will result in 1x1 chips.
+    """
     ee_img = ee.Image(ee_img)
     ee_geometry = ee.Geometry(ee_geometry).bounds()
 
@@ -135,6 +268,41 @@ def ee_img_to_numpy(ee_img: ee.Image, ee_geometry: ee.Geometry, scale: int) -> n
 
 
 def ee_get_tasks_status() -> pd.DataFrame:
+    """
+    Retrieve status information for all Earth Engine tasks.
+
+    Fetches comprehensive information about all Earth Engine operations/tasks
+    associated with the authenticated account, including metadata, timing,
+    resource usage, and cost estimates.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing task information with the following columns:
+        - attempt: Task attempt number
+        - create_time: Task creation timestamp
+        - description: Task description/name
+        - destination_uris: Output destination URIs
+        - done: Boolean indicating completion status
+        - end_time: Task completion timestamp
+        - name: Internal task name
+        - priority: Task priority level
+        - progress: Completion progress (0.0 to 1.0)
+        - script_uri: Source script URI
+        - start_time: Task start timestamp
+        - state: Current task state (RUNNING, COMPLETED, FAILED, etc.)
+        - total_batch_eecu_usage_seconds: Total EECU usage in seconds
+        - type: Task type (EXPORT_IMAGE, EXPORT_TABLE, etc.)
+        - update_time: Last update timestamp
+        - estimated_cost_usd_tier_1: Estimated cost in US Dollars for Tier 1 pricing
+        - estimated_cost_usd_tier_2: Estimated cost in US Dollars for Tier 2 pricing
+        - estimated_cost_usd_tier_3: Estimated cost in US Dollars for Tier 3 pricing
+
+    Notes
+    -----
+    Cost estimates are based on EECU usage and standard pricing tiers.
+    If no tasks exist, returns an empty DataFrame with the same column structure.
+    """
     tasks = ee.data.listOperations()
 
     if tasks:
@@ -196,6 +364,42 @@ def ee_get_tasks_status() -> pd.DataFrame:
 
 
 def ee_get_reducers(reducer_names: set[str] | None = None) -> ee.Reducer:  # noqa: C901
+    """
+    Create a combined Earth Engine reducer from a set of reducer names.
+
+    Builds a composite Earth Engine reducer by combining multiple statistical
+    reducers. Supports standard statistics and percentiles, with automatic
+    handling of percentile combinations.
+
+    Parameters
+    ----------
+    reducer_names : set[str] or None, optional
+        Set of reducer names to combine. Supported values:
+        - "min", "max", "mean", "median"
+        - "kurt" (kurtosis), "skew" (skewness)
+        - "std" (standard deviation), "var" (variance)
+        - "mode" (most frequent value)
+        - "pXX" (percentiles, e.g., "p10", "p90")
+        If None, defaults to ["median"], by default None.
+
+    Returns
+    -------
+    ee.Reducer
+        Combined Earth Engine reducer that applies all requested statistics.
+        Multiple percentiles are automatically grouped into a single percentile reducer.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported reducer name is provided.
+
+    Examples
+    --------
+    >>> # Single reducer
+    >>> reducer = ee_get_reducers({"median"})
+    >>> # Multiple reducers including percentiles
+    >>> reducer = ee_get_reducers({"mean", "std", "p10", "p90"})
+    """
     if reducer_names is None:
         reducer_names = ["median"]
 
@@ -241,6 +445,39 @@ def ee_get_reducers(reducer_names: set[str] | None = None) -> ee.Reducer:  # noq
 def ee_filter_img_collection_invalid_pixels(
     ee_img_collection: ee.ImageCollection, ee_geometry: ee.Geometry, pixel_size: int, min_valid_pixels: int = 20
 ) -> ee.ImageCollection:
+    """
+    Filter an Earth Engine ImageCollection based on valid pixel count and temporal uniqueness.
+
+    Removes images with insufficient valid pixels and ensures temporal uniqueness
+    by keeping only the first image per date. This is essential for time series
+    analysis where data quality and temporal consistency are important.
+
+    Parameters
+    ----------
+    ee_img_collection : ee.ImageCollection
+        Input Earth Engine ImageCollection to filter.
+    ee_geometry : ee.Geometry
+        Geometry defining the area of interest for pixel counting.
+    pixel_size : int
+        Spatial resolution in meters for pixel counting operations.
+    min_valid_pixels : int, optional
+        Minimum number of valid pixels required per image, by default 20.
+        For very small geometries, this is automatically adjusted to 1.
+
+    Returns
+    -------
+    ee.ImageCollection
+        Filtered ImageCollection with:
+        - Images having at least min_valid_pixels valid pixels
+        - Temporal uniqueness (one image per date)
+        - Added "ZZ_USER_TIME_DUMMY" property with YYYY-MM-DD format dates
+        - Sorted by date in ascending order
+
+    Notes
+    -----
+    The function automatically adjusts the minimum pixel threshold for small areas.
+    Each image gets a "ZZ_USER_VALID_PIXELS" property added during processing.
+    """
     min_valid_pixels = ee.Algorithms.If(
         ee_geometry.area(0.001),
         ee.Number(min_valid_pixels),
@@ -261,6 +498,37 @@ def ee_filter_img_collection_invalid_pixels(
 
 
 def ee_get_number_of_pixels(ee_geometry: ee.Geometry, subsampling_max_pixels: float, pixel_size: int) -> ee.Number:
+    """
+    Calculate the maximum number of pixels for Earth Engine reduction operations.
+
+    Determines the appropriate maxPixels value for Earth Engine reducers based on
+    either absolute pixel count or fractional area sampling. This helps control
+    memory usage and processing time for large geometries.
+
+    Parameters
+    ----------
+    ee_geometry : ee.Geometry
+        Geometry defining the area of interest.
+    subsampling_max_pixels : float
+        Maximum pixels specification:
+        - If > 1: Used as absolute pixel count
+        - If ≤ 1: Used as fraction of total geometry pixels (0.1 = 10% sampling)
+    pixel_size : int
+        Spatial resolution in meters for pixel area calculation.
+
+    Returns
+    -------
+    ee.Number
+        Earth Engine Number representing the maximum pixels to use in reductions.
+        Either the absolute value (if > 1) or calculated fraction of total pixels.
+
+    Examples
+    --------
+    >>> # Absolute pixel count
+    >>> max_pixels = ee_get_number_of_pixels(geometry, 10000, 30)
+    >>> # 50% sampling of total area
+    >>> max_pixels = ee_get_number_of_pixels(geometry, 0.5, 30)
+    """
     # -- maxPixels logic (absolute or fraction of footprint) -- #
     if subsampling_max_pixels > 1:
         return ee.Number(subsampling_max_pixels)
@@ -271,6 +539,35 @@ def ee_get_number_of_pixels(ee_geometry: ee.Geometry, subsampling_max_pixels: fl
 
 
 def ee_safe_remove_borders(ee_geometry: ee.Geometry, border_size: int, area_lower_bound: int) -> ee.Geometry:
+    """
+    Safely apply negative buffer to remove geometry borders with area validation.
+
+    Applies a negative buffer to remove border pixels from a geometry, but only
+    if the resulting geometry maintains sufficient area. This prevents creating
+    overly small or invalid geometries while reducing edge effects.
+
+    Parameters
+    ----------
+    ee_geometry : ee.Geometry
+        Input geometry to process.
+    border_size : int
+        Size of border to remove in meters (applied as negative buffer).
+    area_lower_bound : int
+        Minimum area threshold in square meters below which borders won't be removed.
+
+    Returns
+    -------
+    ee.Geometry
+        Processed geometry:
+        - If buffered area ≥ area_lower_bound: geometry with borders removed
+        - If buffered area < area_lower_bound: original geometry unchanged
+
+    Notes
+    -----
+    This function helps avoid issues with satellite data processing where border
+    pixels might have quality issues, while ensuring geometries remain valid
+    and sufficiently large for analysis.
+    """
     return ee.Geometry(
         ee.Algorithms.If(
             ee_geometry.buffer(-border_size, 0.001).area(0.001).gte(area_lower_bound),
@@ -281,6 +578,40 @@ def ee_safe_remove_borders(ee_geometry: ee.Geometry, border_size: int, area_lowe
 
 
 def ee_add_indexes_to_image(image: ee.Image, indexes: list[str]) -> ee.Image:
+    """
+    Add vegetation indices as bands to an Earth Engine image.
+
+    Calculates specified vegetation indices using image expressions and adds them
+    as new bands to the input image. Each index is computed using the image bands
+    available at the time of calculation.
+
+    Parameters
+    ----------
+    image : ee.Image
+        Input Earth Engine image containing the necessary bands for index calculation.
+    indexes : list[str]
+        List of index expressions to calculate and add as bands.
+        Each expression should be a valid Earth Engine expression using 'i'
+        to reference the input image.
+
+    Returns
+    -------
+    ee.Image
+        Enhanced image with original bands plus calculated vegetation indices.
+        New index bands are added with names matching the expression strings.
+
+    Examples
+    --------
+    >>> # Add NDVI and EVI indices
+    >>> indices = ["(i.nir - i.red) / (i.nir + i.red)", "2.5 * ((i.nir - i.red) / (i.nir + 6*i.red - 7.5*i.blue + 1))"]
+    >>> enhanced_image = ee_add_indexes_to_image(image, indices)
+
+    Notes
+    -----
+    The function uses Earth Engine's expression() method where 'i' represents
+    the input image. Band names in expressions should match the actual band
+    names in the image (e.g., 'i.red', 'i.nir').
+    """
     for index in indexes:
         calculated = image.expression(index, {"i": image})
         image = image.addBands(calculated, None, True)
@@ -289,6 +620,26 @@ def ee_add_indexes_to_image(image: ee.Image, indexes: list[str]) -> ee.Image:
 
 
 def ee_is_authenticated() -> bool:
+    """
+    Check if Earth Engine is properly authenticated and initialized.
+
+    Attempts to initialize Earth Engine and returns whether the operation
+    was successful. This is useful for checking authentication status
+    before performing Earth Engine operations.
+
+    Returns
+    -------
+    bool
+        True if Earth Engine is successfully initialized and authenticated,
+        False if initialization fails due to authentication or other issues.
+
+    Examples
+    --------
+    >>> if ee_is_authenticated():
+    >>>     print("Earth Engine is ready!")
+    >>> else:
+    >>>     print("Authentication required")
+    """
     try:
         ee.Initialize()
     except Exception:
@@ -298,7 +649,37 @@ def ee_is_authenticated() -> bool:
 
 
 def ee_quick_start() -> None:
-    """Quick start function to initialize Earth Engine."""
+    """
+    Quick start function to initialize Earth Engine with automatic credential detection.
+
+    Automatically detects and uses Earth Engine credentials from the GEE_KEY
+    environment variable. Supports both service account JSON files and project
+    tokens, providing informative feedback about the initialization process.
+
+    Environment Variables
+    ---------------------
+    GEE_KEY : str
+        Earth Engine authentication key. Can be either:
+        - Path to service account JSON file (ends with .json)
+        - Project token string for standard authentication
+
+    Returns
+    -------
+    None
+        Prints initialization status messages but doesn't return values.
+
+    Examples
+    --------
+    >>> import os
+    >>> os.environ['GEE_KEY'] = '/path/to/service-account.json'
+    >>> ee_quick_start()
+    Earth Engine initialized successfully using AgriGEE.lite...
+
+    Notes
+    -----
+    For service account authentication, the function also sets the
+    GOOGLE_APPLICATION_CREDENTIALS environment variable for use Google Cloud Storage.
+    """
 
     if not ee_is_authenticated():
         if "GEE_KEY" in os.environ:

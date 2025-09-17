@@ -175,39 +175,6 @@ def create_dict_hash(d: dict) -> str:
     return hashlib.sha1(json.dumps(normalized, sort_keys=True).encode("utf-8")).hexdigest()  # noqa: S324
 
 
-def compute_index_from_df(df: pd.DataFrame, np_function: Callable) -> np.ndarray:
-    sig = inspect.signature(np_function)
-    kwargs = {}
-
-    index_name = str(np_function.__name__).split("np_")[1]
-
-    if index_name in df.columns.tolist():
-        return df[index_name].to_numpy()
-
-    for param_name, param in sig.parameters.items():
-        if param_name in df.columns:
-            kwargs[param_name] = df[param_name].values
-        else:
-            if param.default is not inspect._empty:
-                kwargs[param_name] = param.default
-            else:
-                raise ValueError(  # noqa: TRY003
-                    f"DataFrame is missing a column '{param_name}', "
-                    f"required by {np_function.__name__}, and there's no default."
-                )
-
-    return np_function(**kwargs)
-
-
-def add_indexnum_column(df: pd.DataFrame) -> None:
-    if "00_indexnum" not in df.columns:
-        if not (df.index.to_numpy() == np.arange(len(df))).all():
-            raise ValueError(  # noqa: TRY003
-                "The index must be sequential from 0 to N-1. To do this, use gdf.reset_index(drop=True) before executing this function."
-            )
-        df["00_indexnum"] = range(len(df))
-
-
 def log_dict_function_call_summary(ignore: list[str] | None = None) -> dict[str, dict[str, str]]:
     frame = inspect.currentframe().f_back
     func_name = frame.f_code.co_name
