@@ -694,7 +694,7 @@ def ee_quick_start() -> None:
                 with open(gee_key) as f:
                     key_data = json.load(f)
                     print(
-                        f"Earth Engine initialized successfully using AgriGEE.lite for with service account. Project: {key_data.get('project_id', 'Unknown')}, Email: {key_data.get('client_email', 'Unknown')}."
+                        f"Earth Engine initialized successfully using AgriGEE.lite with service account. Project: {key_data.get('project_id', 'Unknown')}, Email: {key_data.get('client_email', 'Unknown')}."
                     )
 
             else:  # using token
