@@ -7,7 +7,7 @@ from agrigee_lite.sat.palsar import PALSAR2ScanSAR
 from agrigee_lite.sat.sentinel1 import Sentinel1GRD
 from agrigee_lite.sat.sentinel2 import Sentinel2
 from agrigee_lite.sat.soil import WRBSoilClasses
-from agrigee_lite.sat.two_satellite_fusion import TwoSatelliteFusion
+from agrigee_lite.sat.unified_satellite import TwoSatelliteFusion
 
 __all__ = [
     "ANADEM",
