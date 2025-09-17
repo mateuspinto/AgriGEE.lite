@@ -51,6 +51,10 @@ docs-test: ## Test if documentation can be built without warnings or errors
 docs: ## Build and serve the documentation
 	@uv run mkdocs serve
 
+.PHONY: docs-publish
+docs-publish: ## Publish documentation to GitHub Pages
+	@uv run mkdocs gh-deploy
+
 .PHONY: help
 help:
 	@uv run python -c "import re; \
