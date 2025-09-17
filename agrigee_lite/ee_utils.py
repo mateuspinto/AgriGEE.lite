@@ -699,7 +699,7 @@ def ee_quick_start() -> None:
 
             else:  # using token
                 ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project=gee_key)
-                print(f"Earth Engine initialized successfully using AgriGEE.lite for using token (project={gee_key}).")
+                print(f"Earth Engine initialized successfully using AgriGEE.lite using token (project={gee_key}).")
 
         else:
             print(
