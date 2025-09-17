@@ -776,4 +776,4 @@ class Landsat10(AbstractLandsat):
         min_area_to_keep_border: int = 50_000,
         use_pan_sharpening: bool = False,
     ):
-        raise NotImplementedError("HAHA FUNNY. Landsat 10 does not exist (yet).")
+        raise NotImplementedError("Landsat 10 is not yet available.")
