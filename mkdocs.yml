@@ -16,6 +16,8 @@ plugins:
       handlers:
         python:
           paths: ["agrigee_lite"]
+          options:
+            docstring_style: numpy
 theme:
   name: material
   feature:
