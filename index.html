@@ -1,0 +1,1428 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Because using satellite data shouldn't be rocket science, neither in code nor in hardware. .">
+      
+      
+        <meta name="author" content="Mateus Pinto da Silva">
+      
+      
+        <link rel="canonical" href="https://mateuspinto.github.io/agrigee_lite/">
+      
+      
+      
+        <link rel="next" href="modules/">
+      
+      
+      <link rel="icon" href="assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.9">
+    
+    
+      
+        <title>agrigee_lite</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.4af4bdda.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="deep-orange">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#agrigeelite" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="agrigee_lite" class="md-header__button md-logo" aria-label="agrigee_lite" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            agrigee_lite
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Home
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="deep-orange"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="deep-orange"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/mateuspinto/AgriGEE.lite" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    mateuspinto/AgriGEE.lite
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="agrigee_lite" class="md-nav__button md-logo" aria-label="agrigee_lite" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    agrigee_lite
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/mateuspinto/AgriGEE.lite" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    mateuspinto/AgriGEE.lite
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="." class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-makes-agrigeelite-special" class="md-nav__link">
+    <span class="md-ellipsis">
+      What makes AgriGEE.lite special?
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quick-start-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Quick Start Example
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#advanced-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      Advanced Capabilities
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#high-performance-downloads-with-aria2" class="md-nav__link">
+    <span class="md-ellipsis">
+      High-Performance Downloads with aria2
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#library-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      Library Architecture
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#available-data-sources-satellites-sensors-models-and-so-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      Available data sources (satellites, sensors, models and so on)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Available data sources (satellites, sensors, models and so on)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#observations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Observations
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#available-indices" class="md-nav__link">
+    <span class="md-ellipsis">
+      Available indices
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#avaiable-reductors" class="md-nav__link">
+    <span class="md-ellipsis">
+      Avaiable reductors
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#motivation-simplifying-earth-engine-for-everyone" class="md-nav__link">
+    <span class="md-ellipsis">
+      Motivation: Simplifying Earth Engine for Everyone
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#objectives-and-target-audience" class="md-nav__link">
+    <span class="md-ellipsis">
+      Objectives and Target Audience
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Objectives and Target Audience">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#contributing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Contributing
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#frequently-asked-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Frequently Asked Questions
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Frequently Asked Questions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-use-google-earth-engine-instead-of-stac" class="md-nav__link">
+    <span class="md-ellipsis">
+      Why use Google Earth Engine instead of STAC?
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#about-terminology-satellites-vs-sensors" class="md-nav__link">
+    <span class="md-ellipsis">
+      About Terminology: "Satellites" vs. "Sensors"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#about-our-mascot" class="md-nav__link">
+    <span class="md-ellipsis">
+      About Our Mascot
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-bugs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Known Bugs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#development-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      Development Roadmap
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Development Roadmap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#completed-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      ✅ Completed Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#in-development" class="md-nav__link">
+    <span class="md-ellipsis">
+      🚧 In Development
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="modules/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Modules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-makes-agrigeelite-special" class="md-nav__link">
+    <span class="md-ellipsis">
+      What makes AgriGEE.lite special?
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quick-start-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Quick Start Example
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#advanced-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      Advanced Capabilities
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#high-performance-downloads-with-aria2" class="md-nav__link">
+    <span class="md-ellipsis">
+      High-Performance Downloads with aria2
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#library-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      Library Architecture
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#available-data-sources-satellites-sensors-models-and-so-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      Available data sources (satellites, sensors, models and so on)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Available data sources (satellites, sensors, models and so on)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#observations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Observations
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#available-indices" class="md-nav__link">
+    <span class="md-ellipsis">
+      Available indices
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#avaiable-reductors" class="md-nav__link">
+    <span class="md-ellipsis">
+      Avaiable reductors
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#motivation-simplifying-earth-engine-for-everyone" class="md-nav__link">
+    <span class="md-ellipsis">
+      Motivation: Simplifying Earth Engine for Everyone
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#objectives-and-target-audience" class="md-nav__link">
+    <span class="md-ellipsis">
+      Objectives and Target Audience
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Objectives and Target Audience">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#contributing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Contributing
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#frequently-asked-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Frequently Asked Questions
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Frequently Asked Questions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-use-google-earth-engine-instead-of-stac" class="md-nav__link">
+    <span class="md-ellipsis">
+      Why use Google Earth Engine instead of STAC?
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#about-terminology-satellites-vs-sensors" class="md-nav__link">
+    <span class="md-ellipsis">
+      About Terminology: "Satellites" vs. "Sensors"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#about-our-mascot" class="md-nav__link">
+    <span class="md-ellipsis">
+      About Our Mascot
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-bugs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Known Bugs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#development-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      Development Roadmap
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Development Roadmap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#completed-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      ✅ Completed Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#in-development" class="md-nav__link">
+    <span class="md-ellipsis">
+      🚧 In Development
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="agrigeelite">AgriGEE.lite<a class="headerlink" href="#agrigeelite" title="Permanent link">&para;</a></h1>
+<p><img alt="mascote" src="https://github.com/user-attachments/assets/908400d6-c68f-4c26-98ae-0887cdb34d11" /></p>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>AgriGEE.lite is a high-performance <strong>Google Earth Engine (GEE) wrapper</strong> designed to simplify and accelerate the download of <strong>Analysis Ready Multimodal Data (ARD)</strong> for agricultural and vegetation monitoring. The library focuses on making satellite data as accessible as reading a CSV file with pandas, removing the complexity typically associated with Earth Engine programming.</p>
+<h3 id="what-makes-agrigeelite-special">What makes AgriGEE.lite special?<a class="headerlink" href="#what-makes-agrigeelite-special" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Simplified API</strong>: Download satellite time series with just a few lines of code</li>
+<li><strong>High Performance</strong>: Utilizes <strong>aria2 downloader</strong> under the hood, achieving <strong>16-22 time series downloads per second</strong></li>
+<li><strong>Multimodal Support</strong>: Seamlessly integrates optical satellites, radar sensors, and derived products</li>
+<li><strong>Vegetation/Agricultural Focus</strong>: Optimized for crop monitoring, vegetation analysis, and land use applications</li>
+<li><strong>GeoPandas Integration</strong>: Built to work natively with spatial geodataframes</li>
+</ul>
+<h3 id="quick-start-example">Quick Start Example<a class="headerlink" href="#quick-start-example" title="Permanent link">&para;</a></h3>
+<p>To download and view a cloud-free Sentinel-2 time series for a specific field and date range:</p>
+<pre><code class="language-python">import agrigee_lite as agl
+import geopandas as gpd
+import ee
+
+ee.Initialize()
+
+# Load your area of interest
+gdf = gpd.read_parquet(&quot;data/sample.parquet&quot;)
+geometry = gdf.iloc[0].geometry
+
+# Define satellite and download time series
+satellite = agl.sat.Sentinel2(bands=[&quot;red&quot;, &quot;green&quot;, &quot;blue&quot;])
+time_series = agl.get.sits(geometry, &quot;2022-10-01&quot;, &quot;2023-10-01&quot;, satellite)
+</code></pre>
+<p>This example demonstrates the library's core philosophy: <strong>spatial data analysis should be simple and fast</strong>. The <strong>entire library is designed to work seamlessly with <a href="https://geopandas.org/en/stable/">GeoPandas</a></strong>, making it essential to have basic knowledge of this framework.</p>
+<h3 id="advanced-capabilities">Advanced Capabilities<a class="headerlink" href="#advanced-capabilities" title="Permanent link">&para;</a></h3>
+<p>You can also download temporal aggregations, such as spatial median aggregations of vegetation indices from multiple satellites:</p>
+<p><img alt="{Multiple satellites EVI2 time series}" src="https://github.com/user-attachments/assets/dccd7d52-6047-4734-8d83-e6ea4de35808" /></p>
+<p>For synchronized multi-satellite analysis, you can use the TwoSatelliteFusion class:</p>
+<pre><code class="language-python"># Combine Landsat 8 and Sentinel-2 data for synchronized analysis
+landsat8 = agl.sat.Landsat8(bands=[&quot;red&quot;, &quot;green&quot;, &quot;blue&quot;, &quot;nir&quot;])
+sentinel2 = agl.sat.Sentinel2(bands=[&quot;red&quot;, &quot;green&quot;, &quot;blue&quot;, &quot;nir&quot;])
+fusion_sat = agl.sat.TwoSatelliteFusion(landsat8, sentinel2)
+
+# Download synchronized time series with both satellites' data
+fused_time_series = agl.get.sits(geometry, &quot;2022-01-01&quot;, &quot;2022-12-31&quot;, fusion_sat)
+</code></pre>
+<p>For more comprehensive examples, see the examples folder.</p>
+<h2 id="high-performance-downloads-with-aria2">High-Performance Downloads with aria2<a class="headerlink" href="#high-performance-downloads-with-aria2" title="Permanent link">&para;</a></h2>
+<p>One of AgriGEE.lite's key features is its use of <strong>aria2</strong>, a lightweight multi-protocol &amp; multi-source command-line download utility. This integration provides:</p>
+<ul>
+<li><strong>Parallel Downloads</strong>: Multiple simultaneous connections for faster data retrieval</li>
+<li><strong>Resume Capability</strong>: Automatic resumption of interrupted downloads</li>
+<li><strong>Optimized Performance</strong>: Achieving <strong>16-22 time series per second</strong> (for 1-year cloud-free Sentinel-2 BOA series)</li>
+<li><strong>Reliability</strong>: Robust error handling and retry mechanisms</li>
+</ul>
+<p>The aria2 integration runs transparently behind the scenes, requiring no additional configuration from users while dramatically improving download speeds compared to traditional sequential downloading methods.</p>
+<h2 id="library-architecture">Library Architecture<a class="headerlink" href="#library-architecture" title="Permanent link">&para;</a></h2>
+<p>AgriGEE.lite is organized into three main modules:</p>
+<ul>
+<li>
+<p>agl.sat = Data sources, usually coming from satellites/sensors. When defining a sensor, it is possible to choose which bands you want to view/download, or whether you want to use atmospheric corrections or not. By default, all bands are downloaded, and all atmospheric corrections and harmonizations are used.</p>
+</li>
+<li>
+<p>agl.vis = Module that allows you to view data, either through time series or images.</p>
+</li>
+<li>
+<p>agl.get = Module that allows you to download data on a large scale.</p>
+</li>
+</ul>
+<h2 id="available-data-sources-satellites-sensors-models-and-so-on">Available data sources (satellites, sensors, models and so on)<a class="headerlink" href="#available-data-sources-satellites-sensors-models-and-so-on" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th><strong>Name</strong></th>
+<th><strong>Bands</strong></th>
+<th><strong>Start Date</strong></th>
+<th><strong>End Date</strong></th>
+<th><strong>Regionality</strong></th>
+<th><strong>Pixel Size</strong></th>
+<th><strong>Revisit Time</strong></th>
+<th><strong>Variations</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sentinel 2</td>
+<td>Blue, Green, Red, Re1, Re2, Re3, Nir, Re4, Swir1, Swir2</td>
+<td>2016-01-01</td>
+<td>(still operational)</td>
+<td>Worldwide</td>
+<td>10 -- 60</td>
+<td>5 days</td>
+<td>BOA, TOA</td>
+</tr>
+<tr>
+<td>Landsat 5</td>
+<td>Blue, Green, Red, Nir, Swir1, Swir2</td>
+<td>1984-03-01</td>
+<td>2013-05-05</td>
+<td>Worldwide*</td>
+<td>15 -- 30</td>
+<td>16 days</td>
+<td>BOA, TOA; Tier 1 and Tier 2;</td>
+</tr>
+<tr>
+<td>Landsat 7</td>
+<td>Blue, Green, Red, Nir, Swir1, Swir2, Pan</td>
+<td>1999-04-15</td>
+<td>2022-04-06</td>
+<td>Worldwide*</td>
+<td>15 -- 30</td>
+<td>16 days</td>
+<td>BOA, TOA; Tier 1 and Tier 2; Pan-sharpened</td>
+</tr>
+<tr>
+<td>Landsat 8</td>
+<td>Blue, Green, Red, Nir, Swir1, Swir2, Pan</td>
+<td>2013-04-11</td>
+<td>(still operational)</td>
+<td>Worldwide</td>
+<td>15 -- 30</td>
+<td>16 days</td>
+<td>BOA, TOA; Tier 1 and Tier 2; Pan-sharpened</td>
+</tr>
+<tr>
+<td>Landsat 9</td>
+<td>Blue, Green, Red, Nir, Swir1, Swir2, Pan</td>
+<td>2021-11-01</td>
+<td>(still operational)</td>
+<td>Worldwide</td>
+<td>15 -- 30</td>
+<td>16 days</td>
+<td>BOA, TOA; Tier 1 and Tier 2; Pan-sharpened</td>
+</tr>
+<tr>
+<td>MODIS Daily, 8 days</td>
+<td>Red, Nir</td>
+<td>2000-02-18</td>
+<td>(still operational)</td>
+<td>Worldwide</td>
+<td>15 -- 30</td>
+<td>daily/8 days</td>
+<td></td>
+</tr>
+<tr>
+<td>Sentinel 1</td>
+<td>VV, VH - C Band</td>
+<td>2014-10-03</td>
+<td>(still operational)</td>
+<td>Worldwide*</td>
+<td>10**</td>
+<td>5 days****</td>
+<td>GRD, ARD***</td>
+</tr>
+<tr>
+<td>JAXOS PalSAR 1/2</td>
+<td>HH, HV - L Band</td>
+<td>2014-08-04</td>
+<td>(still operational)</td>
+<td>Worldwide</td>
+<td>25**</td>
+<td>15 days</td>
+<td>GRD</td>
+</tr>
+<tr>
+<td><a href="https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_SATELLITE_EMBEDDING_V1_ANNUAL?hl=pt-br#bands">Satellite Embeddings V1</a></td>
+<td>64-dimensional embedding</td>
+<td>2017-01-01</td>
+<td>2024-01-01</td>
+<td>Worldwide</td>
+<td>10</td>
+<td>1 year</td>
+<td></td>
+</tr>
+<tr>
+<td><a href="https://brasil.mapbiomas.org/colecoes-mapbiomas/">Mapbiomas Brazil</a></td>
+<td>37 Land Usage Land Cover Classes</td>
+<td>1985-01-01</td>
+<td>2024-12-31</td>
+<td>Brazil</td>
+<td>30</td>
+<td>1 year</td>
+<td></td>
+</tr>
+<tr>
+<td><a href="https://hge-iph.github.io/anadem/">ANADEM</a></td>
+<td>Slope, Elevation, Aspect</td>
+<td>(single image)</td>
+<td>(single image)</td>
+<td>South America</td>
+<td>30**</td>
+<td>(single image)</td>
+<td></td>
+</tr>
+<tr>
+<td><a href="https://soilgrids.org/">SoilGrids classes</a></td>
+<td>WRB Soil Classes (30 categories)</td>
+<td>(single image)</td>
+<td>(single image)</td>
+<td>Worldwide</td>
+<td>250</td>
+<td>(single image)</td>
+<td></td>
+</tr>
+<tr>
+<td>Two Satellite Fusion <strong>*</strong></td>
+<td>Intersect common observations from two satellites</td>
+<td>(depends on input satellites)</td>
+<td>(depends on input satellites)</td>
+<td>(depends on input satellites)</td>
+<td>(finest of the two satellites)</td>
+<td>(depends on input satellites)</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3 id="observations">Observations<a class="headerlink" href="#observations" title="Permanent link">&para;</a></h3>
+<ul>
+<li>*Landsat 7 images began to have artifacts caused by a sensor problem from 2003-05-31.</li>
+<li>**Pixel size/spatial resolution for active sensors (or models that use active sensors) often lacks a clear value, as it depends on the angle of incidence. Here, the GEE value itself is explained, representing the highest resolution captured.</li>
+<li>***Analysis Ready Data (ARD) is an advanced post-processing method applied to a SAR. However, it is quite costly, and its usefulness must be evaluated on a case-by-case basis.</li>
+<li>****Sentinel 1 was a twin satellite, one of which went out of service due to a malfunction. Therefore, the revisit time varies greatly depending on the desired geolocation.</li>
+<li><strong>*</strong>Two Satellite Fusion is a meta-satellite that combines data from exactly two optical satellites (e.g., Landsat 8 + Sentinel-2). It automatically finds common observation dates, harmonizes the datasets, and creates synchronized time series with bands from both satellites distinguished by prefixes.</li>
+</ul>
+<h2 id="available-indices">Available indices<a class="headerlink" href="#available-indices" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th><strong>Index Name</strong></th>
+<th><strong>Full Name</strong></th>
+<th><strong>Required Bands</strong></th>
+<th><strong>Sensor Type</strong></th>
+<th><strong>Equation</strong></th>
+<th><strong>Description</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NDVI</td>
+<td>Normalized Difference Vegetation Index</td>
+<td>NIR, RED</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{NIR - RED}{NIR + RED}\)</span></td>
+<td>Vegetation greenness</td>
+</tr>
+<tr>
+<td>GNDVI</td>
+<td>Green Normalized Difference Vegetation Index</td>
+<td>NIR, GREEN</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{NIR - GREEN}{NIR + GREEN}\)</span></td>
+<td>Vegetation health (chlorophyll)</td>
+</tr>
+<tr>
+<td>NDWI</td>
+<td>Normalized Difference Water Index</td>
+<td>NIR, SWIR1</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{NIR - SWIR1}{NIR + SWIR1}\)</span></td>
+<td>Water content</td>
+</tr>
+<tr>
+<td>MNDWI</td>
+<td>Modified Normalized Difference Water Index</td>
+<td>GREEN, SWIR1</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{GREEN - SWIR1}{GREEN + SWIR1}\)</span></td>
+<td>Water body detection</td>
+</tr>
+<tr>
+<td>SAVI</td>
+<td>Soil Adjusted Vegetation Index</td>
+<td>NIR, RED</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{(NIR - RED)}{(NIR + RED + 0.5)} \times 1.5\)</span></td>
+<td>Vegetation, reduces soil effect</td>
+</tr>
+<tr>
+<td>EVI</td>
+<td>Enhanced Vegetation Index</td>
+<td>NIR, RED, BLUE</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(2.5 \times \frac{NIR - RED}{NIR + 6 \times RED - 7.5 \times BLUE + 1}\)</span></td>
+<td>Vegetation, minimizes atmospheric effects</td>
+</tr>
+<tr>
+<td>EVI2</td>
+<td>Two-band Enhanced Vegetation Index</td>
+<td>NIR, RED</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(2.5 \times \frac{NIR - RED}{NIR + 2.4 \times RED + 1}\)</span></td>
+<td>Simplified EVI, no blue band</td>
+</tr>
+<tr>
+<td>MSAVI</td>
+<td>Modified Soil Adjusted Vegetation Index</td>
+<td>NIR, RED</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{2 \times NIR + 1 - \sqrt{(2 \times NIR + 1)^2 - 8 \times (NIR - RED)}}{2}\)</span></td>
+<td>Vegetation in areas with bare soil</td>
+</tr>
+<tr>
+<td>NDRE</td>
+<td>Normalized Difference Red Edge Index</td>
+<td>NIR, RE1</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{NIR - RE1}{NIR + RE1}\)</span></td>
+<td>Chlorophyll content in leaves</td>
+</tr>
+<tr>
+<td>MCARI</td>
+<td>Modified Chlorophyll Absorption in Reflectance Index</td>
+<td>NIR, RED, GREEN</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\left[(NIR - RED) - 0.2 \times (NIR - GREEN)\right] \times \frac{NIR}{RED}\)</span></td>
+<td>Leaf chlorophyll content</td>
+</tr>
+<tr>
+<td>GCI</td>
+<td>Green Chlorophyll Index</td>
+<td>NIR, GREEN</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{NIR}{GREEN} - 1\)</span></td>
+<td>Chlorophyll concentration</td>
+</tr>
+<tr>
+<td>BSI</td>
+<td>Bare Soil Index</td>
+<td>BLUE, RED, NIR, SWIR1</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{(SWIR1 + RED) - (NIR + BLUE)}{(SWIR1 + RED) + (NIR + BLUE)}\)</span></td>
+<td>Bare soil index</td>
+</tr>
+<tr>
+<td>CI Red</td>
+<td>Red Chlorophyll Index</td>
+<td>NIR, RED</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{NIR}{RED} - 1\)</span></td>
+<td>Chlorophyll index (red)</td>
+</tr>
+<tr>
+<td>CI Green</td>
+<td>Green Chlorophyll Index</td>
+<td>NIR, GREEN</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{NIR}{GREEN} - 1\)</span></td>
+<td>Chlorophyll index (green)</td>
+</tr>
+<tr>
+<td>OSAVI</td>
+<td>Optimized Soil Adjusted Vegetation Index</td>
+<td>NIR, RED</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{NIR - RED}{NIR + RED + 0.16}\)</span></td>
+<td>Like SAVI, for low vegetation</td>
+</tr>
+<tr>
+<td>ARVI</td>
+<td>Atmospherically Resistant Vegetation Index</td>
+<td>NIR, RED, BLUE</td>
+<td>Optical</td>
+<td><span class="arithmatex">\(\frac{NIR - (2 \times RED - BLUE)}{NIR + (2 \times RED - BLUE)}\)</span></td>
+<td>Vegetation, reduces atmospheric effects</td>
+</tr>
+<tr>
+<td>VHVV</td>
+<td>VH/VV Ratio</td>
+<td>VH, VV</td>
+<td>Radar</td>
+<td><span class="arithmatex">\(\frac{VH}{VV}\)</span></td>
+<td>Vegetation structure (Sentinel-1)</td>
+</tr>
+<tr>
+<td>HHHV</td>
+<td>HH/HV Ratio</td>
+<td>HH, HV</td>
+<td>Radar</td>
+<td><span class="arithmatex">\(\frac{HH - HV}{HH + HV}\)</span></td>
+<td>Vegetation structure (PALSAR)</td>
+</tr>
+<tr>
+<td>RVI</td>
+<td>Radar Vegetation Index</td>
+<td>HH, HV</td>
+<td>Radar</td>
+<td><span class="arithmatex">\(4 \times \frac{HV}{HH + HV}\)</span></td>
+<td>Radar vegetation index (PALSAR)</td>
+</tr>
+<tr>
+<td>RAVI</td>
+<td>Radar Adapted Vegetation Index</td>
+<td>VV, VH</td>
+<td>Radar</td>
+<td><span class="arithmatex">\(4 \times \frac{VH}{VV + VH}\)</span></td>
+<td>Radar vegetation index (Sentinel-1)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="avaiable-reductors">Avaiable reductors<a class="headerlink" href="#avaiable-reductors" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Name to Use</th>
+<th>Full Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>min</td>
+<td>Minimum</td>
+<td>Returns the smallest value in the set</td>
+</tr>
+<tr>
+<td>max</td>
+<td>Maximum</td>
+<td>Returns the largest value in the set</td>
+</tr>
+<tr>
+<td>mean</td>
+<td>Mean</td>
+<td>Returns the average of all values</td>
+</tr>
+<tr>
+<td>median</td>
+<td>Median</td>
+<td>Returns the median (middle) value</td>
+</tr>
+<tr>
+<td>kurt</td>
+<td>Kurtosis</td>
+<td>Returns the kurtosis (measure of "tailedness")</td>
+</tr>
+<tr>
+<td>skew</td>
+<td>Skewness</td>
+<td>Returns the skewness (measure of asymmetry)</td>
+</tr>
+<tr>
+<td>std</td>
+<td>Standard Deviation</td>
+<td>Returns the standard deviation</td>
+</tr>
+<tr>
+<td>var</td>
+<td>Variance</td>
+<td>Returns the variance</td>
+</tr>
+<tr>
+<td>mode</td>
+<td>Mode</td>
+<td>Returns the most frequent value</td>
+</tr>
+<tr>
+<td>pXX</td>
+<td>Percentile XX</td>
+<td>Returns the XX-th percentile (e.g., <code>p10</code> for 10th percentile). You can pass multiple, e.g., <code>p10</code>, <code>p90</code>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="motivation-simplifying-earth-engine-for-everyone">Motivation: Simplifying Earth Engine for Everyone<a class="headerlink" href="#motivation-simplifying-earth-engine-for-everyone" title="Permanent link">&para;</a></h2>
+<p>My journey with Google Earth Engine began two and a half years ago. While GEE is an incredibly powerful platform that provides access to petabytes of satellite data, it comes with significant complexity challenges:</p>
+<ul>
+<li><strong>Steep Learning Curve</strong>: GEE requires extensive boilerplate code and deep understanding of its functional programming paradigms</li>
+<li><strong>Cryptic Error Messages</strong>: Server-side execution often produces confusing errors that are difficult to debug</li>
+<li><strong>Harmonization Complexity</strong>: Each satellite has different value ranges, cloud masking approaches, and preprocessing requirements</li>
+<li><strong>Inconsistent APIs</strong>: Different sensors require different coding approaches, making it hard to switch between data sources</li>
+</ul>
+<p>During my master's degree, I found myself constantly rewriting similar code patterns for different projects. This frustration led to a simple but ambitious goal: <strong>making satellite data as easy to use as reading a CSV with pandas, without requiring users to be remote sensing experts</strong>.</p>
+<h2 id="objectives-and-target-audience">Objectives and Target Audience<a class="headerlink" href="#objectives-and-target-audience" title="Permanent link">&para;</a></h2>
+<p>AgriGEE.lite aims to be a <strong>simple, direct, and high-performance solution</strong> for downloading satellite data, serving both <strong>academic research</strong> and <strong>commercial applications</strong>. The library is designed for:</p>
+<ul>
+<li><strong>Data Scientists</strong> who need satellite data but don't want to become GEE experts</li>
+<li><strong>Agricultural Researchers</strong> studying crop monitoring and vegetation dynamics</li>
+<li><strong>Environmental Consultants</strong> requiring rapid access to earth observation data</li>
+<li><strong>Students and Educators</strong> learning remote sensing applications</li>
+<li><strong>Commercial Users</strong> developing scalable earth observation solutions</li>
+</ul>
+<h3 id="contributing">Contributing<a class="headerlink" href="#contributing" title="Permanent link">&para;</a></h3>
+<p>Found this project helpful? ⭐ <strong>Give it a star!</strong>
+Want to contribute? 🚀 <strong>Open a Pull Request</strong> - we welcome all contributions!</p>
+<h2 id="frequently-asked-questions">Frequently Asked Questions<a class="headerlink" href="#frequently-asked-questions" title="Permanent link">&para;</a></h2>
+<h3 id="why-use-google-earth-engine-instead-of-stac">Why use Google Earth Engine instead of STAC?<a class="headerlink" href="#why-use-google-earth-engine-instead-of-stac" title="Permanent link">&para;</a></h3>
+<p>While STAC (SpatioTemporal Asset Catalog) is an excellent approach that makes sense for large-scale infrastructure projects, processing satellite data locally can quickly become overwhelming, especially for regions with vast agricultural areas like Australia, the United States, or Brazil.</p>
+<p>Key considerations:
+- <strong>Infrastructure Costs</strong>: Building and maintaining your own processing infrastructure vs. GEE usage costs
+- <strong>Processing Complexity</strong>: GEE handles complex atmospheric corrections, cloud masking, and data harmonization automatically
+- <strong>Scalability</strong>: GEE's planetary-scale computing capabilities vs. local processing limitations
+- <strong>Free Tier</strong>: GEE is completely free for academic research and non-commercial projects</p>
+<p>The choice depends on your specific use case, scale, and budget requirements.</p>
+<h3 id="about-terminology-satellites-vs-sensors">About Terminology: "Satellites" vs. "Sensors"<a class="headerlink" href="#about-terminology-satellites-vs-sensors" title="Permanent link">&para;</a></h3>
+<p>Remote sensing experts often note that terms like "satellite" for radar data or "bands" for SAR aren't technically precise. However, we've chosen standardized terminology to:</p>
+<ul>
+<li><strong>Simplify the API</strong>: Consistent naming across all data sources reduces cognitive load</li>
+<li><strong>Improve Accessibility</strong>: Non-experts can work with different sensors using the same patterns</li>
+<li><strong>Maintain Code Consistency</strong>: Unified interfaces make the library easier to maintain and extend</li>
+</ul>
+<p>Even excellent projects like MapBiomas (which uses models and algorithms) are treated as "satellites" in our framework. We welcome technical accuracy improvements, but prioritize usability and consistency. <strong>Your contributions to improve both aspects are very welcome!</strong></p>
+<h3 id="about-our-mascot">About Our Mascot<a class="headerlink" href="#about-our-mascot" title="Permanent link">&para;</a></h3>
+<p>The AgriGEE.lite mascot was created using AI tools, with artwork inspired by the "Odd-Eyes Venom Dragon" from Yu-Gi-Oh. The symbolism represents:</p>
+<ul>
+<li>🌱 <strong>Plant Dragon</strong>: Agricultural focus</li>
+<li>🔀 <strong>Fusion Card</strong>: Multimodal data integration</li>
+<li>👀 <strong>Odd-Eyes</strong>: Multiple satellite perspectives on Earth</li>
+</ul>
+<p>If you're an artist interested in creating a new mascot design, we'd love to make it official!</p>
+<h2 id="known-bugs">Known Bugs<a class="headerlink" href="#known-bugs" title="Permanent link">&para;</a></h2>
+<ul>
+<li>QuadTree clustering functions produce absurd results when there are very uneven geographic density distributions, for example, thousands of points in one country and a few dozen in another. Some prior geospatial partitioning is recommended.</li>
+</ul>
+<h2 id="development-roadmap">Development Roadmap<a class="headerlink" href="#development-roadmap" title="Permanent link">&para;</a></h2>
+<h3 id="completed-features">✅ Completed Features<a class="headerlink" href="#completed-features" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[x] <strong>Optical Satellites</strong>: Sentinel-2, Landsat 5/7/8/9 support</li>
+<li>[x] <strong>Radar Sensors</strong>: Sentinel-1 GRD, ALOS-2 PALSAR-2</li>
+<li>[x] <strong>Derived Products</strong>: MapBiomas Brazil, MODIS Terra/Aqua</li>
+<li>[x] <strong>Time Series</strong>: Satellite Image Time Series (SITS) with aggregations</li>
+<li>[x] <strong>Downloads</strong>: Online and task-based download methods with <strong>aria2 integration</strong></li>
+<li>[x] <strong>Visualizations</strong>: matplotlib-based plotting for images and time series</li>
+<li>[x] <strong>Cloud Recovery</strong>: smart_open[gcs] integration for automatic data recovery</li>
+<li>[x] <strong>Advanced Processing</strong>: Configurable cloud masking, Landsat pan-sharpening</li>
+</ul>
+<h3 id="in-development">🚧 In Development<a class="headerlink" href="#in-development" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[ ] <strong>Enhanced Visualizations</strong>: plotly-based interactive plotting</li>
+<li>[ ] <strong>Expanded Coverage</strong>: All MapBiomas collections (Amazon, Cerrado, etc.)</li>
+<li>[ ] <strong>Advanced Radar</strong>: Sentinel-1 ARD (Analysis Ready Data)</li>
+<li>[ ] <strong>Ocean Monitoring</strong>: Sentinel-3 OLCI/SLSTR sensors</li>
+<li>[ ] <strong>Historical Data</strong>: Landsat 1-4 for long-term analysis</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Maintained by <a href="https://mateuspinto.com">mateuspinto</a>.
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/mateuspinto/AgriGEE.lite" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://pypi.org/project/agrigee_lite" target="_blank" rel="noopener" title="pypi.org" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 404c11.1 0 20.1 9.1 20.1 20.3 0 11.3-9 20.4-20.1 20.4-11 0-20.1-9.2-20.1-20.4.1-11.3 9.1-20.3 20.1-20.3M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.7-142.6c-11.1 0-20.1-9.1-20.1-20.3.1-11.3 9-20.4 20.1-20.4 11 0 20.1 9.2 20.1 20.4s-9 20.3-20.1 20.3"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": ".", "features": [], "search": "assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+    
+  </body>
+</html>
