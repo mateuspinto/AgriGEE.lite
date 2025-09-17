@@ -13,6 +13,7 @@ class AbstractSatellite:
         self.selectedIndices: list[str] = []
         self.imageCollectionName = ""
         self.pixelSize: int = 0
+        self.toDownloadSelectors: list[str] = []
 
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         return ee.ImageCollection()
@@ -21,7 +22,7 @@ class AbstractSatellite:
         self,
         ee_feature: ee.Feature,
         subsampling_max_pixels: float,
-        reducers: list[str] | None = None,
+        reducers: set[str] | None = None,
     ) -> ee.FeatureCollection:
         return ee.FeatureCollection()
 

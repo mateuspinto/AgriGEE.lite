@@ -1,15 +1,25 @@
 import re
 
 VEGETATION_INDICES_LIST = [
-    "evi = 2.5 * ((i.nir - i.red)/(i.nir + 6 * i.red - 7.5 * i.blue + 1))",
-    "evi2 = 2.5 * ((i.nir - i.red)/(i.nir + 2.4 * i.red + 1))",
-    "ndvi = (i.nir - i.red)/(i.nir + i.red)",
-    "ndwi = (i.nir - i.swir1)/(i.nir + i.swir1)",
-    "mndwi = (i.green - i.swir1)/(i.green + i.swir1)",
-    # Radar-specific indices
-    "vhvv = (i.vv - i.vh)/(i.vv + i.vh)",  # VH-VV ratio (Sentinel-1)
-    "hhhv = (i.hh - i.hv)/(i.hh + i.hv)",  # HH-HV ratio (PALSAR)
+    "ndvi = (i.nir - i.red) / (i.nir + i.red)",
+    "gndvi = (i.nir - i.green) / (i.nir + i.green)",
+    "ndwi = (i.nir - i.swir1) / (i.nir + i.swir1)",
+    "savi = ((i.nir - i.red) / (i.nir + i.red + 0.5)) * 1.5",
+    "evi = 2.5 * (i.nir - i.red) / (i.nir + 6 * i.red - 7.5 * i.blue + 1)",
+    "evi2 = 2.5 * (i.nir - i.red) / (i.nir + 2.4 * i.red + 1)",
+    "msavi = (2 * i.nir + 1 - ((2 * i.nir + 1) ** 2 - 8 * (i.nir - i.red)) ** 0.5) / 2",
+    "ndre = (i.nir - i.red_edge) / (i.nir + i.red_edge)",
+    "mcari = ((i.nir - i.red) - 0.2 * (i.nir - i.green)) * (i.nir / i.red)",
+    "gci = (i.nir / i.green) - 1",
+    "bsi = ((i.swir1 + i.red) - (i.nir + i.blue)) / ((i.swir1 + i.red) + (i.nir + i.blue))",
+    "ci_red = (i.nir / i.red) - 1",
+    "ci_green = (i.nir / i.green) - 1",
+    "osavi = (i.nir - i.red) / (i.nir + i.red + 0.16)",
+    "arvi = (i.nir - (2 * i.red - i.blue)) / (i.nir + (2 * i.red - i.blue))",
+    "mndwi = (i.green - i.swir1) / (i.green + i.swir1)",
+    "hhhv = (i.hh - i.hv) / (i.hh + i.hv)",  # HH-HV ratio (PALSAR)
     "rvi = 4 * i.hv / (i.hh + i.hv)",  # Radar Vegetation Index (PALSAR)
+    "vhvv = i.vh / i.vv",  # VH-VV ratio (Sentinel 1)
     "ravi = 4 * i.vh / (i.vv + i.vh)",  # Radar Adapted Vegetation Index (Sentinel-1)
 ]
 

@@ -1,11 +1,9 @@
 import concurrent.futures
 import hashlib
 import inspect
+import json
 import warnings
 from collections import deque
-from collections.abc import Callable
-from functools import lru_cache, wraps
-from typing import ParamSpec, TypeVar
 
 import geopandas as gpd
 import numpy as np
@@ -15,7 +13,22 @@ from topojson import Topology
 from tqdm.std import tqdm
 
 
-def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> list[int]:
+def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> list[list[int]]:
+    """
+    Build a quadtree iteratively to cluster geometries into groups of max_size.
+
+    Parameters
+    ----------
+    gdf : geopandas.GeoDataFrame
+        GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
+    max_size : int, optional
+        Maximum number of geometries per cluster (default is 1000).
+
+    Returns
+    -------
+    list of list of int
+        List of clusters, each cluster is a list of indices of geometries in gdf.
+    """
     queue: deque[tuple[gpd.GeoDataFrame, int]] = deque()
     queue.append((gdf, 0))
     leaves = []
@@ -42,7 +55,24 @@ def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> lis
     return leaves
 
 
-def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) -> list[int]:
+def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) -> list[list[int]]:
+    """
+    Build a quadtree recursively to cluster geometries into groups of max_size.
+
+    Parameters
+    ----------
+    gdf : geopandas.GeoDataFrame
+        GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
+    max_size : int, optional
+        Maximum number of geometries per cluster (default is 1000).
+    depth : int, optional
+        Current depth in the quadtree (default is 0).
+
+    Returns
+    -------
+    list of list of int
+        List of clusters, each cluster is a list of indices of geometries in gdf.
+    """
     n = len(gdf)
     if n <= max_size:
         return [gdf.index.to_numpy()]
@@ -64,6 +94,21 @@ def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) 
 
 
 def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:
+    """
+    Simplify geometries in a GeoDataFrame using TopoJSON, avoiding duplicates.
+
+    Parameters
+    ----------
+    gdf : geopandas.GeoDataFrame
+        GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
+    tol : float, optional
+        Tolerance for simplification (default is 0.001).
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        GeoDataFrame with simplified geometries.
+    """
     """
     1. Detect duplicate geometries once, using WKB-hex as a stable key.
     2. Run TopoJSON simplification only on the unique geometries.
@@ -101,14 +146,41 @@ def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:
 
 
 def _simplify_cluster(cluster: gpd.GeoDataFrame, cluster_id: int) -> tuple[int, gpd.GeoSeries]:
+    """
+    Simplify geometries in a cluster and return the cluster id and simplified geometries.
+
+    Parameters
+    ----------
+    cluster : geopandas.GeoDataFrame
+        GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
+    cluster_id : int
+        Identifier for the cluster.
+
+    Returns
+    -------
+    tuple of (int, geopandas.GeoSeries)
+        Cluster id and simplified geometries.
+    """
     simplified = simplify_gdf(cluster)
     return cluster_id, simplified.geometry
 
 
-def quadtree_clustering(
-    gdf: gpd.GeoDataFrame,
-    max_size: int = 1_000,
-) -> gpd.GeoDataFrame:
+def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoDataFrame:
+    """
+    Cluster geometries in a GeoDataFrame using a quadtree and simplify clusters.
+
+    Parameters
+    ----------
+    gdf : geopandas.GeoDataFrame
+        GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
+    max_size : int, optional
+        Maximum number of geometries per cluster (default is 1000).
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        GeoDataFrame with cluster labels and simplified geometries.
+    """
     gdf = gdf.copy()
 
     # Centroid columns (ignore CRS warning)
@@ -147,8 +219,8 @@ def quadtree_clustering(
     return gdf
 
 
-def create_gdf_hash(gdf: gpd.GeoDataFrame) -> str:
-    gdf_copy = gdf[["geometry", "start_date", "end_date"]].copy()
+def create_gdf_hash(gdf: gpd.GeoDataFrame, start_date_column_name: str, end_date_column_name: str) -> str:
+    gdf_copy = gdf[["geometry", start_date_column_name, end_date_column_name]].copy()
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -161,58 +233,49 @@ def create_gdf_hash(gdf: gpd.GeoDataFrame) -> str:
     return hashlib.sha1(hash_values).hexdigest()  # type: ignore  # noqa: PGH003, S324
 
 
-P = ParamSpec("P")
-R = TypeVar("R")
+def create_dict_hash(d: dict) -> str:
+    """
+    Create a hash for a dictionary, normalizing sets to sorted lists.
 
+    Parameters
+    ----------
+    d : dict
+        Dictionary to hash.
 
-def cached(func: Callable[P, R]) -> Callable[P, R]:
-    cached_func = lru_cache()(func)
+    Returns
+    -------
+    str
+        SHA1 hash string representing the contents of the dictionary.
+    """
 
-    @wraps(func)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        return cached_func(*args, **kwargs)  # type: ignore  # noqa: PGH003
-
-    return wrapper
-
-
-def remove_underscore_in_df(df: pd.DataFrame | gpd.GeoDataFrame) -> None:
-    df.columns = [column.split("_", 1)[1] for column in df.columns.tolist()]
-
-
-def compute_index_from_df(df: pd.DataFrame, np_function: Callable) -> np.ndarray:
-    sig = inspect.signature(np_function)
-    kwargs = {}
-
-    index_name = str(np_function.__name__).split("np_")[1]
-
-    if index_name in df.columns.tolist():
-        return df[index_name].to_numpy()
-
-    for param_name, param in sig.parameters.items():
-        if param_name in df.columns:
-            kwargs[param_name] = df[param_name].values
+    def convert_sets_to_sorted_lists(obj):
+        if isinstance(obj, dict):
+            return {k: convert_sets_to_sorted_lists(v) for k, v in obj.items()}
+        elif isinstance(obj, set):
+            return sorted(obj)
+        elif isinstance(obj, list):
+            return [convert_sets_to_sorted_lists(i) for i in obj]
         else:
-            if param.default is not inspect._empty:
-                kwargs[param_name] = param.default
-            else:
-                raise ValueError(  # noqa: TRY003
-                    f"DataFrame is missing a column '{param_name}', "
-                    f"required by {np_function.__name__}, and there's no default."
-                )
+            return obj
 
-    return np_function(**kwargs)
-
-
-def add_indexnum_column(df: pd.DataFrame) -> None:
-    if "00_indexnum" not in df.columns:
-        if not (df.index.to_numpy() == np.arange(len(df))).all():
-            raise ValueError(  # noqa: TRY003
-                "The index must be sequential from 0 to N-1. To do this, use gdf.reset_index(drop=True) before executing this function."
-            )
-        df["00_indexnum"] = range(len(df))
+    normalized = convert_sets_to_sorted_lists(d)
+    return hashlib.sha1(json.dumps(normalized, sort_keys=True).encode("utf-8")).hexdigest()  # noqa: S324
 
 
 def log_dict_function_call_summary(ignore: list[str] | None = None) -> dict[str, dict[str, str]]:
+    """
+    Log a summary of function call arguments as a dictionary.
+
+    Parameters
+    ----------
+    ignore : list of str, optional
+        List of argument names to ignore (default is None).
+
+    Returns
+    -------
+    dict
+        Dictionary mapping function name to argument values.
+    """
     frame = inspect.currentframe().f_back
     func_name = frame.f_code.co_name
     args, _, _, values = inspect.getargvalues(frame)
@@ -221,7 +284,22 @@ def log_dict_function_call_summary(ignore: list[str] | None = None) -> dict[str,
     return {func_name: args_dict}
 
 
-def create_grid_centroids_numpy(geometry: Polygon | MultiPolygon, n_cells=10) -> np.ndarray:
+def create_grid_centroids_numpy(geometry: Polygon | MultiPolygon | Point, n_cells: int = 10) -> np.ndarray:
+    """
+    Generate grid centroids within a geometry.
+
+    Parameters
+    ----------
+    geometry : shapely.geometry.Polygon or MultiPolygon or Point
+        Geometry to generate centroids for.
+    n_cells : int, optional
+        Number of centroids to generate (default is 10).
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of centroid coordinates (shape: [n_cells, 2]).
+    """
     try:
         xmin, ymin, xmax, ymax = geometry.bounds
         cell_size = (xmax - xmin) / n_cells
@@ -250,7 +328,22 @@ def create_grid_centroids_numpy(geometry: Polygon | MultiPolygon, n_cells=10) ->
         return np.zeros((n_cells, 2), dtype=np.float32)
 
 
-def generate_grid_random_points_from_gdf(gdf: gpd.GeoDataFrame, num_points_per_geometry=10) -> gpd.GeoDataFrame:
+def generate_grid_random_points_from_gdf(gdf: gpd.GeoDataFrame, num_points_per_geometry: int = 10) -> gpd.GeoDataFrame:
+    """
+    Generate random grid points for each geometry in a GeoDataFrame.
+
+    Parameters
+    ----------
+    gdf : geopandas.GeoDataFrame
+        GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
+    num_points_per_geometry : int, optional
+        Number of points to generate per geometry (default is 10).
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        GeoDataFrame of generated points with geometry_id.
+    """
     centroids = np.empty((num_points_per_geometry * gdf.geometry.nunique(), 2), dtype=np.float32)
     geometry_ids = np.empty((num_points_per_geometry * gdf.geometry.nunique()), dtype=np.int32)
 
@@ -272,6 +365,23 @@ def generate_grid_random_points_from_gdf(gdf: gpd.GeoDataFrame, num_points_per_g
 def random_points_from_gdf(
     gdf: gpd.GeoDataFrame, num_points_per_geometry: int = 10, buffer: int = -10
 ) -> gpd.GeoDataFrame:
+    """
+    Generate random points from geometries in a GeoDataFrame, with optional buffering.
+
+    Parameters
+    ----------
+    gdf : geopandas.GeoDataFrame
+        GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
+    num_points_per_geometry : int, optional
+        Number of points to generate per geometry (default is 10).
+    buffer : int, optional
+        Buffer distance to apply to geometries before generating points (default is -10).
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        GeoDataFrame of generated points merged with original attributes.
+    """
     if buffer != 0:
         gdf = gdf.copy()
         gdf = quadtree_clustering(gdf)
@@ -284,5 +394,50 @@ def random_points_from_gdf(
         on="geometry_id",
         how="inner",
     )
+    points_gdf = points_gdf[points_gdf.geometry.x != 0].reset_index(drop=True)
 
     return points_gdf
+
+
+def get_reducer_names(reducer_names: set[str] | None = None) -> list[str]:
+    """
+    Get standardized reducer names from a set of reducer names.
+
+    Parameters
+    ----------
+    reducer_names : set of str, optional
+        Set of reducer names (default is {"median"}).
+
+    Returns
+    -------
+    list of str
+        List of standardized reducer names.
+    """
+    if reducer_names is None:
+        reducer_names = {"median"}
+
+    names = sorted([n.lower() for n in reducer_names])
+
+    pct_vals = sorted({int(n[1:]) for n in names if n.startswith("p")})
+
+    reducers = []
+    for n in names:
+        if n in {"min", "max", "mean", "median", "mode"}:
+            reducers.append(n)
+        elif n == "kurt":
+            reducers.append("kurtosis")
+        elif n == "skew":
+            reducers.append("skew")
+        elif n == "std":
+            reducers.append("stdDev")
+        elif n == "var":
+            reducers.append("variance")
+        elif n.startswith("p"):
+            continue
+        else:
+            raise ValueError(f"Unknown reducer: '{n}'")  # noqa: TRY003
+
+    for v in pct_vals:
+        reducers.append(f"p{v}")
+
+    return reducers

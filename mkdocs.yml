@@ -1,7 +1,7 @@
 site_name: agrigee_lite
 repo_url: https://github.com/mateuspinto/AgriGEE.lite
 site_url: https://mateuspinto.github.io/agrigee_lite
-site_description: Sentinel 1 Analysis Ready Data for GEE.
+site_description: Because using satellite data shouldn't be rocket science, neither in code nor in hardware. .
 site_author: Mateus Pinto da Silva
 edit_uri: edit/main/docs/
 repo_name: mateuspinto/AgriGEE.lite
@@ -16,6 +16,8 @@ plugins:
       handlers:
         python:
           paths: ["agrigee_lite"]
+          options:
+            docstring_style: numpy
 theme:
   name: material
   feature:

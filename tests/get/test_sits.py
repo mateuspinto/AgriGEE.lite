@@ -1,6 +1,3 @@
-from functools import partial
-
-import anyio
 import geopandas as gpd
 import pandas as pd
 import pytest
@@ -78,17 +75,3 @@ def test_all_date_types() -> None:
     original_sits = pd.read_parquet("tests/data/sits/all_date_types.parquet")
 
     assert_df_equivalence(sits, original_sits)
-
-
-# def test_download_multiple_sits_async() -> None:
-#     from agrigee_lite.get.sits import __download_multiple_sits_async
-
-#     gdf = gpd.read_parquet("tests/data/gdf.parquet")
-#     satellite = agl.sat.Sentinel2(bands=["swir1", "nir"])
-#     sits = anyio.run(
-#         partial(__download_multiple_sits_async, gdf.iloc[0:2].copy(), satellite, ["skew", "p13"], ["doy"], 1),
-#         backend_options={"use_uvloop": True},
-#     )
-#     original_sits = pd.read_parquet("tests/data/sits/async.parquet")
-
-#     assert_df_equivalence(sits, original_sits)

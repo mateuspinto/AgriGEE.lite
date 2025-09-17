@@ -1,7 +1,7 @@
 [project]
 name = "agrigee_lite"
-version = "1.0.18"
-description = "Because using satellite data shouldn't require rocket science, neither in code nor in hardware."
+version = "2.0.8"
+description = "Because using satellite data should not be rocket science."
 authors = [{ name = "Mateus Pinto da Silva", email = "mateus.p.silva@ufv.br" }]
 readme = "README.md"
 keywords = ['python']
@@ -10,11 +10,10 @@ dependencies = [
     "earthengine-api>=1.5.7",
     "ee-s1-ard>=1.0.5",
     "geopandas>=1.0.1",
-    "pyarrow>=19.0.1",
     "tqdm>=4.67.1",
-    "smart_open[gcs]>=7.1.0",
-    "pandera>=0.23.1",
+    "pandera>=0.26.1",
     "topojson>=1.9",
+    "aria2p>=0.12.1",
 ]
 classifiers = [
     "Intended Audience :: Developers",
@@ -28,9 +27,15 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-async = ["anyio>=4.9.0", "uvloop>=0.21.0"]
 visualization = ["matplotlib>=3.10.1", "plotly>=6.2.0"]
-gui_task_manager = ["textual-pandas>=0.2.3"]
+tasks = ["smart_open[gcs]>=7.1.0", "textual-pandas>=0.2.3", "pyarrow>=19.0.1"]
+all = [
+    "matplotlib>=3.10.1",
+    "plotly>=6.2.0",
+    "smart_open[gcs]>=7.1.0",
+    "textual-pandas>=0.2.3",
+    "pyarrow>=19.0.1",
+]
 
 [project.scripts]
 agl_tm = "agrigee_lite.tgui_task_manager:main"
@@ -141,3 +146,13 @@ skip_empty = true
 [tool.coverage.run]
 branch = true
 source = ["agrigee_lite"]
+
+[tool.hatch.build]
+include = ["agrigee_lite/**", "README.md", "LICENSE"]
+exclude = [
+    "agrigee_lite/**/*.pyc",
+    "agrigee_lite/**/*.pyo",
+    "agrigee_lite/**/__pycache__/**",
+    "docs/*",
+    "mkdocs.yml",
+]
