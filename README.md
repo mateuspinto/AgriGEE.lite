@@ -86,6 +86,8 @@ AgriGEE.lite is organized into three main modules:
 | Landsat 7 | Blue, Green, Red, Nir, Swir1, Swir2, Pan | 1999-04-15 | 2022-04-06 | Worldwide* | 15 -- 30 | 16 days | BOA, TOA; Tier 1 and Tier 2; Pan-sharpened|
 | Landsat 8 | Blue, Green, Red, Nir, Swir1, Swir2, Pan | 2013-04-11 | (still operational) | Worldwide | 15 -- 30 | 16 days | BOA, TOA; Tier 1 and Tier 2; Pan-sharpened|
 | Landsat 9 | Blue, Green, Red, Nir, Swir1, Swir2, Pan | 2021-11-01 | (still operational) | Worldwide | 15 -- 30 | 16 days | BOA, TOA; Tier 1 and Tier 2; Pan-sharpened|
+| HLS Landsat | Coastal, Blue, Green, Red, Nir, Swir1, Swir2 | 2013-04-11 | (still operational) | Worldwide | 30 | 2-3 days****** | Harmonized SR |
+| HLS Sentinel-2 | Coastal, Blue, Green, Red, Re1, Re2, Re3, Nir, Re4, Swir1, Swir2 | 2015-11-30 | (still operational) | Worldwide | 30 | 2-3 days****** | Harmonized SR |
 | MODIS Daily, 8 days | Red, Nir | 2000-02-18 | (still operational) | Worldwide | 15 -- 30 | daily/8 days |  |
 | Sentinel 1 | VV, VH - C Band | 2014-10-03 | (still operational) | Worldwide* | 10** | 5 days**** | GRD, ARD*** |
 | JAXOS PalSAR 1/2 | HH, HV - L Band | 2014-08-04 | (still operational) | Worldwide | 25** | 15 days | GRD |
@@ -101,6 +103,7 @@ AgriGEE.lite is organized into three main modules:
 - ***Analysis Ready Data (ARD) is an advanced post-processing method applied to a SAR. However, it is quite costly, and its usefulness must be evaluated on a case-by-case basis.
 - ****Sentinel 1 was a twin satellite, one of which went out of service due to a malfunction. Therefore, the revisit time varies greatly depending on the desired geolocation.
 - *****Two Satellite Fusion is a meta-satellite that combines data from exactly two optical satellites (e.g., Landsat 8 + Sentinel-2). It automatically finds common observation dates, harmonizes the datasets, and creates synchronized time series with bands from both satellites distinguished by prefixes.
+- ******HLS (Harmonized Landsat Sentinel-2) provides atmospherically corrected surface reflectance data harmonized across Landsat-8/9 and Sentinel-2 missions. The 2-3 day revisit time is achieved by combining observations from both satellite constellations.
 
 ## Available indices
 
