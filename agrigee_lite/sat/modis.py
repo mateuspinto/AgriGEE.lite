@@ -344,12 +344,6 @@ class Modis8Days(OpticalSatellite):
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()
 
-        if self.borderPixelsToErode != 0:
-            ee_geometry = ee_safe_remove_borders(
-                ee_geometry, round(self.borderPixelsToErode * self.pixelSize), self.minAreaToKeepBorder
-            )
-            ee_feature = ee_feature.setGeometry(ee_geometry)
-
         ee_filter = ee.Filter.And(
             ee.Filter.bounds(ee_geometry),
             ee.Filter.date(ee_feature.get("s"), ee_feature.get("e")),
@@ -398,9 +392,12 @@ class Modis8Days(OpticalSatellite):
         subsampling_max_pixels: float,
         reducers: set[str] | None = None,
     ) -> ee.FeatureCollection:
-        geom = ee_feature.geometry()
-        geom = ee_safe_remove_borders(geom, self.pixelSize // 2, 190_000)
-        ee_feature = ee_feature.setGeometry(geom)
+        ee_geometry = ee_feature.geometry()
+
+        if self.borderPixelsToErode != 0:
+            ee_geometry = ee_safe_remove_borders(
+                ee_geometry, round(self.borderPixelsToErode * self.pixelSize), self.minAreaToKeepBorder
+            )
 
         modis = self.imageCollection(ee_feature)
 
@@ -409,7 +406,7 @@ class Modis8Days(OpticalSatellite):
                 ee_map_bands_and_doy,
                 ee_feature=ee_feature,
                 pixel_size=self.pixelSize,
-                subsampling_max_pixels=ee_get_number_of_pixels(geom, subsampling_max_pixels, self.pixelSize),
+                subsampling_max_pixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
                 reducer=ee_get_reducers(reducers),
             )
         )

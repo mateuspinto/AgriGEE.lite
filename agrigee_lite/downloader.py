@@ -24,6 +24,7 @@ class DownloaderStrategy:
                 time.sleep(1)
 
         self.downloads_map = {}  # {my_id: gid}
+        self.retry_count = {}  # {my_id: num_retries}
 
     def is_downloader_running(self) -> bool:
         try:
@@ -46,6 +47,8 @@ class DownloaderStrategy:
 
             download = self.aria2.add_uris([url], {"dir": str(self.download_folder.absolute()) + "/"})
             self.downloads_map[my_id] = download.gid
+            if my_id not in self.retry_count:
+                self.retry_count[my_id] = 0
 
     @property
     def downloads(self) -> dict[str, aria2p.Download]:
@@ -68,9 +71,20 @@ class DownloaderStrategy:
     def failed_downloads(self) -> list[str]:
         return [my_id for my_id, d in self.downloads.items() if d.status == "error"]
 
+    def get_failed_downloads_within_retry_limit(self, max_retries: int) -> list[str]:
+        return [
+            my_id
+            for my_id, d in self.downloads.items()
+            if d.status == "error" and self.retry_count.get(my_id, 0) < max_retries
+        ]
+
+    def increment_retry_count(self, my_id: int | str) -> None:
+        self.retry_count[my_id] = self.retry_count.get(my_id, 0) + 1
+
     @property
     def is_empty(self) -> bool:
         return len(self.downloads_map) == 0
 
     def reset_downloads(self) -> None:
         self.downloads_map.clear()
+        self.retry_count.clear()

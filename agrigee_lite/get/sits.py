@@ -72,7 +72,7 @@ def build_ee_expression(
 
 
 def build_selectors(satellite: AbstractSatellite, reducers: set[str] | None) -> list[str]:
-    if reducers is None:
+    if (reducers is None) or (len(reducers) == 1):
         return [
             "00_indexnum",
             "01_timestamp",
@@ -290,6 +290,7 @@ def download_multiple_sits(  # noqa: C901
     subsampling_max_pixels: float = 1_000,
     chunksize: int = 10,
     max_parallel_downloads: int = 40,
+    max_retries_per_chunk: int = 1,
     force_redownload: bool = False,
 ) -> pd.DataFrame:
     """
@@ -315,6 +316,8 @@ def download_multiple_sits(  # noqa: C901
         Number of features to process per chunk, by default 10.
     max_parallel_downloads : int, optional
         Maximum number of parallel downloads, by default 40.
+    max_retries_per_chunk : int, optional
+        Maximum number of retry attempts per chunk, by default 1.
     force_redownload : bool, optional
         Whether to force re-download of existing data, by default False.
 
@@ -408,10 +411,17 @@ def download_multiple_sits(  # noqa: C901
 
             update_pbar()
 
-        to_download_chunks = sorted(set(not_sent_to_server) | set(downloader.failed_downloads))
+        failed_within_limit = downloader.get_failed_downloads_within_retry_limit(max_retries_per_chunk)
+        for chunk_id in failed_within_limit:
+            downloader.increment_retry_count(chunk_id)
+
+        to_download_chunks = sorted(set(not_sent_to_server) | set(failed_within_limit))
         while len(to_download_chunks) == 0 and (downloader.num_completed_downloads != len(initial_download_chunks)):
             time.sleep(1)
-            to_download_chunks = sorted(set(not_sent_to_server) | set(downloader.failed_downloads))
+            failed_within_limit = downloader.get_failed_downloads_within_retry_limit(max_retries_per_chunk)
+            for chunk_id in failed_within_limit:
+                downloader.increment_retry_count(chunk_id)
+            to_download_chunks = sorted(set(not_sent_to_server) | set(failed_within_limit))
             update_pbar()
 
     pbar.close()

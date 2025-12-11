@@ -80,7 +80,7 @@ def visualize_single_sits(
     """
     import matplotlib.pyplot as plt
 
-    long_sits = download_single_sits(geometry, start_date, end_date, satellite, reducers=[reducer])
+    long_sits = download_single_sits(geometry, start_date, end_date, satellite, reducers={reducer})
 
     if len(long_sits) == 0:
         return None
@@ -116,6 +116,7 @@ def visualize_multiple_sits(
     ax: Any = None,
     color: str = "blue",
     alpha: float = 0.5,
+    force_redownload: bool = False,
 ) -> None:
     """
     Visualize satellite time series for multiple geometries with normalized temporal alignment.
@@ -158,13 +159,13 @@ def visualize_multiple_sits(
     """
     import matplotlib.pyplot as plt
 
-    long_sits = download_multiple_sits(gdf, satellite, reducers=[reducer])
+    long_sits = download_multiple_sits(gdf, satellite, reducers={reducer}, force_redownload=force_redownload)
 
     if len(long_sits) == 0:
         return None
 
-    for indexnumm in long_sits.indexnum.unique():
-        indexnumm_df = long_sits[long_sits.indexnum == indexnumm].reset_index(drop=True).copy()
+    for indexnumm in long_sits.original_index.unique():
+        indexnumm_df = long_sits[long_sits.original_index == indexnumm].reset_index(drop=True).copy()
         indexnumm_df["timestamp"] = indexnumm_df.timestamp.apply(year_fraction)
         indexnumm_df["timestamp"] = indexnumm_df["timestamp"] - indexnumm_df["timestamp"].min().round()
 
