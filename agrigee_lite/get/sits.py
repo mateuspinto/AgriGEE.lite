@@ -3,6 +3,7 @@ import json
 import logging
 import pathlib
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 
 import ee
@@ -289,7 +290,7 @@ def download_multiple_sits(  # noqa: C901
     end_date_column_name: str = "end_date",
     subsampling_max_pixels: float = 1_000,
     chunksize: int = 10,
-    max_parallel_downloads: int = 40,
+    max_parallel_downloads: int = 38,
     max_retries_per_chunk: int = 1,
     force_redownload: bool = False,
 ) -> pd.DataFrame:
@@ -350,6 +351,8 @@ def download_multiple_sits(  # noqa: C901
 
     downloader = DownloaderStrategy(download_folder=output_path)
 
+    print("SAIUUU")
+
     num_chunks = (len(gdf) + chunksize - 1) // chunksize
 
     already_downloaded_files = [int(x.stem) for x in output_path.glob("*.csv")]
@@ -358,77 +361,90 @@ def download_multiple_sits(  # noqa: C901
 
     pbar = tqdm(
         total=len(initial_download_chunks) * chunksize,
-        desc=f"Building download URLs ({output_path.name})",
         unit="feature",
         smoothing=0,
+        bar_format="{percentage:3.0f}% | {n_fmt}/{total_fmt} | [{elapsed}<{remaining}, {rate_fmt}, {postfix}]",
     )
+
+    def fetch_chunk_url(chunk_id):
+        sub = gdf.iloc[chunk_id * chunksize : (chunk_id + 1) * chunksize]
+        ee_expression = build_ee_expression(
+            sub,
+            satellite,
+            reducers,
+            subsampling_max_pixels,
+            original_index_column_name,
+            start_date_column_name,
+            end_date_column_name,
+        )
+        url = ee_expression.getDownloadURL(
+            filetype="csv",
+            selectors=build_selectors(satellite, reducers),
+            filename=f"{chunk_id}",
+        )
+        return chunk_id, url
+
+    to_download_chunks = list(initial_download_chunks)
+    not_sent_to_server = []
 
     def update_pbar():
         pbar.n = downloader.num_completed_downloads * chunksize
         pbar.refresh()
         pbar.set_postfix({
-            "not_sent_to_server": len(not_sent_to_server),
-            "aria2_errors": downloader.num_downloads_with_error,
-            "active_downloads": downloader.num_unfinished_downloads,
+            "gee_er": len(not_sent_to_server),
+            "ar2_er": downloader.num_downloads_with_error,
+            "act_d": downloader.num_unfinished_downloads,
         })
 
-    to_download_chunks = initial_download_chunks
-    while downloader.num_completed_downloads != len(initial_download_chunks):
-        not_sent_to_server = []
-
-        for current_chunk in to_download_chunks:
-            while downloader.num_unfinished_downloads >= max_parallel_downloads:
-                time.sleep(1)
-                update_pbar()
-
-            sub = gdf.iloc[current_chunk * chunksize : (current_chunk + 1) * chunksize]
-            ee_expression = build_ee_expression(
-                sub,
-                satellite,
-                reducers,
-                subsampling_max_pixels,
-                original_index_column_name,
-                start_date_column_name,
-                end_date_column_name,
-            )
-
-            try:
-                url = ee_expression.getDownloadURL(
-                    filetype="csv",
-                    selectors=build_selectors(satellite, reducers),
-                    filename=f"{current_chunk}",
-                )
-
-                downloader.add_download([(current_chunk, url)])
-
-            except KeyboardInterrupt:
-                pbar.close()
-                raise
-
-            except ee.ee_exception.EEException:
-                logging.exception(output_path, "- Chunk id =", current_chunk, " - Failed to get download URL.")
-                not_sent_to_server.append(current_chunk)
-
-            update_pbar()
-
+    print(f"BAIXANDO-{to_download_chunks}")
+    download_with_too_many_errors = 0
+    while (downloader.num_completed_downloads + download_with_too_many_errors) != len(initial_download_chunks):
         failed_within_limit = downloader.get_failed_downloads_within_retry_limit(max_retries_per_chunk)
         for chunk_id in failed_within_limit:
             downloader.increment_retry_count(chunk_id)
 
-        to_download_chunks = sorted(set(not_sent_to_server) | set(failed_within_limit))
-        while len(to_download_chunks) == 0 and (downloader.num_completed_downloads != len(initial_download_chunks)):
-            time.sleep(1)
-            failed_within_limit = downloader.get_failed_downloads_within_retry_limit(max_retries_per_chunk)
-            for chunk_id in failed_within_limit:
-                downloader.increment_retry_count(chunk_id)
-            to_download_chunks = sorted(set(not_sent_to_server) | set(failed_within_limit))
-            update_pbar()
+        if failed_within_limit or not_sent_to_server:
+            to_download_chunks = sorted(set(to_download_chunks) | set(failed_within_limit) | set(not_sent_to_server))
+            not_sent_to_server = []
+
+        available_slots = max_parallel_downloads - downloader.num_unfinished_downloads
+
+        if available_slots > 0 and to_download_chunks:
+            batch_size = min(available_slots, len(to_download_chunks))
+            current_batch = to_download_chunks[:batch_size]
+            to_download_chunks = to_download_chunks[batch_size:]
+
+            new_downloads = []
+            with ThreadPoolExecutor(max_workers=7) as executor:
+                future_to_chunk = {executor.submit(fetch_chunk_url, cid): cid for cid in current_batch}
+
+                for future in as_completed(future_to_chunk):
+                    cid = future_to_chunk[future]
+                    try:
+                        new_downloads.append(future.result())
+                    except KeyboardInterrupt:
+                        pbar.close()
+                        raise
+                    except Exception:
+                        logging.exception(output_path, "- Chunk id =", cid, " - Failed to get download URL.")
+                        not_sent_to_server.append(cid)
+
+            if new_downloads:
+                downloader.add_download(new_downloads)
+                print(
+                    f"Added batch of {','.join(str(d[0]) for d in new_downloads)} chunks - Active downloading = {downloader.num_unfinished_downloads}"
+                )
+
+        update_pbar()
+        download_with_too_many_errors = downloader.get_num_failed_downloads_exceeding_retry_limit(max_retries_per_chunk)
+        time.sleep(1)
 
     pbar.close()
     whole_result_df = pd.DataFrame()
-    for f in output_path.glob("*.csv"):
+    for f in tqdm(sorted(output_path.glob("*.csv"), key=lambda x: int(x.stem)), desc="Combining downloaded chunks"):
         df = pd.read_csv(f)
-        whole_result_df = pd.concat([whole_result_df, df], ignore_index=True)
+        if len(df) > 0:
+            whole_result_df = pd.concat([whole_result_df, df], ignore_index=True)
 
     whole_result_df = prepare_output_df(whole_result_df, satellite, original_index_column_name)
 

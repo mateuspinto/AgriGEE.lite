@@ -57,7 +57,11 @@ class DownloaderStrategy:
 
     @property
     def num_unfinished_downloads(self) -> int:
-        return sum(d.status == "active" for d in self.downloads.values())
+        return sum(d.status not in ("complete", "error") for d in self.downloads.values())
+
+    @property
+    def still_downloading_ids(self) -> list[str]:
+        return [str(my_id) for my_id, d in self.downloads.items() if d.status not in ("complete", "error")]
 
     @property
     def num_downloads_with_error(self) -> int:
@@ -77,6 +81,16 @@ class DownloaderStrategy:
             for my_id, d in self.downloads.items()
             if d.status == "error" and self.retry_count.get(my_id, 0) < max_retries
         ]
+
+    def get_failed_downloads_exceeding_retry_limit(self, max_retries: int) -> list[str]:
+        return [
+            my_id
+            for my_id, d in self.downloads.items()
+            if d.status == "error" and self.retry_count.get(my_id, 0) >= max_retries
+        ]
+
+    def get_num_failed_downloads_exceeding_retry_limit(self, max_retries: int) -> int:
+        return len(self.get_failed_downloads_exceeding_retry_limit(max_retries))
 
     def increment_retry_count(self, my_id: int | str) -> None:
         self.retry_count[my_id] = self.retry_count.get(my_id, 0) + 1

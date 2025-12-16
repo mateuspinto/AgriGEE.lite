@@ -150,8 +150,12 @@ core.*
 *.npz
 *.csv
 
+data/
 !data/sample.parquet
+
 
 *.pdf
 *.html
 *.zip
+*.npg
+aria2.session
