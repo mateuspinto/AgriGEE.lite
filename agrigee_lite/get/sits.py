@@ -3,6 +3,7 @@ import json
 import logging
 import pathlib
 import time
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 
@@ -14,7 +15,12 @@ from shapely import MultiPolygon, Point, Polygon
 from tqdm.std import tqdm
 
 from agrigee_lite.downloader import DownloaderStrategy
-from agrigee_lite.ee_utils import ee_gdf_to_feature_collection, ee_get_tasks_status
+from agrigee_lite.ee_utils import (
+    ee_gdf_to_feature_collection,
+    ee_get_tasks_status,
+    get_number_of_available_service_accounts,
+    login_with_service_account_n,
+)
 from agrigee_lite.misc import (
     create_dict_hash,
     create_gdf_hash,
@@ -294,39 +300,6 @@ def download_multiple_sits(  # noqa: C901
     max_retries_per_chunk: int = 1,
     force_redownload: bool = False,
 ) -> pd.DataFrame:
-    """
-    Download satellite time series for multiple geometries using parallel processing.
-
-    Parameters
-    ----------
-    gdf : gpd.GeoDataFrame
-        GeoDataFrame containing geometries and temporal information.
-    satellite : AbstractSatellite
-        Satellite configuration object.
-    reducers : set[str] or None, optional
-        Set of reducer names to apply, by default None.
-    original_index_column_name : str, optional
-        Name of the column to store original indices, by default "original_index".
-    start_date_column_name : str, optional
-        Name of the start date column, by default "start_date".
-    end_date_column_name : str, optional
-        Name of the end date column, by default "end_date".
-    subsampling_max_pixels : float, optional
-        Maximum pixels for sampling: >1 = absolute count, ≤1 = fraction of area (e.g., 0.5 = 50% sampling), by default 1_000.
-    chunksize : int, optional
-        Number of features to process per chunk, by default 10.
-    max_parallel_downloads : int, optional
-        Maximum number of parallel downloads, by default 40.
-    max_retries_per_chunk : int, optional
-        Maximum number of retry attempts per chunk, by default 1.
-    force_redownload : bool, optional
-        Whether to force re-download of existing data, by default False.
-
-    Returns
-    -------
-    pd.DataFrame
-        Combined DataFrame containing satellite time series for all geometries.
-    """
     if len(gdf) == 0:
         return pd.DataFrame()
 
@@ -351,12 +324,10 @@ def download_multiple_sits(  # noqa: C901
 
     downloader = DownloaderStrategy(download_folder=output_path)
 
-    print("SAIUUU")
-
     num_chunks = (len(gdf) + chunksize - 1) // chunksize
 
     already_downloaded_files = [int(x.stem) for x in output_path.glob("*.csv")]
-    logging.info(output_path, "-", len(already_downloaded_files), "chunks already downloaded and will be skipped.")
+    print(output_path, "-", len(already_downloaded_files), "chunks already downloaded and will be skipped.")
     initial_download_chunks = sorted(set(range(num_chunks)) - set(already_downloaded_files))
 
     pbar = tqdm(
@@ -390,13 +361,19 @@ def download_multiple_sits(  # noqa: C901
     def update_pbar():
         pbar.n = downloader.num_completed_downloads * chunksize
         pbar.refresh()
+
+        active_by_account = {acc: len(chunks) for acc, chunks in account_active_chunks.items() if len(chunks) > 0}
+
         pbar.set_postfix({
             "gee_er": len(not_sent_to_server),
             "ar2_er": downloader.num_downloads_with_error,
-            "act_d": downloader.num_unfinished_downloads,
+            **{f"{acc}": count for acc, count in active_by_account.items()},
         })
 
-    print(f"BAIXANDO-{to_download_chunks}")
+    num_accounts = get_number_of_available_service_accounts()
+    current_account_idx = 0
+    account_active_chunks = defaultdict(set)
+
     download_with_too_many_errors = 0
     while (downloader.num_completed_downloads + download_with_too_many_errors) != len(initial_download_chunks):
         failed_within_limit = downloader.get_failed_downloads_within_retry_limit(max_retries_per_chunk)
@@ -407,7 +384,16 @@ def download_multiple_sits(  # noqa: C901
             to_download_chunks = sorted(set(to_download_chunks) | set(failed_within_limit) | set(not_sent_to_server))
             not_sent_to_server = []
 
-        available_slots = max_parallel_downloads - downloader.num_unfinished_downloads
+        login_with_service_account_n(current_account_idx)
+
+        current_active_set = account_active_chunks[current_account_idx]
+        finished_or_failed = set()
+        for cid in current_active_set:
+            if (output_path / f"{cid}.csv").exists() or cid in failed_within_limit or cid in not_sent_to_server:
+                finished_or_failed.add(cid)
+        current_active_set -= finished_or_failed
+
+        available_slots = max_parallel_downloads - len(current_active_set)
 
         if available_slots > 0 and to_download_chunks:
             batch_size = min(available_slots, len(to_download_chunks))
@@ -431,13 +417,13 @@ def download_multiple_sits(  # noqa: C901
 
             if new_downloads:
                 downloader.add_download(new_downloads)
-                print(
-                    f"Added batch of {','.join(str(d[0]) for d in new_downloads)} chunks - Active downloading = {downloader.num_unfinished_downloads}"
-                )
+                added_ids = {d[0] for d in new_downloads}
+                account_active_chunks[current_account_idx].update(added_ids)
 
+        current_account_idx = (current_account_idx + 1) % num_accounts
         update_pbar()
         download_with_too_many_errors = downloader.get_num_failed_downloads_exceeding_retry_limit(max_retries_per_chunk)
-        time.sleep(1)
+        time.sleep(0.5)
 
     pbar.close()
     whole_result_df = pd.DataFrame()

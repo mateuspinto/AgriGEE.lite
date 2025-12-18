@@ -1,6 +1,6 @@
 [project]
 name = "agrigee_lite"
-version = "2.0.12"
+version = "2.0.14"
 description = "Because using satellite data should not be rocket science."
 authors = [{ name = "Mateus Pinto da Silva", email = "mateus.p.silva@ufv.br" }]
 readme = "README.md"
@@ -39,6 +39,7 @@ all = [
 
 [project.scripts]
 agl_tm = "agrigee_lite.tgui_task_manager:main"
+test_service_account = "agrigee_lite.check_service_account:main"
 
 [project.urls]
 Homepage = "https://mateuspinto.github.io/agrigee_lite/"

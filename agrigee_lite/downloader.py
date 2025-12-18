@@ -11,9 +11,10 @@ class DownloaderStrategy:
         self.aria2 = aria2p.API(aria2p.Client(host="http://localhost", port=6800, secret=""))
         self.download_folder = download_folder
         conf_path = files("agrigee_lite").joinpath("aria2.conf")
+        self.aria2_process = None
 
         if not self.is_downloader_running():
-            subprocess.Popen(  # noqa: S603
+            self.aria2_process = subprocess.Popen(  # noqa: S603
                 ["aria2c", f"--conf-path={conf_path}"],  # noqa: S607
                 start_new_session=True,
                 stdout=subprocess.DEVNULL,
@@ -25,6 +26,17 @@ class DownloaderStrategy:
 
         self.downloads_map = {}  # {my_id: gid}
         self.retry_count = {}  # {my_id: num_retries}
+
+    def __del__(self):
+        if self.aria2_process is not None:
+            try:
+                self.aria2_process.terminate()
+                self.aria2_process.wait(timeout=5)
+            except:  # noqa: E722
+                try:  # noqa: SIM105
+                    self.aria2_process.kill()
+                except:  # noqa: E722, S110
+                    pass
 
     def is_downloader_running(self) -> bool:
         try:

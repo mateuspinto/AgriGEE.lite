@@ -705,3 +705,55 @@ def ee_quick_start() -> None:
             print(
                 "Earth Engine not initialized. Please set the GEE_KEY environment variable to your Earth Engine key. You can find more information in the AgriGEE.lite documentation."
             )
+
+
+def get_number_of_available_service_accounts() -> int:
+    """
+    Retrieve the number of available Earth Engine service accounts in the environment variable GEE_KEY_MULTIPLE_ACCOUNTS.
+
+    This environment variable should contain a comma-separated list of service account json paths.
+
+    If the environment variable is not set, the function returns 1.
+    """
+    if "GEE_KEY_MULTIPLE_ACCOUNTS" in os.environ:
+        gee_key_multiple_accounts = os.environ["GEE_KEY_MULTIPLE_ACCOUNTS"]
+        service_accounts = [sa.strip() for sa in gee_key_multiple_accounts.split(",") if sa.strip()]
+        return len(service_accounts)
+    else:
+        return 1
+
+
+def login_with_service_account_n(n: int) -> None:
+    """
+    Login to Earth Engine using the nth service account specified in the GEE_KEY_MULTIPLE_ACCOUNTS environment variable.
+
+    Parameters
+    ----------
+    n : int
+        The index of the service account to use (0-based).
+
+    Raises
+    ------
+    IndexError
+        If the specified index is out of range of the available service accounts.
+    """
+    if "GEE_KEY_MULTIPLE_ACCOUNTS" in os.environ:
+        gee_key_multiple_accounts = os.environ["GEE_KEY_MULTIPLE_ACCOUNTS"]
+        service_accounts = [sa.strip() for sa in gee_key_multiple_accounts.split(",") if sa.strip()]
+
+        if n < 0 or n >= len(service_accounts):
+            raise IndexError(f"Service account index {n} is out of range. Available accounts: {len(service_accounts)}")  # noqa: TRY003
+
+        selected_service_account = service_accounts[n]
+        credentials = ee.ServiceAccountCredentials(selected_service_account, selected_service_account)
+        ee.Initialize(credentials)
+
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = selected_service_account
+
+        with open(selected_service_account) as f:
+            key_data = json.load(f)
+            print(f"Now using - {key_data.get('project_id', 'Unknown')}, {key_data.get('client_email', 'Unknown')}.")
+    else:
+        print(
+            "Environment variable GEE_KEY_MULTIPLE_ACCOUNTS is not set. Please set it to use multiple service accounts."
+        )
