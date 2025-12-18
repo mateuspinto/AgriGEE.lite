@@ -639,7 +639,7 @@ def download_multiple_sits_chunks_gcs(
         If wait is True, returns DataFrame with combined results.
         If wait is False, returns None.
     """
-    from smart_open import open  # noqa: A004
+    from smart_open import open
 
     if len(gdf) == 0:
         logging.warning("Empty GeoDataFrame, nothing to download")

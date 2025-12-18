@@ -106,11 +106,7 @@ class HLSSentinel2(OpticalSatellite):
         border_pixels_to_erode: float = 1,
         min_area_to_keep_border: int = 35000,
     ):
-        bands = (
-            sorted({"blue", "green", "red", "nir", "swir1", "swir2"})
-            if bands is None
-            else sorted(bands)
-        )
+        bands = sorted({"blue", "green", "red", "nir", "swir1", "swir2"}) if bands is None else sorted(bands)
 
         indices = [] if indices is None else sorted(indices)
 
@@ -212,9 +208,7 @@ class HLSSentinel2(OpticalSatellite):
             + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
         )
 
-        hls_img = ee_filter_img_collection_invalid_pixels(
-            hls_img, ee_geometry, self.pixelSize, self.minValidPixelCount
-        )
+        hls_img = ee_filter_img_collection_invalid_pixels(hls_img, ee_geometry, self.pixelSize, self.minValidPixelCount)
 
         return hls_img
 
@@ -442,9 +436,7 @@ class HLSLandsat(OpticalSatellite):
             + [numeral_indice_name for _, _, numeral_indice_name in self.selectedIndices],
         )
 
-        hls_img = ee_filter_img_collection_invalid_pixels(
-            hls_img, ee_geometry, self.pixelSize, self.minValidPixelCount
-        )
+        hls_img = ee_filter_img_collection_invalid_pixels(hls_img, ee_geometry, self.pixelSize, self.minValidPixelCount)
 
         return hls_img
 

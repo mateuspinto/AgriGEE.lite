@@ -52,7 +52,7 @@ dev = [
     "pre-commit>=4.2.0",
     "tox-uv>=1.25.0",
     "deptry>=0.23.0",
-    "mypy>=1.15.0",
+    "pyright>=1.1.407",
     "pytest-cov>=6.0.0",
     "ruff>=0.11.2",
     "mkdocs>=1.6.1",
@@ -70,24 +70,6 @@ build-backend = "hatchling.build"
 
 [tool.setuptools]
 py-modules = ["agrigee_lite"]
-
-[tool.mypy]
-files = ["agrigee_lite"]
-disallow_untyped_defs = true
-# disallow_any_unimported = true
-no_implicit_optional = true
-# check_untyped_defs = true
-# warn_return_any = true
-warn_unused_ignores = true
-show_error_codes = true
-
-[[tool.mypy.overrides]]
-module = ["untyped_package.*"]
-follow_untyped_imports = true
-
-[[tool.mypy.overrides]]
-module = ["geopandas.*", "topojson.*"]
-ignore_missing_imports = true
 
 [tool.ruff]
 target-version = "py311"
@@ -157,3 +139,8 @@ exclude = [
     "docs/*",
     "mkdocs.yml",
 ]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+reportPrivateImportUsage = false

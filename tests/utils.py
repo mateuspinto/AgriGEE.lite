@@ -11,7 +11,7 @@ def assert_np_array_equivalence(arr1: np.ndarray, arr2: np.ndarray, threshold: f
     arr2 = arr2.flatten()
 
     if arr1.shape != arr2.shape:
-        raise AssertionError(f"Shape mismatch: {arr1.shape} vs {arr2.shape}")
+        raise AssertionError(f"Shape mismatch: {arr1.shape} vs {arr2.shape}")  # noqa: TRY003
 
     bound1 = arr2 * (1 - threshold)
     bound2 = arr2 * (1 + threshold)
