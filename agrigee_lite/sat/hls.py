@@ -106,10 +106,6 @@ class HLSSentinel2(OpticalSatellite):
         border_pixels_to_erode: float = 1,
         min_area_to_keep_border: int = 35000,
     ):
-        bands = sorted({"blue", "green", "red", "nir", "swir1", "swir2"}) if bands is None else sorted(bands)
-
-        indices = [] if indices is None else sorted(indices)
-
         super().__init__()
 
         self.imageCollectionName: str = "NASA/HLS/HLSS30/v002"
@@ -132,7 +128,15 @@ class HLSSentinel2(OpticalSatellite):
             "swir2": "B12",
         }
 
+        bands = (
+            ["coastal", "blue", "green", "red", "re1", "re2", "re3", "nir", "re4", "swir1", "swir2"]
+            if bands is None
+            else sorted(bands)
+        )
+
         self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
+
+        indices = [] if indices is None else sorted(indices)
 
         self.selectedIndices: list[str] = [
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
@@ -332,14 +336,6 @@ class HLSLandsat(OpticalSatellite):
         border_pixels_to_erode: float = 1,
         min_area_to_keep_border: int = 35000,
     ):
-        bands = (
-            sorted({"blue", "green", "red", "nir", "swir1", "swir2", "tirs1", "tirs2"})
-            if bands is None
-            else sorted(bands)
-        )
-
-        indices = [] if indices is None else sorted(indices)
-
         super().__init__()
 
         self.imageCollectionName: str = "NASA/HLS/HLSL30/v002"
@@ -359,6 +355,14 @@ class HLSLandsat(OpticalSatellite):
             "tirs1": "B10",
             "tirs2": "B11",
         }
+
+        bands = (
+            ["coastal", "blue", "green", "red", "nir", "swir1", "swir2", "tirs1", "tirs2"]
+            if bands is None
+            else sorted(bands)
+        )
+
+        indices = [] if indices is None else sorted(indices)
 
         self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
 

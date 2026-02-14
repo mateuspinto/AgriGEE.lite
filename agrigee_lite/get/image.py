@@ -82,6 +82,8 @@ def download_multiple_images(  # noqa: C901
     if ee_expression.size().getInfo() == 0:
         print("No images found for the specified parameters.")
         return np.array([]), []
+    else:
+        print(f"Found {ee_expression.size().getInfo()} images for the specified parameters.")
 
     max_valid_pixels = ee_expression.aggregate_max("ZZ_USER_VALID_PIXELS")
     threshold = ee.Number(max_valid_pixels).multiply(invalid_images_threshold)
