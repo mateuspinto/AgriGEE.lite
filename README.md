@@ -95,6 +95,7 @@ AgriGEE.lite is organized into three main modules:
 | [Satellite Embeddings V1](https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_SATELLITE_EMBEDDING_V1_ANNUAL?hl=pt-br#bands) | 64-dimensional embedding | 2017-01-01 | 2024-01-01 | Worldwide | 10 | 1 year |  |
 | [Mapbiomas Brazil](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | 37 Land Usage Land Cover Classes | 1985-01-01 | 2024-12-31 | Brazil | 30 | 1 year |  |
 | [ANADEM](https://hge-iph.github.io/anadem/) | Slope, Elevation, Aspect | (single image) | (single image) | South America | 30** | (single image) |  |
+| [Copernicus DEM GLO30](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_DEM_GLO30) | Elevation, Slope, Aspect | (single image) | (single image) | Worldwide | 30 | (single image) |  |
 | [SoilGrids classes](https://soilgrids.org/) | WRB Soil Classes (30 categories) | (single image) | (single image) | Worldwide | 250 | (single image) | |
 | Two Satellite Fusion ***** | Intersect common observations from two satellites | (depends on input satellites) | (depends on input satellites) | (depends on input satellites) | (finest of the two satellites) | (depends on input satellites) | |
 
