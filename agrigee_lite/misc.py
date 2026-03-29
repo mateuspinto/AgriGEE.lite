@@ -4,6 +4,7 @@ import inspect
 import json
 import warnings
 from collections import deque
+from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
@@ -397,6 +398,18 @@ def random_points_from_gdf(
     points_gdf = points_gdf[points_gdf.geometry.x != 0].reset_index(drop=True)
 
     return points_gdf
+
+
+def get_sample_gdf() -> gpd.GeoDataFrame:
+    """
+    Load the bundled sample GeoDataFrame.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        Sample GeoDataFrame for testing and demonstration purposes.
+    """
+    return gpd.read_parquet(Path(__file__).parent / "data" / "sample.parquet")
 
 
 def get_reducer_names(reducer_names: set[str] | None = None) -> list[str]:

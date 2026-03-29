@@ -1,8 +1,10 @@
-import ee
 import pytest
+
+from agrigee_lite.ee_utils import ee_quick_start
 
 
 @pytest.fixture(scope="session", autouse=True)
-def test_ee_authenticate() -> None:
-    ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project="ee-paulagibrim")
-    assert ee.data._initialized
+def ee_auth() -> None:
+    ee_quick_start()
+    # if not ee_is_authenticated():
+    #     pytest.exit("Earth Engine not initialized. Set the GEE_KEY environment variable.", returncode=1)

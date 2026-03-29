@@ -1,21 +1,16 @@
-# Install uv
-FROM python:3.12-slim
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+FROM ghcr.io/prefix-dev/pixi:latest AS build
 
-# Change the working directory to the `app` directory
 WORKDIR /app
+COPY pyproject.toml pixi.lock ./
+RUN pixi install --frozen -e default
 
-# Copy the lockfile and `pyproject.toml` into the image
-ADD uv.lock /app/uv.lock
-ADD pyproject.toml /app/pyproject.toml
+COPY . /app
+RUN pixi install --frozen -e default
 
-# Install dependencies
-RUN uv sync --frozen --no-install-project
+FROM debian:bookworm-slim
+WORKDIR /app
+COPY --from=build /app/.pixi/envs/default /app/.pixi/envs/default
+COPY . /app
+ENV PATH="/app/.pixi/envs/default/bin:$PATH"
 
-# Copy the project into the image
-ADD . /app
-
-# Sync the project
-RUN uv sync --frozen
-
-CMD [ "python", "agrigee_lite/foo.py"]
+CMD ["python", "agrigee_lite/foo.py"]

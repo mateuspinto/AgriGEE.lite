@@ -45,12 +45,13 @@ jobs:
           name: pyproject-toml
 
       - name: Build package
-        run: uv build
+        run: pixi run python -m build
 
       - name: Publish package
-        run: uv publish
+        run: pixi run twine upload dist/*
         env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 
   deploy-docs:
     needs: publish
@@ -63,4 +64,4 @@ jobs:
         uses: ./.github/actions/setup-python-env
 
       - name: Deploy documentation
-        run: uv run mkdocs gh-deploy --force
+        run: pixi run mkdocs gh-deploy --force

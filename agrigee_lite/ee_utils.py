@@ -1,7 +1,6 @@
 import json
 import os
-import random
-import string
+import tempfile
 
 import ee
 import geopandas as gpd
@@ -180,20 +179,23 @@ def ee_gdf_to_feature_collection(
         columns={start_date_column_name: "s", end_date_column_name: "e", original_index_column_name: "0"}, inplace=True
     )  # saving memory when uploading geojson to GEE
 
-    geo_json = os.path.join(os.getcwd(), "".join(random.choice(string.ascii_lowercase) for i in range(6)) + ".geojson")  # noqa: S311
     gdf = gdf.to_crs(4326)
-    gdf.to_file(geo_json, driver="GeoJSON")
+    with tempfile.NamedTemporaryFile(suffix=".geojson", delete=False) as tmp:
+        geo_json = tmp.name
 
-    with open(os.path.abspath(geo_json), encoding="utf-8") as f:
-        json_dict = json.load(f)
+    try:
+        gdf.to_file(geo_json, driver="GeoJSON")
 
-    if json_dict["type"] == "FeatureCollection":
-        for feature in json_dict["features"]:
-            if feature["geometry"]["type"] != "Point":
-                feature["geometry"]["geodesic"] = True
-        features = ee.FeatureCollection(json_dict)
+        with open(geo_json, encoding="utf-8") as f:
+            json_dict = json.load(f)
 
-    os.remove(geo_json)
+        if json_dict["type"] == "FeatureCollection":
+            for feature in json_dict["features"]:
+                if feature["geometry"]["type"] != "Point":
+                    feature["geometry"]["geodesic"] = True
+            features = ee.FeatureCollection(json_dict)
+    finally:
+        os.remove(geo_json)
 
     return features
 
@@ -681,30 +683,44 @@ def ee_quick_start() -> None:
     GOOGLE_APPLICATION_CREDENTIALS environment variable for use Google Cloud Storage.
     """
 
-    if not ee_is_authenticated():
-        if "GEE_KEY" in os.environ:
-            gee_key = os.environ["GEE_KEY"]
+    os.environ["GEE_KEY"] = "/home/m/KEYS/GEE/pintodasilvamateus.json"
+    ee.Initialize(
+        ee.ServiceAccountCredentials(
+            "/home/m/KEYS/GEE/pintodasilvamateus.json", "/home/m/KEYS/GEE/pintodasilvamateus.json"
+        ),
+        opt_url="https://earthengine-highvolume.googleapis.com",
+    )
 
-            if gee_key.endswith(".json"):  # with service account
-                credentials = ee.ServiceAccountCredentials(gee_key, gee_key)
-                ee.Initialize(credentials)
+    # gee_vars = ["GEE_KEY", "GEE_KEY_MULTIPLE_ACCOUNTS", "GOOGLE_APPLICATION_CREDENTIALS"]
+    # print("GEE environment variables:")
+    # for var in gee_vars:
+    #     value = os.environ.get(var)
+    #     print(f"  {var} = {value!r}")
 
-                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gee_key
+    # if not ee_is_authenticated():
+    #     if "GEE_KEY" in os.environ:
+    #         gee_key = os.environ["GEE_KEY"]
 
-                with open(gee_key) as f:
-                    key_data = json.load(f)
-                    print(
-                        f"Earth Engine initialized successfully using AgriGEE.lite with service account. Project: {key_data.get('project_id', 'Unknown')}, Email: {key_data.get('client_email', 'Unknown')}."
-                    )
+    #         if gee_key.endswith(".json"):  # with service account
+    #             credentials = ee.ServiceAccountCredentials(gee_key, gee_key)
+    #             ee.Initialize(credentials, opt_url="https://earthengine-highvolume.googleapis.com")
 
-            else:  # using token
-                ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project=gee_key)
-                print(f"Earth Engine initialized successfully using AgriGEE.lite using token (project={gee_key}).")
+    #             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gee_key
 
-        else:
-            print(
-                "Earth Engine not initialized. Please set the GEE_KEY environment variable to your Earth Engine key. You can find more information in the AgriGEE.lite documentation."
-            )
+    #             with open(gee_key) as f:
+    #                 key_data = json.load(f)
+    #                 print(
+    #                     f"Earth Engine initialized successfully using AgriGEE.lite with service account. Project: {key_data.get('project_id', 'Unknown')}, Email: {key_data.get('client_email', 'Unknown')}."
+    #                 )
+
+    #         else:  # using token
+    #             ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project=gee_key)
+    #             print(f"Earth Engine initialized successfully using AgriGEE.lite using token (project={gee_key}).")
+
+    #     else:
+    #         print(
+    #             "Earth Engine not initialized. Please set the GEE_KEY environment variable to your Earth Engine key. You can find more information in the AgriGEE.lite documentation."
+    #         )
 
 
 def get_number_of_available_service_accounts() -> int:

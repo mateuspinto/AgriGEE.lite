@@ -14,6 +14,7 @@ dependencies = [
     "pandera>=0.26.1",
     "topojson>=1.9",
     "aria2p>=0.12.1",
+    "pyarrow>=19.0.1",
 ]
 classifiers = [
     "Intended Audience :: Developers",
@@ -28,17 +29,20 @@ classifiers = [
 
 [project.optional-dependencies]
 visualization = ["matplotlib>=3.10.1", "plotly>=6.2.0"]
-tasks = ["smart_open[gcs]>=7.1.0", "textual-pandas>=0.2.3", "pyarrow>=19.0.1"]
+tasks = ["smart_open[gcs]>=7.1.0", "textual-pandas>=0.2.3"]
+api = ["fastapi[standard]>=0.115.0", "uvicorn[standard]>=0.34.0"]
 all = [
     "matplotlib>=3.10.1",
     "plotly>=6.2.0",
     "smart_open[gcs]>=7.1.0",
     "textual-pandas>=0.2.3",
-    "pyarrow>=19.0.1",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
 ]
 
 [project.scripts]
 agl_tm = "agrigee_lite.tgui_task_manager:main"
+agl_api = "agrigee_lite.api:main"
 test_service_account = "agrigee_lite.check_service_account:main"
 
 [project.urls]
@@ -46,27 +50,81 @@ Homepage = "https://mateuspinto.github.io/agrigee_lite/"
 Repository = "https://github.com/mateuspinto/agrigee_lite"
 Documentation = "https://mateuspinto.github.io/agrigee_lite/"
 
-[dependency-groups]
-dev = [
-    "pytest>=8.3.5",
-    "pre-commit>=4.2.0",
-    "tox-uv>=1.25.0",
-    "deptry>=0.23.0",
-    "pyright>=1.1.407",
-    "pytest-cov>=6.0.0",
-    "ruff>=0.11.2",
-    "mkdocs>=1.6.1",
-    "mkdocs-material>=9.6.9",
-    "mkdocstrings[python]>=0.29.0",
-    "ipykernel>=6.29.5",
-    "pandas-stubs>=2.2.3.250308",
-    "types-shapely>=2.0.0.20250202",
-    "types-tqdm>=4.67.0.20250319",
-]
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pixi.workspace]
+name = "agrigee_lite"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
+
+[tool.pixi.pypi-dependencies]
+agrigee_lite = { path = ".", editable = true }
+pyarrow = ">=19.0.1"
+
+[tool.pixi.feature.dev.pypi-dependencies]
+pytest = ">=8.3.5"
+pre-commit = ">=4.2.0"
+deptry = ">=0.23.0"
+pyright = ">=1.1.407"
+pytest-cov = ">=6.0.0"
+ruff = ">=0.11.2"
+mkdocs = ">=1.6.1"
+mkdocs-material = ">=9.6.9"
+mkdocstrings = { version = ">=0.29.0", extras = ["python"] }
+ipykernel = ">=6.29.5"
+pandas-stubs = ">=2.2.3.250308"
+types-shapely = ">=2.0.0.20250202"
+types-tqdm = ">=4.67.0.20250319"
+build = ">=1.2.0"
+twine = ">=6.0.0"
+
+[tool.pixi.feature.visualization.pypi-dependencies]
+matplotlib = ">=3.10.1"
+plotly = ">=6.2.0"
+
+[tool.pixi.feature.tasks-extra.pypi-dependencies]
+smart-open = { version = ">=7.1.0", extras = ["gcs"] }
+textual-pandas = ">=0.2.3"
+
+[tool.pixi.feature.api.pypi-dependencies]
+fastapi = { version = ">=0.115.0", extras = ["standard"] }
+uvicorn = { version = ">=0.34.0", extras = ["standard"] }
+
+[tool.pixi.feature.py310.dependencies]
+python = "3.10.*"
+
+[tool.pixi.feature.py311.dependencies]
+python = "3.11.*"
+
+[tool.pixi.feature.py312.dependencies]
+python = "3.12.*"
+
+[tool.pixi.feature.py313.dependencies]
+python = "3.13.*"
+
+[tool.pixi.environments]
+default = { features = ["dev"], solve-group = "default" }
+visualization = { features = ["visualization"], solve-group = "default" }
+tasks-extra = { features = ["tasks-extra"], solve-group = "default" }
+api = { features = ["api"], solve-group = "default" }
+all-features = { features = ["visualization", "tasks-extra", "api", "dev"], solve-group = "default" }
+py310 = { features = ["dev", "py310"], solve-group = "py310" }
+py311 = { features = ["dev", "py311"], solve-group = "py311" }
+py312 = { features = ["dev", "py312"], solve-group = "py312" }
+py313 = { features = ["dev", "py313"], solve-group = "py313" }
+
+[tool.pixi.tasks]
+pre-commit-install = "pre-commit install"
+check = { cmd = "pre-commit run -a && pyright && deptry ." }
+test = "python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml"
+download-test-files = "python tests/download_test_files.py"
+docs = "mkdocs serve"
+docs-test = "mkdocs build -s"
+docs-publish = "mkdocs gh-deploy"
+build = "python -m build"
+publish = "twine upload --repository-url https://upload.pypi.org/legacy/ dist/*"
 
 [tool.setuptools]
 py-modules = ["agrigee_lite"]
@@ -123,6 +181,9 @@ ignore = [
 [tool.ruff.format]
 preview = true
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.coverage.report]
 skip_empty = true
 
@@ -141,6 +202,6 @@ exclude = [
 ]
 
 [tool.pyright]
-venvPath = "."
-venv = ".venv"
+venvPath = ".pixi/envs"
+venv = "default"
 reportPrivateImportUsage = false

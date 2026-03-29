@@ -20,8 +20,8 @@
                 ],
                 "python.testing.unittestEnabled": false,
                 "python.testing.pytestEnabled": true,
-                "python.defaultInterpreterPath": "/workspaces/agrigee_lite/.venv/bin/python",
-                "python.testing.pytestPath": "/workspaces/agrigee_lite/.venv/bin/pytest"
+                "python.defaultInterpreterPath": "/workspaces/agrigee_lite/.pixi/envs/default/bin/python",
+                "python.testing.pytestPath": "/workspaces/agrigee_lite/.pixi/envs/default/bin/pytest"
             }
         }
     }

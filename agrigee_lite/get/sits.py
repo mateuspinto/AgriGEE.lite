@@ -1,3 +1,4 @@
+import asyncio
 import getpass
 import json
 import logging
@@ -312,7 +313,10 @@ def download_multiple_sits(  # noqa: C901
     metadata_dict |= satellite.log_dict()
 
     output_path = (
-        pathlib.Path("data/temp/sits")
+        pathlib.Path.home()
+        / ".cache"
+        / "agrigee_lite"
+        / "sits"
         / f"{create_gdf_hash(gdf, start_date_column_name, end_date_column_name)}_{create_dict_hash(metadata_dict)}"
     )
 
@@ -780,3 +784,160 @@ def download_multiple_sits_chunks_gcs(
         return df
     else:
         return None
+
+
+def _fetch_sits_chunk_url_sync(
+    chunk_id: int,
+    gdf: gpd.GeoDataFrame,
+    satellite: AbstractSatellite,
+    reducers: set[str] | None,
+    subsampling_max_pixels: float,
+    original_index_column_name: str,
+    start_date_column_name: str,
+    end_date_column_name: str,
+    chunksize: int,
+) -> tuple[int, str]:
+    """Resolve the download URL for a single GEE SITS chunk (blocking, runs in a thread)."""
+    sub = gdf.iloc[chunk_id * chunksize : (chunk_id + 1) * chunksize]
+    ee_expression = build_ee_expression(
+        sub,
+        satellite,
+        reducers,
+        subsampling_max_pixels,
+        original_index_column_name,
+        start_date_column_name,
+        end_date_column_name,
+    )
+    url = ee_expression.getDownloadURL(
+        filetype="csv",
+        selectors=build_selectors(satellite, reducers),
+        filename=f"{chunk_id}",
+    )
+    return chunk_id, url
+
+
+async def download_multiple_sits_async(
+    gdf: gpd.GeoDataFrame,
+    satellite: AbstractSatellite,
+    reducers: set[str] | None = None,
+    original_index_column_name: str = "original_index",
+    start_date_column_name: str = "start_date",
+    end_date_column_name: str = "end_date",
+    subsampling_max_pixels: float = 1_000,
+    chunksize: int = 10,
+    max_parallel_downloads: int = 38,
+    max_retries_per_chunk: int = 1,
+    force_redownload: bool = False,
+) -> pd.DataFrame:
+    """
+    Async version of :func:`download_multiple_sits`.
+
+    GEE URL fetches are issued concurrently via ``asyncio.to_thread``; aria2
+    progress is polled with ``asyncio.sleep`` so the event loop stays free.
+    Multiple coroutines can run in parallel without blocking each other.
+    """
+    if len(gdf) == 0:
+        return pd.DataFrame()
+
+    gdf = sanitize_and_prepare_input_gdf(
+        gdf, satellite, original_index_column_name, 1000, start_date_column_name, end_date_column_name
+    )
+
+    metadata_dict: dict[str, str] = {}
+    metadata_dict |= log_dict_function_call_summary(["gdf", "satellite", "max_parallel_downloads", "force_redownload"])
+    metadata_dict |= satellite.log_dict()
+
+    output_path = (
+        pathlib.Path.home()
+        / ".cache"
+        / "agrigee_lite"
+        / "sits"
+        / f"{create_gdf_hash(gdf, start_date_column_name, end_date_column_name)}_{create_dict_hash(metadata_dict)}"
+    )
+
+    if force_redownload:
+        for f in output_path.glob("*"):
+            f.unlink()
+
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    downloader = DownloaderStrategy(download_folder=output_path)
+    num_chunks = (len(gdf) + chunksize - 1) // chunksize
+    already_downloaded = [int(x.stem) for x in output_path.glob("*.csv")]
+    print(output_path, "-", len(already_downloaded), "chunks already downloaded and will be skipped.")
+    pending_chunks = sorted(set(range(num_chunks)) - set(already_downloaded))
+
+    pbar = tqdm(
+        total=len(pending_chunks) * chunksize,
+        unit="feature",
+        smoothing=0,
+        bar_format="{percentage:3.0f}% | {n_fmt}/{total_fmt} | [{elapsed}<{remaining}, {rate_fmt}, {postfix}]",
+    )
+
+    def update_pbar() -> None:
+        pbar.n = downloader.num_completed_downloads * chunksize
+        pbar.refresh()
+
+    not_sent_to_server: list[int] = []
+    download_with_too_many_errors = 0
+    initial_pending_count = len(pending_chunks)
+    to_fetch = list(pending_chunks)
+
+    while (downloader.num_completed_downloads + download_with_too_many_errors) != initial_pending_count:
+        failed_within_limit = downloader.get_failed_downloads_within_retry_limit(max_retries_per_chunk)
+        for cid in failed_within_limit:
+            downloader.increment_retry_count(cid)
+
+        if failed_within_limit or not_sent_to_server:
+            to_fetch = sorted(set(to_fetch) | set(failed_within_limit) | set(not_sent_to_server))
+            not_sent_to_server = []
+
+        available = [
+            cid for cid in to_fetch if not (output_path / f"{cid}.csv").exists() and cid not in failed_within_limit
+        ]
+        batch = available[: max_parallel_downloads - downloader.num_unfinished_downloads]
+        to_fetch = [cid for cid in to_fetch if cid not in batch]
+
+        if batch:
+            fetch_results = await asyncio.gather(
+                *[
+                    asyncio.to_thread(
+                        _fetch_sits_chunk_url_sync,
+                        cid,
+                        gdf,
+                        satellite,
+                        reducers,
+                        subsampling_max_pixels,
+                        original_index_column_name,
+                        start_date_column_name,
+                        end_date_column_name,
+                        chunksize,
+                    )
+                    for cid in batch
+                ],
+                return_exceptions=True,
+            )
+
+            new_downloads: list[tuple[int, str]] = []
+            for cid, res in zip(batch, fetch_results, strict=False):
+                if isinstance(res, Exception):
+                    logging.exception(f"{output_path} - Chunk {cid} - Failed to get URL.")
+                    not_sent_to_server.append(cid)
+                else:
+                    new_downloads.append(res)
+
+            if new_downloads:
+                downloader.add_download(new_downloads)
+
+        update_pbar()
+        download_with_too_many_errors = downloader.get_num_failed_downloads_exceeding_retry_limit(max_retries_per_chunk)
+        await asyncio.sleep(0.5)
+
+    pbar.close()
+    whole_result_df = pd.DataFrame()
+    for f in tqdm(sorted(output_path.glob("*.csv"), key=lambda x: int(x.stem)), desc="Combining downloaded chunks"):
+        df = pd.read_csv(f)
+        if len(df) > 0:
+            whole_result_df = pd.concat([whole_result_df, df], ignore_index=True)
+
+    return prepare_output_df(whole_result_df, satellite, original_index_column_name)
