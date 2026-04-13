@@ -94,9 +94,9 @@ class PALSAR2ScanSAR(RadarSatellite):
         border_pixels_to_erode: float = 1,
         min_area_to_keep_border: int = 35000,
     ):
-        bands = sorted({"hh", "hv"}) if bands is None else sorted(bands)
+        bands_: list[str] = sorted({"hh", "hv"}) if bands is None else sorted(bands)
 
-        indices = [] if indices is None else sorted(indices)
+        indices_: list[str] = [] if indices is None else sorted(indices)
 
         super().__init__()
 
@@ -108,11 +108,11 @@ class PALSAR2ScanSAR(RadarSatellite):
 
         self.availableBands: dict[str, str] = {"hh": "HH", "hv": "HV"}
 
-        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands_)]
 
-        self.selectedIndices: list[str] = [
+        self.selectedIndices = [
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
-            for n, indice_name in enumerate(indices)
+            for n, indice_name in enumerate(indices_)
         ]
 
         self.use_quality_mask = use_quality_mask
@@ -163,7 +163,10 @@ class PALSAR2ScanSAR(RadarSatellite):
         )
 
         palsar_img = palsar_img.map(
-            lambda img: ee.Image(img).addBands(ee.Image(img).pow(2).log10().multiply(10).subtract(83), overwrite=True)
+            lambda img: ee.Image(img).addBands(
+                ee.Image(img).pow(ee.Number(2)).log10().multiply(ee.Number(10)).subtract(ee.Number(83)),
+                overwrite=True,
+            )
         )
 
         if self.selectedIndices:

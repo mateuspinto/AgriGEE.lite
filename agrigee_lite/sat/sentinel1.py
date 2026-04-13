@@ -109,9 +109,9 @@ class Sentinel1GRD(RadarSatellite):
         border_pixels_to_erode: float = 1,
         min_area_to_keep_border: int = 35000,
     ):
-        bands = sorted({"vv", "vh"}) if bands is None else sorted(bands)
+        bands_: list[str] = sorted({"vv", "vh"}) if bands is None else sorted(bands)
 
-        indices = [] if indices is None else sorted(indices)
+        indices_: list[str] = [] if indices is None else sorted(indices)
 
         super().__init__()
 
@@ -131,11 +131,11 @@ class Sentinel1GRD(RadarSatellite):
         # original → product band
         self.availableBands: dict[str, str] = {"vv": "VV", "vh": "VH"}
 
-        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands_)]
 
-        self.selectedIndices: list[str] = [
+        self.selectedIndices = [
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
-            for n, indice_name in enumerate(indices)
+            for n, indice_name in enumerate(indices_)
         ]
 
         self.toDownloadSelectors = [numeral_band_name for _, numeral_band_name in self.selectedBands] + [
@@ -158,7 +158,7 @@ class Sentinel1GRD(RadarSatellite):
             Filtered Sentinel-1 image
         """
 
-        edge = img.lt(-30.0)
+        edge = img.lt(ee.Number(-30.0))
         valid = img.mask().And(edge.Not())
         return img.updateMask(valid)
 

@@ -14,7 +14,7 @@ from topojson import Topology
 from tqdm.std import tqdm
 
 
-def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> list[list[int]]:
+def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> list[np.ndarray]:
     """
     Build a quadtree iteratively to cluster geometries into groups of max_size.
 
@@ -56,7 +56,7 @@ def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> lis
     return leaves
 
 
-def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) -> list[list[int]]:
+def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) -> list[np.ndarray]:
     """
     Build a quadtree recursively to cluster geometries into groups of max_size.
 
@@ -128,6 +128,7 @@ def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:
     # ---------------------------------------------------------------
     topo = Topology(unique_gdf[["geometry"]], prequantize=False)
     topo = topo.toposimplify(tol, prevent_oversimplify=True)
+    assert topo is not None
     simplified_unique = topo.to_gdf()
 
     # topo.to_gdf() returns rows in the same order, so align keys back
@@ -202,6 +203,7 @@ def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoD
 
     unique_cluster_ids = gdf["cluster_id"].unique()
 
+    new_geoms: dict = {}
     with concurrent.futures.ProcessPoolExecutor() as executor:
         futures = {
             executor.submit(_simplify_cluster, gdf[gdf.cluster_id == cluster_id][["geometry"]], cluster_id): cluster_id
@@ -214,8 +216,11 @@ def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoD
             desc="Simplifying clusters",
             smoothing=0.5,
         ):
-            cluster_id, simplified_geom = future.result()
-            gdf.loc[gdf["cluster_id"] == cluster_id, "geometry"] = simplified_geom.values
+            _cluster_id, simplified_geom = future.result()
+            new_geoms.update(simplified_geom.to_dict())
+
+    crs = gdf.crs
+    gdf = gdf.set_geometry(gpd.GeoSeries(new_geoms, crs=crs).reindex(gdf.index))
 
     return gdf
 
@@ -277,7 +282,10 @@ def log_dict_function_call_summary(ignore: list[str] | None = None) -> dict[str,
     dict
         Dictionary mapping function name to argument values.
     """
-    frame = inspect.currentframe().f_back
+    _current = inspect.currentframe()
+    assert _current is not None
+    frame = _current.f_back
+    assert frame is not None
     func_name = frame.f_code.co_name
     args, _, _, values = inspect.getargvalues(frame)
     ignore = ignore or []

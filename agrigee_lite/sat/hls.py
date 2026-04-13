@@ -128,19 +128,19 @@ class HLSSentinel2(OpticalSatellite):
             "swir2": "B12",
         }
 
-        bands = (
+        bands_: list[str] = (
             ["coastal", "blue", "green", "red", "re1", "re2", "re3", "nir", "re4", "swir1", "swir2"]
             if bands is None
             else sorted(bands)
         )
 
-        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands_)]
 
-        indices = [] if indices is None else sorted(indices)
+        indices_: list[str] = [] if indices is None else sorted(indices)
 
-        self.selectedIndices: list[str] = [
+        self.selectedIndices = [
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
-            for n, indice_name in enumerate(indices)
+            for n, indice_name in enumerate(indices_)
         ]
 
         self.use_quality_mask = use_quality_mask
@@ -356,19 +356,19 @@ class HLSLandsat(OpticalSatellite):
             "tirs2": "B11",
         }
 
-        bands = (
+        bands_: list[str] = (
             ["coastal", "blue", "green", "red", "nir", "swir1", "swir2", "tirs1", "tirs2"]
             if bands is None
             else sorted(bands)
         )
 
-        indices = [] if indices is None else sorted(indices)
+        indices_: list[str] = [] if indices is None else sorted(indices)
 
-        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands_)]
 
-        self.selectedIndices: list[str] = [
+        self.selectedIndices = [
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
-            for n, indice_name in enumerate(indices)
+            for n, indice_name in enumerate(indices_)
         ]
 
         self.use_quality_mask = use_quality_mask

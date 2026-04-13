@@ -49,7 +49,7 @@ class WRBSoilClasses(SingleImageSatellite):
             29: {"label": "Vertisols", "color": "#9e567c"},
         }
 
-    def image(self, _: ee.Feature) -> ee.Image:
+    def image(self, ee_feature: ee.Feature) -> ee.Image:
         return ee.Image(self.imageName).select("b1").rename("soil_class")
 
     def compute(
@@ -73,7 +73,7 @@ class WRBSoilClasses(SingleImageSatellite):
                 reducer=ee.Reducer.count(),
                 geometry=geometry,
                 scale=self.pixelSize,
-                maxPixels=subsampling_max_pixels,
+                maxPixels=int(subsampling_max_pixels),
                 bestEffort=True,
             )
             .getNumber("constant")
@@ -91,7 +91,7 @@ class WRBSoilClasses(SingleImageSatellite):
                     reducer=ee.Reducer.count(),
                     geometry=geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .getNumber("constant")

@@ -1,3 +1,6 @@
+import logging
+
+from agrigee_lite.cache import clear_cache, init_cache, print_cache_status
 from agrigee_lite.ee_utils import ee_get_tasks_status as get_all_tasks
 from agrigee_lite.ee_utils import ee_quick_start
 from agrigee_lite.misc import get_sample_gdf, quadtree_clustering, random_points_from_gdf
@@ -9,6 +12,7 @@ from . import (
 )
 
 __all__ = [
+    "clear_cache",
     "ee_quick_start",
     "get",
     "get_all_tasks",
@@ -19,4 +23,6 @@ __all__ = [
     "vis",
 ]
 
+init_cache()
+print_cache_status()
 ee_quick_start()

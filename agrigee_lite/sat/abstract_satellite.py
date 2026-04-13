@@ -5,13 +5,13 @@ from agrigee_lite.vegetation_indices import VEGETATION_INDICES
 
 class AbstractSatellite:
     def __init__(self) -> None:
-        self.startDate = ""
-        self.endDate = ""
-        self.shortName = "IDoNotExist"
+        self.startDate: str = ""
+        self.endDate: str = ""
+        self.shortName: str = "IDoNotExist"
         self.availableBands: dict[str, str] = {}
         self.selectedBands: list[tuple[str, str]] = []
-        self.selectedIndices: list[str] = []
-        self.imageCollectionName = ""
+        self.selectedIndices: list[tuple[str, str, str]] = []
+        self.imageCollectionName: str = ""
         self.pixelSize: int = 0
         self.toDownloadSelectors: list[str] = []
 
@@ -66,3 +66,6 @@ class SingleImageSatellite(AbstractSatellite):
     def __init__(self) -> None:
         super().__init__()
         self.dateType = "singleImage"
+
+    def image(self, ee_feature: ee.Feature) -> ee.Image:
+        return ee.Image()

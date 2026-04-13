@@ -97,9 +97,9 @@ class ModisDaily(OpticalSatellite):
         border_pixels_to_erode: float = 0.5,
         min_area_to_keep_border: int = 190_000,
     ) -> None:
-        bands = sorted({"red", "nir"}) if bands is None else sorted(bands)
+        bands_: list[str] = sorted({"red", "nir"}) if bands is None else sorted(bands)
 
-        indices = [] if indices is None else sorted(indices)
+        indices_: list[str] = [] if indices is None else sorted(indices)
 
         super().__init__()
 
@@ -118,11 +118,11 @@ class ModisDaily(OpticalSatellite):
             "nir": "sur_refl_b02",
         }
 
-        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands_)]
 
-        self.selectedIndices: list[str] = [
+        self.selectedIndices = [
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
-            for n, indice_name in enumerate(indices)
+            for n, indice_name in enumerate(indices_)
         ]
 
         self.useCloudMask = use_cloud_mask
@@ -168,7 +168,7 @@ class ModisDaily(OpticalSatellite):
         modis_imgc = terra.merge(aqua)
 
         modis_imgc = modis_imgc.map(
-            lambda img: ee.Image(img).addBands(ee.Image(img).add(100).divide(16_100), overwrite=True)
+            lambda img: ee.Image(img).addBands(ee.Image(img).add(ee.Number(100)).divide(ee.Number(16_100)), overwrite=True)
         )
 
         if self.selectedIndices:
@@ -299,9 +299,9 @@ class Modis8Days(OpticalSatellite):
         border_pixels_to_erode: float = 0.5,
         min_area_to_keep_border: int = 190_000,
     ) -> None:
-        bands = sorted({"red", "nir"}) if bands is None else sorted(bands)
+        bands_: list[str] = sorted({"red", "nir"}) if bands is None else sorted(bands)
 
-        indices = [] if indices is None else sorted(indices)
+        indices_: list[str] = [] if indices is None else sorted(indices)
 
         super().__init__()
 
@@ -318,11 +318,11 @@ class Modis8Days(OpticalSatellite):
             "nir": "sur_refl_b02",
         }
 
-        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands_)]
 
-        self.selectedIndices: list[str] = [
+        self.selectedIndices = [
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
-            for n, indice_name in enumerate(indices)
+            for n, indice_name in enumerate(indices_)
         ]
 
         self.useCloudMask = use_cloud_mask
@@ -365,7 +365,7 @@ class Modis8Days(OpticalSatellite):
         modis_imgc = terra.merge(aqua)
 
         modis_imgc = modis_imgc.map(
-            lambda img: ee.Image(img).addBands(ee.Image(img).add(100).divide(16_100), overwrite=True)
+            lambda img: ee.Image(img).addBands(ee.Image(img).add(ee.Number(100)).divide(ee.Number(16_100)), overwrite=True)
         )
 
         if self.selectedIndices:

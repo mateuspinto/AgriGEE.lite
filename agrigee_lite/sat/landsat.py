@@ -89,19 +89,16 @@ class AbstractLandsat(OpticalSatellite):
         if use_sr and use_pan_sharpening:
             raise ValueError("Pan-sharpening is only available for TOA products (use_sr=False).")  # noqa: TRY003
 
-        bands = (
+        bands_: list[str] = (
             (sorted(self._DEFAULT_BANDS_BOA) if use_sr else sorted(self._DEFAULT_BANDS_TOA))
             if bands is None
             else sorted(bands)
         )
 
-        if use_pan_sharpening and "pan" not in bands:
+        if use_pan_sharpening and "pan" not in bands_:
             raise ValueError("When using pan-sharpening, the 'pan' band must be included in the selected bands.")  # noqa: TRY003
 
-        indices = [] if indices is None else sorted(indices)
-
-        if indices is None:
-            indices = []
+        indices_: list[str] = [] if indices is None else sorted(indices)
 
         self.useSr = use_sr
         self.tier = tier
@@ -117,11 +114,11 @@ class AbstractLandsat(OpticalSatellite):
         self.availableBands = sr_band_map if use_sr else toa_band_map
         self.availableBands["cloudq"] = "QA_PIXEL"
 
-        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands_)]
 
-        self.selectedIndices: list[str] = [
+        self.selectedIndices = [
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
-            for n, indice_name in enumerate(indices)
+            for n, indice_name in enumerate(indices_)
         ]
 
         self.useCloudMask = use_cloud_mask

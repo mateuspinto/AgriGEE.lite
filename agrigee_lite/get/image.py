@@ -3,6 +3,7 @@ import logging
 import pathlib
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, cast
 
 import ee
 import numpy as np
@@ -65,7 +66,7 @@ def download_multiple_images(  # noqa: C901
     )
     ee_expression = satellite.imageCollection(ee_feature)
 
-    metadata_dict: dict[str, str] = {}
+    metadata_dict: dict[str, Any] = {}
     metadata_dict |= log_dict_function_call_summary([
         "geometry",
         "start_date",
@@ -90,8 +91,8 @@ def download_multiple_images(  # noqa: C901
     threshold = ee.Number(max_valid_pixels).multiply(invalid_images_threshold)
     ee_expression = ee_expression.filter(ee.Filter.gte("ZZ_USER_VALID_PIXELS", threshold))
 
-    image_names = ee_expression.aggregate_array("ZZ_USER_TIME_DUMMY").getInfo()
-    image_indexes = ee_expression.aggregate_array("system:index").getInfo()
+    image_names: list[str] = cast(list[str], ee_expression.aggregate_array("ZZ_USER_TIME_DUMMY").getInfo())
+    image_indexes: list[str] = cast(list[str], ee_expression.aggregate_array("system:index").getInfo())
 
     # Filter images by indices if provided
     if image_indices is not None:
@@ -201,7 +202,7 @@ def download_single_image(
 
 
 async def _resolve_ee_image_collection(
-    ee_expression: ee.FeatureCollection,
+    ee_expression: ee.ImageCollection,
     invalid_images_threshold: float,
     image_indices: list[int] | None,
 ) -> tuple[list[str], list[str]]:
@@ -210,10 +211,12 @@ async def _resolve_ee_image_collection(
     threshold = ee.Number(max_valid_pixels).multiply(invalid_images_threshold)
     ee_expression = ee_expression.filter(ee.Filter.gte("ZZ_USER_VALID_PIXELS", threshold))
 
-    image_names, image_indexes = await asyncio.gather(
+    _gathered = await asyncio.gather(
         asyncio.to_thread(ee_expression.aggregate_array("ZZ_USER_TIME_DUMMY").getInfo),
         asyncio.to_thread(ee_expression.aggregate_array("system:index").getInfo),
     )
+    image_names: list[str] = cast(list[str], _gathered[0])
+    image_indexes: list[str] = cast(list[str], _gathered[1])
 
     if image_indices is not None:
         valid_indices = [i for i in image_indices if 0 <= i < len(image_indexes)]
@@ -227,7 +230,7 @@ async def _resolve_ee_image_collection(
 
 async def _fetch_and_queue_image(
     chunk_index: int,
-    ee_expression: ee.FeatureCollection,
+    ee_expression: ee.ImageCollection,
     image_names: list[str],
     image_indexes: list[str],
     ee_geometry: ee.Geometry,
@@ -274,7 +277,7 @@ async def download_multiple_images_async(
     ee_feature = ee.Feature(ee_geometry, {"s": start_date, "e": end_date, "0": 1})
     ee_expression = satellite.imageCollection(ee_feature)
 
-    metadata_dict: dict[str, str] = {}
+    metadata_dict: dict[str, Any] = {}
     metadata_dict |= log_dict_function_call_summary([
         "geometry",
         "start_date",

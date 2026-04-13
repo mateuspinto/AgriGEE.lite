@@ -88,7 +88,8 @@ def ee_map_valid_pixels(img: ee.Image, ee_geometry: ee.Geometry, pixel_size: int
     mask = ee.Image(img).select([0]).gt(0)
 
     valid_pixels = ee.Number(
-        mask.rename("valid")
+        mask
+        .rename("valid")
         .reduceRegion(
             reducer=ee.Reducer.count(),
             geometry=ee_geometry,
@@ -189,11 +190,13 @@ def ee_gdf_to_feature_collection(
         with open(geo_json, encoding="utf-8") as f:
             json_dict = json.load(f)
 
-        if json_dict["type"] == "FeatureCollection":
-            for feature in json_dict["features"]:
-                if feature["geometry"]["type"] != "Point":
-                    feature["geometry"]["geodesic"] = True
-            features = ee.FeatureCollection(json_dict)
+        if json_dict["type"] != "FeatureCollection":
+            raise ValueError(f"Expected a GeoJSON FeatureCollection, got '{json_dict['type']}'")
+
+        for feature in json_dict["features"]:
+            if feature["geometry"]["type"] != "Point":
+                feature["geometry"]["geodesic"] = True
+        features = ee.FeatureCollection(json_dict)
     finally:
         os.remove(geo_json)
 
@@ -402,10 +405,7 @@ def ee_get_reducers(reducer_names: set[str] | None = None) -> ee.Reducer:  # noq
     >>> # Multiple reducers including percentiles
     >>> reducer = ee_get_reducers({"mean", "std", "p10", "p90"})
     """
-    if reducer_names is None:
-        reducer_names = ["median"]
-
-    names = sorted([n.lower() for n in reducer_names])
+    names: list[str] = ["median"] if reducer_names is None else sorted([n.lower() for n in reducer_names])
 
     pct_vals = sorted({int(n[1:]) for n in names if n.startswith("p")})
 
@@ -491,7 +491,8 @@ def ee_filter_img_collection_invalid_pixels(
     )
 
     ee_img_collection = (
-        ee_img_collection.map(lambda img: img.set("ZZ_USER_TIME_DUMMY", img.date().format("YYYY-MM-dd")))
+        ee_img_collection
+        .map(lambda img: img.set("ZZ_USER_TIME_DUMMY", img.date().format("YYYY-MM-dd")))
         .sort("ZZ_USER_TIME_DUMMY")
         .distinct("ZZ_USER_TIME_DUMMY")
     )
@@ -683,44 +684,36 @@ def ee_quick_start() -> None:
     GOOGLE_APPLICATION_CREDENTIALS environment variable for use Google Cloud Storage.
     """
 
-    os.environ["GEE_KEY"] = "/home/m/KEYS/GEE/pintodasilvamateus.json"
-    ee.Initialize(
-        ee.ServiceAccountCredentials(
-            "/home/m/KEYS/GEE/pintodasilvamateus.json", "/home/m/KEYS/GEE/pintodasilvamateus.json"
-        ),
-        opt_url="https://earthengine-highvolume.googleapis.com",
-    )
+    gee_vars = ["GEE_KEY", "GEE_KEY_MULTIPLE_ACCOUNTS", "GOOGLE_APPLICATION_CREDENTIALS"]
+    print("GEE environment variables:")
+    for var in gee_vars:
+        value = os.environ.get(var)
+        print(f"  {var} = {value!r}")
 
-    # gee_vars = ["GEE_KEY", "GEE_KEY_MULTIPLE_ACCOUNTS", "GOOGLE_APPLICATION_CREDENTIALS"]
-    # print("GEE environment variables:")
-    # for var in gee_vars:
-    #     value = os.environ.get(var)
-    #     print(f"  {var} = {value!r}")
+    if not ee_is_authenticated():
+        if "GEE_KEY" in os.environ:
+            gee_key = os.environ["GEE_KEY"]
 
-    # if not ee_is_authenticated():
-    #     if "GEE_KEY" in os.environ:
-    #         gee_key = os.environ["GEE_KEY"]
+            if gee_key.endswith(".json"):  # with service account
+                credentials = ee.ServiceAccountCredentials(gee_key, gee_key)
+                ee.Initialize(credentials, opt_url="https://earthengine-highvolume.googleapis.com")
 
-    #         if gee_key.endswith(".json"):  # with service account
-    #             credentials = ee.ServiceAccountCredentials(gee_key, gee_key)
-    #             ee.Initialize(credentials, opt_url="https://earthengine-highvolume.googleapis.com")
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gee_key
 
-    #             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gee_key
+                with open(gee_key) as f:
+                    key_data = json.load(f)
+                    print(
+                        f"Earth Engine initialized successfully using AgriGEE.lite with service account. Project: {key_data.get('project_id', 'Unknown')}, Email: {key_data.get('client_email', 'Unknown')}."
+                    )
 
-    #             with open(gee_key) as f:
-    #                 key_data = json.load(f)
-    #                 print(
-    #                     f"Earth Engine initialized successfully using AgriGEE.lite with service account. Project: {key_data.get('project_id', 'Unknown')}, Email: {key_data.get('client_email', 'Unknown')}."
-    #                 )
+            else:  # using token
+                ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project=gee_key)
+                print(f"Earth Engine initialized successfully using AgriGEE.lite using token (project={gee_key}).")
 
-    #         else:  # using token
-    #             ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project=gee_key)
-    #             print(f"Earth Engine initialized successfully using AgriGEE.lite using token (project={gee_key}).")
-
-    #     else:
-    #         print(
-    #             "Earth Engine not initialized. Please set the GEE_KEY environment variable to your Earth Engine key. You can find more information in the AgriGEE.lite documentation."
-    #         )
+        else:
+            print(
+                "Earth Engine not initialized. Please set the GEE_KEY environment variable to your Earth Engine key. You can find more information in the AgriGEE.lite documentation."
+            )
 
 
 def get_number_of_available_service_accounts() -> int:

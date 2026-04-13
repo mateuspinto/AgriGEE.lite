@@ -124,7 +124,7 @@ class ANADEM(SingleImageSatellite):
         return selectors
 
     def image(self, ee_feature: ee.Feature) -> ee.Image:
-        image = ee.Image(self.imageName).updateMask(ee.Image(self.imageName).neq(-9999))
+        image = ee.Image(self.imageName).updateMask(ee.Image(self.imageName).neq(ee.Number(-9999)))
 
         requested_bands = [b for b, _ in self.selectedBands]
 
@@ -168,7 +168,7 @@ class ANADEM(SingleImageSatellite):
                     reducer=ee.Reducer.mean(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .get("elevation")
@@ -196,7 +196,7 @@ class ANADEM(SingleImageSatellite):
                     reducer=ee.Reducer.count(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .getNumber("constant")
@@ -210,7 +210,7 @@ class ANADEM(SingleImageSatellite):
                         reducer=ee.Reducer.count(),
                         geometry=ee_geometry,
                         scale=self.pixelSize,
-                        maxPixels=subsampling_max_pixels,
+                        maxPixels=int(subsampling_max_pixels),
                         bestEffort=True,
                     )
                     .getNumber("constant")
@@ -241,7 +241,7 @@ class ANADEM(SingleImageSatellite):
                     reducer=ee.Reducer.count(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .getNumber("constant")
@@ -255,7 +255,7 @@ class ANADEM(SingleImageSatellite):
                         reducer=ee.Reducer.count(),
                         geometry=ee_geometry,
                         scale=self.pixelSize,
-                        maxPixels=subsampling_max_pixels,
+                        maxPixels=int(subsampling_max_pixels),
                         bestEffort=True,
                     )
                     .getNumber("constant")
@@ -398,7 +398,7 @@ class CopernicusDEM(SingleImageSatellite):
         return selectors
 
     def image(self, ee_feature: ee.Feature) -> ee.Image:
-        image = ee.Image(self.imageName).updateMask(ee.Image(self.imageName).neq(-32768))
+        image = ee.Image(self.imageName).updateMask(ee.Image(self.imageName).neq(ee.Number(-32768)))
 
         requested_bands = [b for b, _ in self.selectedBands]
 
@@ -442,7 +442,7 @@ class CopernicusDEM(SingleImageSatellite):
                     reducer=ee.Reducer.mean(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .get("elevation")
@@ -470,7 +470,7 @@ class CopernicusDEM(SingleImageSatellite):
                     reducer=ee.Reducer.count(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .getNumber("constant")
@@ -484,7 +484,7 @@ class CopernicusDEM(SingleImageSatellite):
                         reducer=ee.Reducer.count(),
                         geometry=ee_geometry,
                         scale=self.pixelSize,
-                        maxPixels=subsampling_max_pixels,
+                        maxPixels=int(subsampling_max_pixels),
                         bestEffort=True,
                     )
                     .getNumber("constant")
@@ -515,7 +515,7 @@ class CopernicusDEM(SingleImageSatellite):
                     reducer=ee.Reducer.count(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .getNumber("constant")
@@ -529,7 +529,7 @@ class CopernicusDEM(SingleImageSatellite):
                         reducer=ee.Reducer.count(),
                         geometry=ee_geometry,
                         scale=self.pixelSize,
-                        maxPixels=subsampling_max_pixels,
+                        maxPixels=int(subsampling_max_pixels),
                         bestEffort=True,
                     )
                     .getNumber("constant")

@@ -61,8 +61,8 @@ class NAIP(OpticalSatellite):
         bands: set[str] | None = None,
         indices: set[str] | None = None,
     ):
-        bands = sorted({"blue", "green", "red", "nir"}) if bands is None else sorted(bands)
-        indices = [] if indices is None else sorted(indices)
+        bands_: list[str] = sorted({"blue", "green", "red", "nir"}) if bands is None else sorted(bands)
+        indices_: list[str] = [] if indices is None else sorted(indices)
 
         super().__init__()
 
@@ -74,11 +74,11 @@ class NAIP(OpticalSatellite):
 
         self.availableBands: dict[str, str] = {"blue": "B", "green": "G", "red": "R", "nir": "N"}
 
-        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands_)]
 
-        self.selectedIndices: list[str] = [
+        self.selectedIndices = [
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
-            for n, indice_name in enumerate(indices)
+            for n, indice_name in enumerate(indices_)
         ]
 
         self.toDownloadSelectors = [numeral_band_name for _, numeral_band_name in self.selectedBands] + [

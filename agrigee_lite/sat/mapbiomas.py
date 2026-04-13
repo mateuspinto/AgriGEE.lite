@@ -91,8 +91,8 @@ class MapBiomas(DataSourceSatellite):
         self.endDate = "2024-01-01"
         self.shortName = "mapbiomasmajclass"
         self.selectedBands = [
-            (None, "10_class"),
-            (None, "11_percent"),
+            ("", "10_class"),
+            ("", "11_percent"),
         ]
 
         self.classes = {
@@ -157,6 +157,8 @@ class MapBiomas(DataSourceSatellite):
         mb_image = ee.Image(self.imageAsset)
         mb_image = ee_map_valid_pixels(mb_image, ee_geometry, self.pixelSize)
 
+        subsampling_max_pixels_: float = subsampling_max_pixels if subsampling_max_pixels is not None else 1e8
+
         ee_start = ee.Feature(ee_feature).get("s")
         ee_end = ee.Feature(ee_feature).get("e")
         start_year = ee.Date(ee_start).get("year")
@@ -175,7 +177,7 @@ class MapBiomas(DataSourceSatellite):
                 reducer=ee.Reducer.mode(),
                 geometry=ee_geometry,
                 scale=self.pixelSize,
-                maxPixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
+                maxPixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels_, self.pixelSize),
                 bestEffort=True,
             )
             clazz = ee.Number(mode_dict.get(year_str)).round()
@@ -186,7 +188,7 @@ class MapBiomas(DataSourceSatellite):
                     reducer=ee.Reducer.mean(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels, self.pixelSize),
+                    maxPixels=ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels_, self.pixelSize),
                     bestEffort=True,
                 )
                 .get(year_str)
@@ -204,7 +206,7 @@ class MapBiomas(DataSourceSatellite):
                 },
             )
 
-            stats = stats.set("99_validPixelsCount", mb_image.get("ZZ_USER_VALID_PIXELS"))
+            stats = ee.Feature(stats.set("99_validPixelsCount", mb_image.get("ZZ_USER_VALID_PIXELS")))
 
             return stats
 

@@ -8,14 +8,12 @@ from agrigee_lite.get.sits import download_multiple_sits_chunks_gdrive as multip
 from agrigee_lite.get.sits import download_single_sits as sits
 
 __all__ = [
-    # sync
+    "async_images",
+    "async_multiple_sits",
     "image",
     "images",
     "multiple_sits",
     "multiple_sits_gcs",
     "multiple_sits_gdrive",
     "sits",
-    # async (only functions that use aria2 have an async variant)
-    "async_images",
-    "async_multiple_sits",
 ]

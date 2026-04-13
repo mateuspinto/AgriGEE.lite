@@ -7,6 +7,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
+from typing import Any
 
 import ee
 import geopandas as gpd
@@ -15,6 +16,7 @@ import pandera.pandas as pa
 from shapely import MultiPolygon, Point, Polygon
 from tqdm.std import tqdm
 
+from agrigee_lite.cache.spatialite_cache import fetch_sits, get_engine, store_sits
 from agrigee_lite.downloader import DownloaderStrategy
 from agrigee_lite.ee_utils import (
     ee_gdf_to_feature_collection,
@@ -276,6 +278,13 @@ def download_single_sits(
             f"({satellite.startDate} to {satellite.endDate})"
         )
 
+    _engine = get_engine()
+    if _engine is not None:
+        cached = fetch_sits(_engine, geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels)
+        if cached is not None:
+            logging.debug("Cache hit: %s %s→%s", satellite.shortName, start_date, end_date)
+            return cached
+
     ee_feature = ee.Feature(
         geometry.__geo_interface__,
         {"s": start_date, "e": end_date, "0": 0},
@@ -284,6 +293,9 @@ def download_single_sits(
 
     sits_df = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"})
     sits_df = prepare_output_df(sits_df, satellite, "IGNORED")
+
+    if _engine is not None:
+        store_sits(_engine, sits_df, geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels)
 
     return sits_df
 
@@ -308,7 +320,27 @@ def download_multiple_sits(  # noqa: C901
         gdf, satellite, original_index_column_name, 1000, start_date_column_name, end_date_column_name
     )
 
-    metadata_dict: dict[str, str] = {}
+    # --- SpatiaLite cache: check per feature, keep only uncached rows ---
+    _engine = get_engine()
+    cached_frames: list[pd.DataFrame] = []
+    if _engine is not None and not force_redownload and len(gdf) > 0:
+        uncached_positions: list[Any] = []
+        for pos, row in gdf.iterrows():
+            s = str(row[start_date_column_name])[:10]
+            e = str(row[end_date_column_name])[:10]
+            hit = fetch_sits(_engine, row.geometry, s, e, satellite, reducers, subsampling_max_pixels)
+            if hit is not None:
+                hit[original_index_column_name] = row[original_index_column_name]
+                cached_frames.append(hit)
+            else:
+                uncached_positions.append(pos)
+        gdf = gdf.loc[uncached_positions].reset_index(drop=True)
+        if gdf.empty:
+            logging.debug("Cache: all %d features already cached.", len(cached_frames))
+            return pd.concat(cached_frames, ignore_index=True) if cached_frames else pd.DataFrame()
+    # --- end cache check ---
+
+    metadata_dict: dict[str, Any] = {}
     metadata_dict |= log_dict_function_call_summary(["gdf", "satellite", "max_parallel_downloads", "force_redownload"])
     metadata_dict |= satellite.log_dict()
 
@@ -341,7 +373,7 @@ def download_multiple_sits(  # noqa: C901
         bar_format="{percentage:3.0f}% | {n_fmt}/{total_fmt} | [{elapsed}<{remaining}, {rate_fmt}, {postfix}]",
     )
 
-    def fetch_chunk_url(chunk_id):
+    def fetch_chunk_url(chunk_id: int) -> tuple[int, str]:
         sub = gdf.iloc[chunk_id * chunksize : (chunk_id + 1) * chunksize]
         ee_expression = build_ee_expression(
             sub,
@@ -360,83 +392,128 @@ def download_multiple_sits(  # noqa: C901
         return chunk_id, url
 
     to_download_chunks = list(initial_download_chunks)
-    not_sent_to_server = []
-
-    def update_pbar():
-        pbar.n = downloader.num_completed_downloads * chunksize
-        pbar.refresh()
-
-        active_by_account = {acc: len(chunks) for acc, chunks in account_active_chunks.items() if len(chunks) > 0}
-
-        pbar.set_postfix({
-            "gee_er": len(not_sent_to_server),
-            "ar2_er": downloader.num_downloads_with_error,
-            **{f"{acc}": count for acc, count in active_by_account.items()},
-        })
+    not_sent_to_server: list[int | str] = []
 
     num_accounts = get_number_of_available_service_accounts()
     current_account_idx = 0
-    account_active_chunks = defaultdict(set)
+    account_active_chunks: dict[int, set[int | str]] = defaultdict(set)
+
+    def update_pbar(snap: dict[int | str, Any]) -> None:
+        stats = downloader.stats_from_snapshot(snap)
+        pbar.n = stats["completed"] * chunksize
+        pbar.refresh()
+        active_by_account = {acc: len(chunks) for acc, chunks in account_active_chunks.items() if chunks}
+        pbar.set_postfix({
+            "gee_er": len(not_sent_to_server),
+            "ar2_er": stats["errors"],
+            **{f"{acc}": count for acc, count in active_by_account.items()},
+        })
 
     download_with_too_many_errors = 0
-    while (downloader.num_completed_downloads + download_with_too_many_errors) != len(initial_download_chunks):
-        failed_within_limit = downloader.get_failed_downloads_within_retry_limit(max_retries_per_chunk)
-        for chunk_id in failed_within_limit:
-            downloader.increment_retry_count(chunk_id)
+    # ThreadPoolExecutor lives for the entire download session — no per-batch
+    # creation/destruction overhead.
+    with ThreadPoolExecutor(max_workers=7) as executor:
+        while (True):
+            # Single RPC call covers all status checks this iteration.
+            snap = downloader._get_downloads_snapshot()
+            stats = downloader.stats_from_snapshot(snap)
 
-        if failed_within_limit or not_sent_to_server:
-            to_download_chunks = sorted(set(to_download_chunks) | set(failed_within_limit) | set(not_sent_to_server))
-            not_sent_to_server = []
+            if (stats["completed"] + download_with_too_many_errors) == len(initial_download_chunks):
+                break
 
-        login_with_service_account_n(current_account_idx)
+            failed_within_limit: list[int | str] = [
+                my_id
+                for my_id, d in snap.items()
+                if d.status == "error" and downloader.retry_count.get(my_id, 0) < max_retries_per_chunk
+            ]
+            for chunk_id in failed_within_limit:
+                downloader.increment_retry_count(chunk_id)
 
-        current_active_set = account_active_chunks[current_account_idx]
-        finished_or_failed = set()
-        for cid in current_active_set:
-            if (output_path / f"{cid}.csv").exists() or cid in failed_within_limit or cid in not_sent_to_server:
-                finished_or_failed.add(cid)
-        current_active_set -= finished_or_failed
+            if failed_within_limit or not_sent_to_server:
+                to_download_chunks = sorted(
+                    set(to_download_chunks) | set(failed_within_limit) | set(not_sent_to_server)
+                )
+                not_sent_to_server = []
 
-        available_slots = max_parallel_downloads - len(current_active_set)
+            # Only switch accounts and dispatch when there are chunks waiting.
+            # While aria2 is draining the queue, skip login and account rotation
+            # entirely to avoid pointless credential churn.
+            if to_download_chunks:
+                login_with_service_account_n(current_account_idx)
 
-        if available_slots > 0 and to_download_chunks:
-            batch_size = min(available_slots, len(to_download_chunks))
-            current_batch = to_download_chunks[:batch_size]
-            to_download_chunks = to_download_chunks[batch_size:]
+                # Retire finished/failed chunks from this account's active set.
+                current_active_set = account_active_chunks[current_account_idx]
+                current_active_set -= {
+                    cid for cid in current_active_set
+                    if (output_path / f"{cid}.csv").exists()
+                    or cid in failed_within_limit
+                    or cid in not_sent_to_server
+                }
 
-            new_downloads = []
-            with ThreadPoolExecutor(max_workers=7) as executor:
-                future_to_chunk = {executor.submit(fetch_chunk_url, cid): cid for cid in current_batch}
+                available_slots = max_parallel_downloads - len(current_active_set)
 
-                for future in as_completed(future_to_chunk):
-                    cid = future_to_chunk[future]
-                    try:
-                        new_downloads.append(future.result())
-                    except KeyboardInterrupt:
-                        pbar.close()
-                        raise
-                    except Exception:
-                        logging.exception(output_path, "- Chunk id =", cid, " - Failed to get download URL.")
-                        not_sent_to_server.append(cid)
+                if available_slots > 0:
+                    batch_size = min(available_slots, len(to_download_chunks))
+                    current_batch = to_download_chunks[:batch_size]
+                    to_download_chunks = to_download_chunks[batch_size:]
 
-            if new_downloads:
-                downloader.add_download(new_downloads)
-                added_ids = {d[0] for d in new_downloads}
-                account_active_chunks[current_account_idx].update(added_ids)
+                    new_downloads: list[tuple[int | str, str]] = []
+                    future_to_chunk = {executor.submit(fetch_chunk_url, int(cid)): cid for cid in current_batch}
 
-        current_account_idx = (current_account_idx + 1) % num_accounts
-        update_pbar()
-        download_with_too_many_errors = downloader.get_num_failed_downloads_exceeding_retry_limit(max_retries_per_chunk)
-        time.sleep(0.5)
+                    for future in as_completed(future_to_chunk):
+                        cid = future_to_chunk[future]
+                        try:
+                            new_downloads.append(future.result())
+                        except KeyboardInterrupt:
+                            pbar.close()
+                            raise
+                        except Exception:
+                            logging.exception(output_path, "- Chunk id =", cid, " - Failed to get download URL.")
+                            not_sent_to_server.append(cid)
+
+                    if new_downloads:
+                        downloader.add_download(new_downloads)
+                        account_active_chunks[current_account_idx].update(d[0] for d in new_downloads)
+
+                current_account_idx = (current_account_idx + 1) % num_accounts
+                time.sleep(0.5)
+            else:
+                # All chunks are in-flight with aria2 — just poll at a slower
+                # cadence without touching accounts.
+                time.sleep(2.0)
+
+            download_with_too_many_errors = sum(
+                1 for my_id, d in snap.items()
+                if d.status == "error" and downloader.retry_count.get(my_id, 0) >= max_retries_per_chunk
+            )
+            update_pbar(snap)
 
     pbar.close()
-    whole_result_df = pd.DataFrame()
-    for f in tqdm(sorted(output_path.glob("*.csv"), key=lambda x: int(x.stem)), desc="Combining downloaded chunks"):
-        df = pd.read_csv(f)
-        if len(df) > 0:
-            whole_result_df = pd.concat([whole_result_df, df], ignore_index=True)
+
+    csv_files = sorted(output_path.glob("*.csv"), key=lambda x: int(x.stem))
+    frames = [pd.read_csv(f) for f in tqdm(csv_files, desc="Combining downloaded chunks") if f.stat().st_size > 0]
+    whole_result_df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
     whole_result_df = prepare_output_df(whole_result_df, satellite, original_index_column_name)
+
+    # --- SpatiaLite cache: persist newly downloaded data ---
+    if _engine is not None and not whole_result_df.empty:
+        for orig_idx, feature_df in whole_result_df.groupby(original_index_column_name, sort=False):
+            orig_row = gdf[gdf[original_index_column_name] == orig_idx].iloc[0]
+            store_sits(
+                _engine,
+                feature_df.drop(columns=[original_index_column_name]),
+                orig_row.geometry,
+                str(orig_row[start_date_column_name])[:10],
+                str(orig_row[end_date_column_name])[:10],
+                satellite,
+                reducers,
+                subsampling_max_pixels,
+            )
+    # --- end cache write ---
+
+    if cached_frames:
+        whole_result_df = pd.concat([pd.concat(cached_frames, ignore_index=True), whole_result_df], ignore_index=True)
 
     return whole_result_df
 
@@ -643,7 +720,7 @@ def download_multiple_sits_chunks_gcs(
         If wait is True, returns DataFrame with combined results.
         If wait is False, returns None.
     """
-    from smart_open import open
+    from smart_open import open  # pyright: ignore[reportMissingImports]
 
     if len(gdf) == 0:
         logging.warning("Empty GeoDataFrame, nothing to download")
@@ -731,7 +808,7 @@ def download_multiple_sits_chunks_gcs(
     hashname = create_gdf_hash(gdf, start_date_column_name, end_date_column_name)
 
     gcs_save_folder = f"agl/{satellite.shortName}_{hashname}"
-    metadata_dict: dict[str, str] = {}
+    metadata_dict: dict[str, Any] = {}
     metadata_dict |= log_dict_function_call_summary(["gdf", "satellite"])
     metadata_dict |= satellite.log_dict()
     metadata_dict["user"] = username
@@ -843,7 +920,7 @@ async def download_multiple_sits_async(
         gdf, satellite, original_index_column_name, 1000, start_date_column_name, end_date_column_name
     )
 
-    metadata_dict: dict[str, str] = {}
+    metadata_dict: dict[str, Any] = {}
     metadata_dict |= log_dict_function_call_summary(["gdf", "satellite", "max_parallel_downloads", "force_redownload"])
     metadata_dict |= satellite.log_dict()
 
@@ -878,7 +955,7 @@ async def download_multiple_sits_async(
         pbar.n = downloader.num_completed_downloads * chunksize
         pbar.refresh()
 
-    not_sent_to_server: list[int] = []
+    not_sent_to_server: list[Any] = []
     download_with_too_many_errors = 0
     initial_pending_count = len(pending_chunks)
     to_fetch = list(pending_chunks)
@@ -918,9 +995,9 @@ async def download_multiple_sits_async(
                 return_exceptions=True,
             )
 
-            new_downloads: list[tuple[int, str]] = []
+            new_downloads: list[tuple[int | str, str]] = []
             for cid, res in zip(batch, fetch_results, strict=False):
-                if isinstance(res, Exception):
+                if isinstance(res, BaseException):
                     logging.exception(f"{output_path} - Chunk {cid} - Failed to get URL.")
                     not_sent_to_server.append(cid)
                 else:
@@ -934,10 +1011,9 @@ async def download_multiple_sits_async(
         await asyncio.sleep(0.5)
 
     pbar.close()
-    whole_result_df = pd.DataFrame()
-    for f in tqdm(sorted(output_path.glob("*.csv"), key=lambda x: int(x.stem)), desc="Combining downloaded chunks"):
-        df = pd.read_csv(f)
-        if len(df) > 0:
-            whole_result_df = pd.concat([whole_result_df, df], ignore_index=True)
+
+    csv_files = sorted(output_path.glob("*.csv"), key=lambda x: int(x.stem))
+    frames = [pd.read_csv(f) for f in tqdm(csv_files, desc="Combining downloaded chunks") if f.stat().st_size > 0]
+    whole_result_df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
     return prepare_output_df(whole_result_df, satellite, original_index_column_name)

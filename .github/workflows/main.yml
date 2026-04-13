@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        pixi-env: ["py310", "py311", "py312", "py313"]
+        pixi-env: ["py311", "py312", "py313"]
       fail-fast: false
     defaults:
       run:
