@@ -292,8 +292,8 @@ class Modis8Days(OpticalSatellite):
 
     def __init__(
         self,
-        bands: list[str] | None = None,
-        indices: list[str] | None = None,
+        bands: set[str] | None = None,
+        indices: set[str] | None = None,
         use_cloud_mask: bool = True,
         min_valid_pixel_count: int = 2,
         border_pixels_to_erode: float = 0.5,
