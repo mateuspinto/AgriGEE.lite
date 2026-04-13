@@ -374,22 +374,28 @@ def download_multiple_sits(  # noqa: C901
     )
 
     def fetch_chunk_url(chunk_id: int) -> tuple[int, str]:
-        sub = gdf.iloc[chunk_id * chunksize : (chunk_id + 1) * chunksize]
-        ee_expression = build_ee_expression(
-            sub,
-            satellite,
-            reducers,
-            subsampling_max_pixels,
-            original_index_column_name,
-            start_date_column_name,
-            end_date_column_name,
-        )
-        url = ee_expression.getDownloadURL(
-            filetype="csv",
-            selectors=build_selectors(satellite, reducers),
-            filename=f"{chunk_id}",
-        )
-        return chunk_id, url
+        import socket
+        old_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(90)
+        try:
+            sub = gdf.iloc[chunk_id * chunksize : (chunk_id + 1) * chunksize]
+            ee_expression = build_ee_expression(
+                sub,
+                satellite,
+                reducers,
+                subsampling_max_pixels,
+                original_index_column_name,
+                start_date_column_name,
+                end_date_column_name,
+            )
+            url = ee_expression.getDownloadURL(
+                filetype="csv",
+                selectors=build_selectors(satellite, reducers),
+                filename=f"{chunk_id}",
+            )
+            return chunk_id, url
+        finally:
+            socket.setdefaulttimeout(old_timeout)
 
     to_download_chunks = list(initial_download_chunks)
     not_sent_to_server: list[int | str] = []
@@ -460,16 +466,22 @@ def download_multiple_sits(  # noqa: C901
                     new_downloads: list[tuple[int | str, str]] = []
                     future_to_chunk = {executor.submit(fetch_chunk_url, int(cid)): cid for cid in current_batch}
 
-                    for future in as_completed(future_to_chunk):
-                        cid = future_to_chunk[future]
-                        try:
-                            new_downloads.append(future.result())
-                        except KeyboardInterrupt:
-                            pbar.close()
-                            raise
-                        except Exception:
-                            logging.exception(output_path, "- Chunk id =", cid, " - Failed to get download URL.")
-                            not_sent_to_server.append(cid)
+                    try:
+                        for future in as_completed(future_to_chunk, timeout=120):
+                            cid = future_to_chunk[future]
+                            try:
+                                new_downloads.append(future.result())
+                            except KeyboardInterrupt:
+                                pbar.close()
+                                raise
+                            except Exception:
+                                logging.exception(output_path, "- Chunk id =", cid, " - Failed to get download URL.")
+                                not_sent_to_server.append(cid)
+                    except TimeoutError:
+                        for f, cid in future_to_chunk.items():
+                            if not f.done():
+                                logging.warning("%s - Chunk id=%s - GEE getDownloadURL timed out, requeuing.", output_path, cid)
+                                not_sent_to_server.append(cid)
 
                     if new_downloads:
                         downloader.add_download(new_downloads)
@@ -875,22 +887,28 @@ def _fetch_sits_chunk_url_sync(
     chunksize: int,
 ) -> tuple[int, str]:
     """Resolve the download URL for a single GEE SITS chunk (blocking, runs in a thread)."""
-    sub = gdf.iloc[chunk_id * chunksize : (chunk_id + 1) * chunksize]
-    ee_expression = build_ee_expression(
-        sub,
-        satellite,
-        reducers,
-        subsampling_max_pixels,
-        original_index_column_name,
-        start_date_column_name,
-        end_date_column_name,
-    )
-    url = ee_expression.getDownloadURL(
-        filetype="csv",
-        selectors=build_selectors(satellite, reducers),
-        filename=f"{chunk_id}",
-    )
-    return chunk_id, url
+    import socket
+    old_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(90)
+    try:
+        sub = gdf.iloc[chunk_id * chunksize : (chunk_id + 1) * chunksize]
+        ee_expression = build_ee_expression(
+            sub,
+            satellite,
+            reducers,
+            subsampling_max_pixels,
+            original_index_column_name,
+            start_date_column_name,
+            end_date_column_name,
+        )
+        url = ee_expression.getDownloadURL(
+            filetype="csv",
+            selectors=build_selectors(satellite, reducers),
+            filename=f"{chunk_id}",
+        )
+        return chunk_id, url
+    finally:
+        socket.setdefaulttimeout(old_timeout)
 
 
 async def download_multiple_sits_async(

@@ -2,6 +2,7 @@ import concurrent.futures
 import hashlib
 import inspect
 import json
+import multiprocessing
 import warnings
 from collections import deque
 from pathlib import Path
@@ -204,7 +205,7 @@ def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoD
     unique_cluster_ids = gdf["cluster_id"].unique()
 
     new_geoms: dict = {}
-    with concurrent.futures.ProcessPoolExecutor() as executor:
+    with concurrent.futures.ProcessPoolExecutor(mp_context=multiprocessing.get_context("fork")) as executor:
         futures = {
             executor.submit(_simplify_cluster, gdf[gdf.cluster_id == cluster_id][["geometry"]], cluster_id): cluster_id
             for cluster_id in unique_cluster_ids

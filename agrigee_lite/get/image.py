@@ -128,6 +128,9 @@ def download_multiple_images(  # noqa: C901
         })
 
     def download_task(chunk_index):
+        import socket
+        old_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(90)
         try:
             img = ee.Image(ee_expression.filter(ee.Filter.eq("system:index", image_indexes[chunk_index])).first())
             # Use only the image date as filename (GEE standard format)
@@ -138,23 +141,31 @@ def download_multiple_images(  # noqa: C901
             return chunk_index, True  # noqa: TRY300
         except Exception as _:
             return chunk_index, False
+        finally:
+            socket.setdefaulttimeout(old_timeout)
 
     while downloader.num_completed_downloads < len(pending_chunks):
         with ThreadPoolExecutor(max_workers=max_parallel_downloads) as executor:
             futures = {executor.submit(download_task, chunk): chunk for chunk in pending_chunks}
 
             failed_chunks = []
-            for future in as_completed(futures):
-                chunk, success = future.result()
-                if not success:
-                    failed_chunks.append(chunk)
-                    logging.warning(f"Download images - {output_path} - Failed to initiate download for chunk {chunk}.")
+            try:
+                for future in as_completed(futures, timeout=120):
+                    chunk, success = future.result()
+                    if not success:
+                        failed_chunks.append(chunk)
+                        logging.warning(f"Download images - {output_path} - Failed to initiate download for chunk {chunk}.")
 
-                update_pbar()
-
-                while downloader.num_unfinished_downloads >= max_parallel_downloads:
-                    time.sleep(1)
                     update_pbar()
+
+                    while downloader.num_unfinished_downloads >= max_parallel_downloads:
+                        time.sleep(1)
+                        update_pbar()
+            except TimeoutError:
+                for f, chunk in futures.items():
+                    if not f.done():
+                        logging.warning(f"Download images - {output_path} - Chunk {chunk} GEE getDownloadURL timed out, requeuing.")
+                        failed_chunks.append(chunk)
 
         while downloader.num_unfinished_downloads > 0:
             time.sleep(1)
@@ -246,7 +257,10 @@ async def _fetch_and_queue_image(
             update_pbar()  # type: ignore[call-arg]
         try:
             img = ee.Image(ee_expression.filter(ee.Filter.eq("system:index", image_indexes[chunk_index])).first())
-            url = await asyncio.to_thread(img.getDownloadURL, {"name": image_names[chunk_index], "region": ee_geometry})
+            url = await asyncio.wait_for(
+                asyncio.to_thread(img.getDownloadURL, {"name": image_names[chunk_index], "region": ee_geometry}),
+                timeout=120,
+            )
             downloader.add_download([(chunk_index, url)])
             return chunk_index, True  # noqa: TRY300
         except Exception:
