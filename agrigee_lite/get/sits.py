@@ -402,18 +402,20 @@ def download_multiple_sits(  # noqa: C901
 
     num_accounts = get_number_of_available_service_accounts()
     current_account_idx = 0
+    current_account_name = ""
     account_active_chunks: dict[int, set[int | str]] = defaultdict(set)
 
     def update_pbar(snap: dict[int | str, Any]) -> None:
         stats = downloader.stats_from_snapshot(snap)
         pbar.n = stats["completed"] * chunksize
         pbar.refresh()
-        active_by_account = {acc: len(chunks) for acc, chunks in account_active_chunks.items() if chunks}
-        pbar.set_postfix({
+        postfix: dict[str, object] = {
             "gee_er": len(not_sent_to_server),
             "ar2_er": stats["errors"],
-            **{f"{acc}": count for acc, count in active_by_account.items()},
-        })
+        }
+        if current_account_name:
+            postfix["acc"] = current_account_name
+        pbar.set_postfix(postfix)
 
     download_with_too_many_errors = 0
     # ThreadPoolExecutor lives for the entire download session — no per-batch
@@ -445,7 +447,7 @@ def download_multiple_sits(  # noqa: C901
             # While aria2 is draining the queue, skip login and account rotation
             # entirely to avoid pointless credential churn.
             if to_download_chunks:
-                login_with_service_account_n(current_account_idx)
+                current_account_name = login_with_service_account_n(current_account_idx)
 
                 # Retire finished/failed chunks from this account's active set.
                 current_active_set = account_active_chunks[current_account_idx]

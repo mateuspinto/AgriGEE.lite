@@ -732,7 +732,7 @@ def get_number_of_available_service_accounts() -> int:
         return 1
 
 
-def login_with_service_account_n(n: int) -> None:
+def login_with_service_account_n(n: int) -> str:
     """
     Login to Earth Engine using the nth service account specified in the GEE_KEY_MULTIPLE_ACCOUNTS environment variable.
 
@@ -741,28 +741,33 @@ def login_with_service_account_n(n: int) -> None:
     n : int
         The index of the service account to use (0-based).
 
+    Returns
+    -------
+    str
+        The ``project_id`` of the selected service account, or an empty string
+        when ``GEE_KEY_MULTIPLE_ACCOUNTS`` is not set.
+
     Raises
     ------
     IndexError
         If the specified index is out of range of the available service accounts.
     """
-    if "GEE_KEY_MULTIPLE_ACCOUNTS" in os.environ:
-        gee_key_multiple_accounts = os.environ["GEE_KEY_MULTIPLE_ACCOUNTS"]
-        service_accounts = [sa.strip() for sa in gee_key_multiple_accounts.split(",") if sa.strip()]
+    if "GEE_KEY_MULTIPLE_ACCOUNTS" not in os.environ:
+        return ""
 
-        if n < 0 or n >= len(service_accounts):
-            raise IndexError(f"Service account index {n} is out of range. Available accounts: {len(service_accounts)}")  # noqa: TRY003
+    gee_key_multiple_accounts = os.environ["GEE_KEY_MULTIPLE_ACCOUNTS"]
+    service_accounts = [sa.strip() for sa in gee_key_multiple_accounts.split(",") if sa.strip()]
 
-        selected_service_account = service_accounts[n]
-        credentials = ee.ServiceAccountCredentials(selected_service_account, selected_service_account)
-        ee.Initialize(credentials)
+    if n < 0 or n >= len(service_accounts):
+        raise IndexError(f"Service account index {n} is out of range. Available accounts: {len(service_accounts)}")  # noqa: TRY003
 
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = selected_service_account
+    selected_service_account = service_accounts[n]
+    credentials = ee.ServiceAccountCredentials(selected_service_account, selected_service_account)
+    ee.Initialize(credentials)
 
-        with open(selected_service_account) as f:
-            key_data = json.load(f)
-            print(f"Now using - {key_data.get('project_id', 'Unknown')}, {key_data.get('client_email', 'Unknown')}.")
-    else:
-        print(
-            "Environment variable GEE_KEY_MULTIPLE_ACCOUNTS is not set. Please set it to use multiple service accounts."
-        )
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = selected_service_account
+
+    with open(selected_service_account) as f:
+        key_data = json.load(f)
+
+    return str(key_data.get("project_id", "unknown"))
