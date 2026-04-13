@@ -120,11 +120,13 @@ def download_multiple_images(  # noqa: C901
     pbar = tqdm(total=len(pending_chunks), desc=f"Downloading images ({output_path.name})", unit="feature")
 
     def update_pbar():
-        pbar.n = downloader.num_completed_downloads
+        snap = downloader._get_downloads_snapshot()
+        stats = downloader.stats_from_snapshot(snap)
+        pbar.n = stats["completed"]
         pbar.refresh()
         pbar.set_postfix({
-            "aria2_errors": downloader.num_downloads_with_error,
-            "active_downloads": downloader.num_unfinished_downloads,
+            "aria2_errors": stats["errors"],
+            "active_downloads": stats["active"],
         })
 
     def download_task(chunk_index):
@@ -333,11 +335,13 @@ async def download_multiple_images_async(
     pbar = tqdm(total=len(pending_chunks), desc=f"Downloading images ({output_path.name})", unit="feature")
 
     def update_pbar() -> None:
-        pbar.n = downloader.num_completed_downloads
+        snap = downloader._get_downloads_snapshot()
+        stats = downloader.stats_from_snapshot(snap)
+        pbar.n = stats["completed"]
         pbar.refresh()
         pbar.set_postfix({
-            "aria2_errors": downloader.num_downloads_with_error,
-            "active_downloads": downloader.num_unfinished_downloads,
+            "aria2_errors": stats["errors"],
+            "active_downloads": stats["active"],
         })
 
     semaphore = asyncio.Semaphore(max_parallel_downloads)

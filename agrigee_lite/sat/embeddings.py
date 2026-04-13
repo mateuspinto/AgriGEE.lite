@@ -80,6 +80,12 @@ class SatelliteEmbedding(DataSourceSatellite):
         self.minAreaToKeepBorder = min_area_to_keep_border
         self.borderPixelsToErode = border_pixels_to_erode
 
+        self.toDownloadSelectors = [
+            f"{renamed}_median" for _, renamed in self.selectedBands
+        ] + [
+            f"{renamed}_stdDev" for _, renamed in self.selectedBands
+        ]
+
     def imageCollection(self, ee_feature: ee.Feature) -> ee.ImageCollection:
         ee_geometry = ee_feature.geometry()
         ee_start = ee_feature.get("s")

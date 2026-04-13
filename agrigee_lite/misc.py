@@ -110,8 +110,9 @@ def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:
     -------
     geopandas.GeoDataFrame
         GeoDataFrame with simplified geometries.
-    """
-    """
+
+    Notes
+    -----
     1. Detect duplicate geometries once, using WKB-hex as a stable key.
     2. Run TopoJSON simplification only on the unique geometries.
     3. Propagate the simplified result back to every original row.
@@ -330,9 +331,7 @@ def create_grid_centroids_numpy(geometry: Polygon | MultiPolygon | Point, n_cell
 
         if count >= n_cells:
             return centroids[np.random.choice(count, size=n_cells, replace=False)]
-        if count == n_cells:
-            return centroids[np.random.choice(count, size=n_cells, replace=True)]
-        else:  # count < n_cells:
+        else:  # count < n_cells
             return np.zeros((n_cells, 2), dtype=np.float32)
     except:  # noqa: E722
         return np.zeros((n_cells, 2), dtype=np.float32)
@@ -395,7 +394,7 @@ def random_points_from_gdf(
     if buffer != 0:
         gdf = gdf.copy()
         gdf = quadtree_clustering(gdf)
-        gdf["geometry"] = gdf.to_crs(gdf.estimate_utm_crs()).buffer(-10).to_crs("EPSG:4326")
+        gdf["geometry"] = gdf.to_crs(gdf.estimate_utm_crs()).buffer(buffer).to_crs("EPSG:4326")
 
     gdf["geometry_id"] = pd.factorize(gdf["geometry"])[0]
     points_gdf = generate_grid_random_points_from_gdf(gdf, num_points_per_geometry)

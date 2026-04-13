@@ -28,22 +28,21 @@ class GEETaskManager:
 
         with tqdm(total=len(self.started_tasks), desc="Waiting for tasks") as pbar:
             while self.started_tasks:
+                still_running: list[ee.batch.Task] = []
                 for task in self.started_tasks:
                     task_status = task.status()
                     if task_status["state"] == "COMPLETED":
-                        self.started_tasks.remove(task)
                         pbar.update(1)
                     elif task_status["state"] == "FAILED":
-                        self.started_tasks.remove(task)
                         pbar.update(1)
                         failed_count += 1
                         pbar.set_postfix_str(f"Failed tasks: {failed_count}")
                     elif task_status["state"] in {"CANCELLING", "CANCELED"}:
-                        self.started_tasks.remove(task)
                         pbar.update(1)
                         canceled_count += 1
                         pbar.set_postfix_str(f"Canceled tasks: {canceled_count}")
                     else:
-                        pass
+                        still_running.append(task)
+                self.started_tasks = still_running
 
                 time.sleep(10)
