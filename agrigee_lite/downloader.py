@@ -7,6 +7,30 @@ import aria2p
 
 
 class DownloaderStrategy:
+    """Thin wrapper around an aria2 RPC server that manages parallel downloads.
+
+    On construction, starts a local ``aria2c`` process (if one is not already
+    running) and connects to it via the aria2 JSON-RPC API on port 6800.  All
+    download requests are forwarded to aria2, which handles connection pooling,
+    retries, and resume automatically.
+
+    Downloads are tracked by a caller-supplied ``my_id`` (int or str) rather
+    than by GID, so the caller can correlate download status back to its own
+    data model (e.g., chunk indices).
+
+    Parameters
+    ----------
+    download_folder : pathlib.Path
+        Directory where downloaded files will be saved.
+
+    Notes
+    -----
+    The aria2 process is terminated when the object is garbage-collected.
+    Only one aria2 process is expected per Python process; calling
+    ``DownloaderStrategy`` a second time while aria2 is already running will
+    reuse the existing process.
+    """
+
     def __init__(self, download_folder: pathlib.Path):
         self.aria2 = aria2p.API(aria2p.Client(host="http://localhost", port=6800, secret=""))
         self.download_folder = download_folder

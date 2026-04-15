@@ -15,77 +15,34 @@ from agrigee_lite.sat.abstract_satellite import OpticalSatellite
 
 
 class Sentinel2(OpticalSatellite):
-    """
-    Satellite abstraction for Sentinel-2 (HARMONIZED collections).
+    """Sentinel-2 MSI — global coverage from 2016-01-01 to present, 10 m resolution, 5-day revisit.
 
-    Sentinel-2 is a constellation of twin Earth observation satellites,
-    operated by ESA, designed for land monitoring, vegetation, soil, water cover, and coastal areas.
+    Available bands: ``blue``, ``green``, ``red``, ``re1``, ``re2``, ``re3``,
+    ``nir``, ``re4``, ``swir1``, ``swir2``.
+
+    Cloud masking uses Google's **Cloud Score Plus** dataset, which assigns
+    a per-pixel cloud probability score.  Only pixels above
+    ``cloud_probability_threshold`` are considered cloud-free — this is
+    generally more accurate than QA-bitmask approaches for Sentinel-2.
 
     Parameters
     ----------
-    bands : list of str, optional
-        List of bands to select. Defaults to all 10 bands most used for vegetation and soil analysis.
-    indices : list of str, optional
-        List of spectral indices to compute from the selected bands.
-    use_sr : bool, default=True
-        If True, uses surface reflectance (BOA, 'S2_SR_HARMONIZED').
-        If False, uses top-of-atmosphere reflectance ('S2_HARMONIZED').
-    cloud_probability_threshold : float, default=0.7
-        Minimum threshold to consider a pixel as cloud-free.
-    min_valid_pixel_count : int, default=20
-        Minimum number of valid (non-cloud) pixels required to retain an image.
-    border_pixels_to_erode : float, default=1
-        Number of pixels to erode from the geometry border.
-    min_area_to_keep_border : int, default=35_000
-        Minimum area (in m²) required to retain geometry after border erosion.
-
-    Satellite Information
-    ---------------------
-    +------------------------------------+------------------------+
-    | Field                              | Value                  |
-    +------------------------------------+------------------------+
-    | Name                               | Sentinel-2             |
-    | Revisit Time                       | 5 days                 |
-    | Revisit Time (cloud-free estimate) | ~7 days                |
-    | Pixel Size                         | 10 meters              |
-    | Coverage                           | Global                 |
-    +------------------------------------+------------------------+
-
-    Collection Dates
-    ----------------
-    +----------------------------+------------+------------+
-    | Collection Type            | Start Date | End Date  |
-    +----------------------------+------------+------------+
-    | TOA (Top of Atmosphere)    | 2016-01-01 | present   |
-    | SR (Surface Reflectance)   | 2019-01-01 | present   |
-    +----------------------------+------------+------------+
-
-    Band Information
-    ----------------
-    +-----------+---------------+--------------+------------------------+
-    | Band Name | Original Band | Resolution   | Spectral Wavelength    |
-    +-----------+---------------+--------------+------------------------+
-    | blue      | B2            | 10 m         | 492 nm                 |
-    | green     | B3            | 10 m         | 559 nm                 |
-    | red       | B4            | 10 m         | 665 nm                 |
-    | re1       | B5            | 20 m         | 704 nm                 |
-    | re2       | B6            | 20 m         | 739 nm                 |
-    | re3       | B7            | 20 m         | 780 nm                 |
-    | nir       | B8            | 10 m         | 833 nm                 |
-    | re4       | B8A           | 20 m         | 864 nm                 |
-    | swir1     | B11           | 20 m         | 1610 nm                |
-    | swir2     | B12           | 20 m         | 2186 nm                |
-    +-----------+---------------+--------------+------------------------+
-
-    Notes
-    ----------------
-    Cloud Masking:
-        This class uses the **Cloud Score Plus** dataset to estimate cloud probability:
-        https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_CLOUD_SCORE_PLUS_V1_S2_HARMONIZED
-
-    Sentinel-2 Collections:
-        - TOA: https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_HARMONIZED
-        - SR:  https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED
+    bands : set of str, optional
+        Subset of available bands.  Defaults to all ten.
+    indices : set of str, optional
+        Spectral indices to compute (e.g. ``{"ndvi", "evi2", "ndre"}``).
+    use_sr : bool, default True
+        Surface Reflectance (BOA) products from 2019-01-01.
+        Set to ``False`` for Top-of-Atmosphere from 2016-01-01.
+    cloud_probability_threshold : float, default 0.7
+        Cloud Score Plus threshold.  Pixels below this score are masked.
+        Reduce to e.g. 0.5 for stricter cloud removal in hazy regions.
+    min_valid_pixel_count : int, default 20
+        Images with fewer valid pixels over the ROI are discarded.
+    border_pixels_to_erode : float, default 1
+        Inward buffer in pixel-widths before extraction (avoids mixed pixels).
+    min_area_to_keep_border : int, default 35_000
+        Skip border erosion for geometries smaller than this area (m²).
     """
 
     def __init__(

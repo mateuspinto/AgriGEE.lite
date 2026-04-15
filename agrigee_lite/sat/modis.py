@@ -14,78 +14,32 @@ from agrigee_lite.sat.abstract_satellite import OpticalSatellite
 
 
 class ModisDaily(OpticalSatellite):
-    """
-    ⚠️⚠️⚠️  Note: Despite this cloud mask, daily MODIS imagery tends to have **a high presence of residual clouds**. It is recommended to use Modis8Days for cleaner data. ⚠️⚠️⚠️
+    """MODIS Terra + Aqua daily merged — global coverage from 2000-02-24, 250 m resolution, daily cadence.
 
-    Satellite abstraction for MODIS Terra and Aqua (Daily composites).
+    Merges Terra (MOD09GQ) and Aqua (MYD09GQ) into a single collection so
+    both overpasses contribute observations on the same day.
 
-    MODIS (Moderate Resolution Imaging Spectroradiometer) is a key instrument aboard NASA's Terra and Aqua satellites,
-    offering daily global coverage for environmental and land surface monitoring.
+    Available bands: ``red``, ``nir``.
+
+    .. warning::
+        Daily MODIS has a high presence of residual clouds even after masking.
+        For most analyses ``Modis8Days`` (8-day composites) produces cleaner data.
 
     Parameters
     ----------
     bands : set of str, optional
-        Set of bands to select. Defaults to ['red', 'nir'].
+        Subset of available bands.  Defaults to ``{"red", "nir"}``.
     indices : set of str, optional
-        List of spectral indices to compute from selected bands.
-    use_cloud_mask : bool, default=True
-        Whether to apply cloud masking using bit 10 of the 'state_1km' QA band.
-        When set to False, no cloud filtering is applied (results may be ULTRA NOISY).
-    min_valid_pixel_count : int, default=2
-        Minimum number of valid (non-cloud) pixels required to retain an image.
-    border_pixels_to_erode : float, default=0.5
-        Number of pixels to erode from the geometry border.
-    min_area_to_keep_border : int, default=190_000
-        Minimum area (in m²) required to retain geometry after border erosion.
-
-    Cloud Masking
-    -------------
-    Cloudy pixels are masked using bit 10 of the 'state_1km' QA band:
-        - 0: clear
-        - 1: cloudy
-
-    Only pixels with bit 10 equal to 0 (clear) are retained.
-
-    Satellite Information
-    ---------------------
-    +----------------------------+------------------------+
-    | Field                      | Value                  |
-    +----------------------------+------------------------+
-    | Name                       | MODIS (Daily)          |
-    | Platforms                  | Terra, Aqua            |
-    | Temporal Resolution        | 1 day                  |
-    | Pixel Size                 | 250 meters             |
-    | Coverage                   | Global                 |
-    +----------------------------+------------------------+
-
-    Collection Dates
-    ----------------
-    +--------+------------+------------+
-    | Source | Start Date | End Date  |
-    +--------+------------+------------+
-    | Terra  | 2000-02-24 | present   |
-    | Aqua   | 2002-07-04 | present   |
-    +--------+------------+------------+
-
-    Band Information
-    ----------------
-    +-----------+----------------+----------------+------------------------+
-    | Band Name | Original Band  | Resolution     | Spectral Wavelength    |
-    +-----------+----------------+----------------+------------------------+
-    | red       | sur_refl_b01   | 250 meters     | 620-670 nm             |
-    | nir       | sur_refl_b02   | 250 meters     | 841-876 nm             |
-    +-----------+----------------+----------------+------------------------+
-
-    Notes
-    -----
-    Cloud Mask Reference (QA 'state_1km' band documentation):
-        https://lpdaac.usgs.gov/documents/925/MOD09_User_Guide_V61.pdf
-
-    MODIS Collections on Google Earth Engine:
-        - Terra (MOD09GQ - reflectance): https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MOD09GQ
-        - Terra (MOD09GA - QA band):     https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MOD09GA
-        - Aqua  (MYD09GQ - reflectance): https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MYD09GQ
-        - Aqua  (MYD09GA - QA band):     https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MYD09GA
+        Spectral indices to compute (e.g. ``{"ndvi"}``).
+    use_cloud_mask : bool, default True
+        Mask pixels flagged as cloudy by bit 10 of the ``state_1km`` QA band.
+        Disabling this delivers more observations but severely increases noise.
+    min_valid_pixel_count : int, default 2
+        Images with fewer valid pixels over the ROI are discarded.
+    border_pixels_to_erode : float, default 0.5
+        Inward buffer in pixel-widths before extraction.
+    min_area_to_keep_border : int, default 190_000
+        Skip border erosion for geometries smaller than this area (m²).
     """
 
     def __init__(
@@ -218,76 +172,30 @@ class ModisDaily(OpticalSatellite):
 
 
 class Modis8Days(OpticalSatellite):
-    """
-    Satellite abstraction for MODIS Terra and Aqua (8-day composites).
+    """MODIS Terra + Aqua 8-day composites — global coverage from 2000-02-18, 250 m resolution.
 
-    MODIS (Moderate Resolution Imaging Spectroradiometer) is a key instrument aboard NASA's Terra and Aqua satellites,
-    providing global coverage for land, ocean, and atmospheric monitoring at frequent intervals.
+    8-day best-pixel composites of Terra (MOD09Q1) and Aqua (MYD09Q1).
+    Compositing reduces cloud contamination substantially compared to daily
+    imagery, making this the recommended MODIS product for most time-series
+    analyses.
+
+    Available bands: ``red``, ``nir``.
 
     Parameters
     ----------
-    bands : list of str, optional
-        List of bands to select. Defaults to ['red', 'nir'].
-    indices : list of str, optional
-        List of spectral indices to compute from selected bands.
-    use_cloud_mask : bool, default=True
-        Whether to apply a cloud mask based on the QA 'State' band (bits 0-1).
-        If True, only pixels with cloud state == 0 (clear) are retained.
-    min_valid_pixel_count : int, default=2
-        Minimum number of valid (non-cloud) pixels required to retain an image.
-    border_pixels_to_erode : float, default=0.5
-        Number of pixels to erode from the geometry border.
-    min_area_to_keep_border : int, default=190_000
-        Minimum area (in m²) required to retain geometry after border erosion.
-
-    Cloud Masking
-    -------------
-    Cloudy pixels are masked using bits 0-1 of the 'State' QA band, which encode cloud state:
-        - 00: clear
-        - 01: cloudy
-        - 10: mixed
-        - 11: not set
-
-    The masking keeps only pixels with value 00 (clear) if `use_cloud_mask=True`.
-
-    Satellite Information
-    ---------------------
-    +----------------------------+------------------------+
-    | Field                      | Value                  |
-    +----------------------------+------------------------+
-    | Name                       | MODIS (8-day)          |
-    | Platforms                  | Terra, Aqua            |
-    | Temporal Resolution        | 8 days                 |
-    | Pixel Size                 | 250 meters             |
-    | Coverage                   | Global                 |
-    +----------------------------+------------------------+
-
-    Collection Dates
-    ----------------
-    +--------+------------+------------+
-    | Source | Start Date | End Date  |
-    +--------+------------+------------+
-    | Terra  | 2000-02-18 | present   |
-    | Aqua   | 2002-07-04 | present   |
-    +--------+------------+------------+
-
-    Band Information
-    ----------------
-    +-----------+----------------+----------------+------------------------+
-    | Band Name | Original Band  | Resolution     | Spectral Wavelength    |
-    +-----------+----------------+----------------+------------------------+
-    | red       | sur_refl_b01   | 250 meters     | 620-670 nm             |
-    | nir       | sur_refl_b02   | 250 meters     | 841-876 nm             |
-    +-----------+----------------+----------------+------------------------+
-
-    Notes
-    -----
-    Cloud Mask Reference (QA 'State' band documentation):
-        https://lpdaac.usgs.gov/documents/925/MOD09_User_Guide_V61.pdf
-
-    MODIS Collections on Google Earth Engine:
-        - Terra (MOD09Q1): https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MOD09Q1
-        - Aqua  (MYD09Q1): https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MYD09Q1
+    bands : set of str, optional
+        Subset of available bands.  Defaults to ``{"red", "nir"}``.
+    indices : set of str, optional
+        Spectral indices to compute (e.g. ``{"ndvi", "evi2"}``).
+    use_cloud_mask : bool, default True
+        Retain only pixels flagged as clear (bits 0–1 of the ``State`` QA band
+        equal 00).  Mixed and cloudy states are discarded.
+    min_valid_pixel_count : int, default 2
+        Images with fewer valid pixels over the ROI are discarded.
+    border_pixels_to_erode : float, default 0.5
+        Inward buffer in pixel-widths before extraction.
+    min_area_to_keep_border : int, default 190_000
+        Skip border erosion for geometries smaller than this area (m²).
     """
 
     def __init__(

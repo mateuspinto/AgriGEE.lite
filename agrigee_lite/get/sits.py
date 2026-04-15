@@ -82,6 +82,22 @@ def build_ee_expression(
 
 
 def build_selectors(satellite: AbstractSatellite, reducers: set[str] | None) -> list[str]:
+    """Return the GEE column selectors that map to the output DataFrame columns.
+
+    Parameters
+    ----------
+    satellite : AbstractSatellite
+        Configured satellite whose selected bands/indices define the columns.
+    reducers : set of str or None
+        When ``None`` or a single reducer, columns are the raw band names.
+        When multiple reducers are given, a ``<band>_<reducer>`` column is
+        produced for every combination.
+
+    Returns
+    -------
+    list of str
+        Ordered list of property names to extract from the GEE FeatureCollection.
+    """
     if (reducers is None) or (len(reducers) == 1):
         return [
             "00_indexnum",
@@ -313,6 +329,57 @@ def download_multiple_sits(  # noqa: C901
     max_retries_per_chunk: int = 1,
     force_redownload: bool = False,
 ) -> pd.DataFrame:
+    """Download satellite time series for every row in a GeoDataFrame.
+
+    This is the high-throughput batch version of :func:`download_single_sits`.
+    Internally it groups rows into *chunks*, sends each chunk as a single GEE
+    request that returns a CSV, and downloads all CSVs concurrently through
+    aria2.  A SITS cache (SpatiaLite or PostGIS) is checked before each
+    request — already-cached rows are skipped automatically.
+
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        Input table.  Must have a ``geometry`` column and two datetime columns
+        named by ``start_date_column_name`` / ``end_date_column_name``.
+        Each row is one independent time-series request (different geometry,
+        date window, or both).
+    satellite : AbstractSatellite
+        Satellite configuration, e.g. ``Sentinel2(bands={"red", "nir"})``.
+    reducers : set of str or None, optional
+        Spatial aggregation functions to apply within each geometry per date,
+        e.g. ``{"median"}`` or ``{"mean", "std"}``.  When ``None``, a single
+        spatial median is computed.
+    original_index_column_name : str, default ``"original_index"``
+        Column that holds the original row identifier so the output DataFrame
+        can be joined back to the input.  If ``"original_index"``, a new
+        column is created from ``gdf.index`` automatically.
+    start_date_column_name : str, default ``"start_date"``
+        Name of the datetime column containing each row's start date.
+    end_date_column_name : str, default ``"end_date"``
+        Name of the datetime column containing each row's end date.
+    subsampling_max_pixels : float, default 1_000
+        Cap on the number of pixels per geometry used for spatial reduction.
+        Values > 1 are an absolute count; values ≤ 1 are a fraction of the
+        total pixel count.  Lower values speed up GEE computation at the
+        cost of spatial accuracy.
+    chunksize : int, default 10
+        Number of geometries per GEE batch request.  Larger chunks reduce
+        overhead but may hit GEE memory limits for large geometries.
+    max_parallel_downloads : int, default 38
+        Maximum number of CSV chunks being downloaded simultaneously by aria2.
+    max_retries_per_chunk : int, default 1
+        How many times a failed chunk is retried before being skipped.
+    force_redownload : bool, default False
+        Ignore the cache and re-download everything, overwriting existing files.
+
+    Returns
+    -------
+    pd.DataFrame
+        Flat table with one row per (geometry, date) observation.  Columns
+        include ``timestamp``, ``original_index`` (or whatever
+        ``original_index_column_name`` is), and one column per band/index.
+    """
     if len(gdf) == 0:
         return pd.DataFrame()
 

@@ -11,48 +11,30 @@ from agrigee_lite.sat.abstract_satellite import DataSourceSatellite
 
 
 class SatelliteEmbedding(DataSourceSatellite):
-    """
-    Satellite abstraction for the Google Satellite Embedding collection.
+    """Google Satellite Embedding V1 — annual 64-dimensional embeddings from 2017 to 2023, ~10 m resolution.
 
-    This collection contains annual, manually curated embeddings derived from multi-sensor satellite data.
+    Pre-computed embeddings learned from multi-sensor satellite imagery by
+    Google.  Each pixel encodes its spectral–temporal context into a 64-float
+    vector, useful as input features for downstream ML models without having to
+    engineer band combinations manually.
 
-    IMPORTANT: It always returns the center point value as the median (in order to maintain z-sphere normalization) and the standard deviation of the geometry without the borders.
+    For each annual image, ``compute()`` returns:
+    - ``<band>_median`` — the embedding value at the geometry's centroid
+      (preserves z-sphere normalisation).
+    - ``<band>_stdDev`` — standard deviation of the embedding across the
+      geometry interior (spatial heterogeneity signal).
 
     Parameters
     ----------
     bands : list of str, optional
-        List of bands to select. Defaults to all 64 embeddings.
-    min_valid_pixel_count : int, default=1
-        Minimum number of valid (non-eroded) pixels required to retain an image.
-    border_pixels_to_erode : float, default=1
-        Number of pixels to erode from the geometry border.
-    min_area_to_keep_border : int, default=35_000
-        Minimum area (in m²) required to retain geometry after border erosion.
-
-    Satellite Information
-    ---------------------
-    +-----------------------------+-----------------------+
-    | Field                       | Value                 |
-    +-----------------------------+-----------------------+
-    | Name                        | Satellite Embedding   |
-    | Embedding Dimensions        | 64 (A0 to A63)        |
-    | Pixel Size                  | ~10 meters            |
-    | Temporal Resolution         | Annual                |
-    | Coverage                    | Global                |
-    +-----------------------------+-----------------------+
-
-    Collection Dates
-    ----------------
-    +------------+------------+
-    | Start Date | End Date   |
-    +------------+------------+
-    | 2017-01-01 | 2024-01-02 |
-    +------------+------------+
-
-    Notes
-    ----------------
-    Satellite Embedding V1:
-        - Dataset: https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_SATELLITE_EMBEDDING_V1_ANNUAL?hl=pt-br#bands
+        Subset of embedding dimensions (``"A00"`` to ``"A63"``).  Defaults
+        to all 64.
+    min_valid_pixel_count : int, default 1
+        Images with fewer valid pixels over the ROI are discarded.
+    border_pixels_to_erode : float, default 1
+        Inward buffer in pixel-widths before stdDev extraction.
+    min_area_to_keep_border : int, default 35_000
+        Skip border erosion for geometries smaller than this area (m²).
     """
 
     def __init__(

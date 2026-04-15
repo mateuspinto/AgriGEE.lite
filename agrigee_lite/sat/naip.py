@@ -13,47 +13,24 @@ from agrigee_lite.sat.abstract_satellite import OpticalSatellite
 
 
 class NAIP(OpticalSatellite):
-    """
-    Satellite abstraction for USDA NAIP (National Agriculture Imagery Program).
+    """USDA NAIP aerial imagery — continental USA from 2003-01-01, 1 m resolution, annual/biennial cadence.
 
-    The NAIP imagery is acquired during the agricultural growing seasons in the continental U.S.
-    This class provides access to the DOQQ (Digital Orthophoto Quarter Quad) dataset.
+    Acquired by low-flying aircraft during the agricultural growing season.
+    No cloud masking is applied (conditions are near-cloudless by design).
+
+    Available bands: ``blue``, ``green``, ``red``, ``nir``.
 
     Parameters
     ----------
     bands : set of str, optional
-        Set of bands to select. Defaults to ['blue', 'green', 'red', 'nir'].
+        Subset of available bands.  Defaults to all four.
     indices : set of str, optional
-        Optical indices to compute (e.g., 'ndvi', 'ndwi'). Defaults to [].
-
-    Satellite Information
-    ---------------------
-    +----------------------------+-------------------------------+
-    | Field                      | Value                         |
-    +----------------------------+-------------------------------+
-    | Name                       | USDA NAIP                     |
-    | Sensor                     | Optical (RGB + NIR)           |
-    | Platform                   | Aircraft (Aerial)             |
-    | Revisit Time               | Annual/Biennial (varies)      |
-    | Pixel Size                 | 1 meter                       |
-    | Coverage                   | Continental USA (CONUS)       |
-    +----------------------------+-------------------------------+
-
-    Band Information
-    ----------------
-    +-----------+---------+------------+-------------------------------------------+
-    | Band Name | Type    | Resolution | Description                               |
-    +-----------+---------+------------+-------------------------------------------+
-    | red       | Optical | 1 m        | Red                                       |
-    | green     | Optical | 1 m        | Green                                     |
-    | blue      | Optical | 1 m        | Blue                                      |
-    | nir       | Optical | 1 m        | Near-Infrared                             |
-    +-----------+---------+------------+-------------------------------------------+
+        Spectral indices to compute (e.g. ``{"ndvi"}``).
 
     Notes
     -----
-    - Earth Engine Dataset:
-        https://developers.google.com/earth-engine/datasets/catalog/USDA_NAIP_DOQQ
+    Coverage is limited to the continental United States (CONUS).  Revisit
+    cadence varies by state (typically every 1–3 years).
     """
 
     def __init__(

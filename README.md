@@ -56,6 +56,98 @@ fused_time_series = agl.get.sits(geometry, "2022-01-01", "2022-12-31", fusion_sa
 
 For more comprehensive examples, see the examples folder.
 
+## Installation
+
+### Core library
+
+```bash
+pip install agrigee_lite
+```
+
+### Optional extras
+
+| Extra | What it installs | When you need it |
+|---|---|---|
+| `visualization` | `matplotlib`, `plotly` | `agl.vis` plotting functions |
+| `tasks` | `smart_open[gcs]` | Cloud task recovery via GCS |
+| `api` | `fastapi[standard]`, `uvicorn[standard]` | REST API server (`agl_api`) |
+| `postgis` | `psycopg2-binary` | PostGIS database backend for the SITS cache |
+
+Install any combination of extras:
+
+```bash
+# API only
+pip install "agrigee_lite[api]"
+
+# API + PostGIS backend
+pip install "agrigee_lite[api,postgis]"
+
+# Everything
+pip install "agrigee_lite[visualization,tasks,api,postgis]"
+```
+
+## REST API
+
+AgriGEE.lite ships an optional **FastAPI** server that exposes the download functionality as a REST API. Long-running downloads are handled asynchronously: every heavy endpoint returns **202 Accepted** with a `job_id` immediately, and you poll `/jobs/{job_id}` to track progress.
+
+### Running the API server
+
+```bash
+# Default: http://127.0.0.1:8000
+agl_api
+
+# Custom host/port
+agl_api --host 0.0.0.0 --port 8080
+
+# With hot-reload (development)
+agl_api --host 0.0.0.0 --port 8080 --reload
+```
+
+Or programmatically:
+
+```python
+import agrigee_lite.api as agl_api
+agl_api.serve(host="0.0.0.0", port=8080)
+```
+
+Interactive docs are available at `http://127.0.0.1:8000/docs` (Swagger UI) once the server is running.
+
+### Database backend for the SITS cache
+
+The SITS cache stores previously downloaded time series to avoid redundant GEE requests.
+
+**Default — SpatiaLite** (no configuration needed):
+
+The cache is stored in `~/.cache/agrigee_lite/sits_cache.db` using SpatiaLite. This requires `libsqlite3` with the `mod_spatialite` extension available on the system.
+
+**PostGIS** (recommended for production / multi-user deployments):
+
+Set the following environment variables before starting the API. When all three are present, PostGIS is used and the SpatiaLite file is ignored:
+
+```bash
+export AGRIGEE_PG_HOST=localhost
+export AGRIGEE_PG_USER=postgres
+export AGRIGEE_PG_PASSWORD=secret
+export AGRIGEE_PG_PORT=5432   # optional, defaults to 5432
+agl_api
+```
+
+The database `agrigeelite` is created automatically if it does not exist.
+
+### API endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Health check |
+| `GET` | `/satellites` | List all available satellite names |
+| `POST` | `/sits/single` | Download SITS for a single geometry (synchronous) |
+| `POST` | `/sits/multiple` | Submit a multi-geometry SITS job (202 → job_id) |
+| `POST` | `/images` | Submit an image download job (202 → job_id) |
+| `GET` | `/jobs` | List all submitted jobs |
+| `GET` | `/jobs/{job_id}` | Get status and result of a job |
+| `DELETE` | `/jobs/{job_id}` | Delete a completed or failed job |
+| `GET` | `/jobs/{job_id}/download` | Download result as Parquet (SITS) or ZIP (images) |
+
 ## High-Performance Downloads with aria2
 
 One of AgriGEE.lite's key features is its use of **aria2**, a lightweight multi-protocol & multi-source command-line download utility. This integration provides:
@@ -222,6 +314,8 @@ If you're an artist interested in creating a new mascot design, we'd love to mak
 - [x] **Visualizations**: matplotlib-based plotting for images and time series
 - [x] **Cloud Recovery**: smart_open[gcs] integration for automatic data recovery
 - [x] **Advanced Processing**: Configurable cloud masking, Landsat pan-sharpening
+- [x] **REST API**: FastAPI server with async job system, Swagger UI, and downloadable results
+- [x] **SITS Cache**: SpatiaLite (default) and PostGIS backends for caching downloaded time series
 
 ### 🚧 In Development
 - [ ] **Enhanced Visualizations**: plotly-based interactive plotting

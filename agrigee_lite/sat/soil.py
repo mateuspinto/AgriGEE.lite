@@ -8,6 +8,21 @@ from agrigee_lite.sat.abstract_satellite import SingleImageSatellite
 
 
 class WRBSoilClasses(SingleImageSatellite):
+    """WRB Soil Classes — global soil classification map, 250 m resolution (single static image).
+
+    Based on SoilGrids 2016, this product maps 30 World Reference Base (WRB)
+    soil reference groups worldwide.  ``compute()`` returns the fraction of
+    pixels belonging to each soil class within the geometry — one column per
+    class named ``soil_<label>``.
+
+    No parameters are needed at construction time.
+
+    Notes
+    -----
+    The ``classes`` attribute maps integer class IDs to ``{"label", "color"}``
+    dicts, useful for building legends when visualising results.
+    """
+
     def __init__(self):
         super().__init__()
         self.imageName = "projects/ee-pintodasilvamateus/assets/agrigee_lite/wrb_soil_classes_2016"

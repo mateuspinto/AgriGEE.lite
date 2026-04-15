@@ -45,6 +45,62 @@ def ee_l_apply_sr_scale_factors(img: ee.Image) -> ee.Image:
 
 
 class AbstractLandsat(OpticalSatellite):
+    """Shared implementation for all Landsat missions (Collection 2).
+
+    Handles band selection, cloud masking via the ``QA_PIXEL`` bitmask,
+    optional TOA simple-cloud-score filter, SR scale-factor application, and
+    optional pan-sharpening.  Concrete subclasses (``Landsat5`` through
+    ``Landsat9``) set the sensor-specific band names and date range.
+
+    Parameters
+    ----------
+    sensor_code : str
+        USGS sensor code used to build the GEE collection path
+        (e.g. ``"LC08"`` for Landsat 8).
+    toa_band_map, sr_band_map : dict[str, str]
+        Mappings from friendly band names (e.g. ``"nir"``) to GEE band names
+        for TOA and SR products respectively.
+    short_base : str
+        Short identifier prefix (e.g. ``"l8"``); ``"sr"`` is appended when
+        ``use_sr=True``.
+    start_date, end_date : str
+        ISO-8601 bounds of the sensor's valid acquisition period.
+    bands : set of str or None
+        Subset of bands to include.  Defaults to all 6 VNIR/SWIR bands for SR
+        or all 7 (including ``"pan"``) for TOA.
+    indices : set of str or None
+        Spectral indices to compute on top of the raw bands.  Must be computable
+        from the selected bands (see ``availableIndices``).
+    use_sr : bool
+        ``True`` (default) uses atmospherically-corrected Surface Reflectance
+        (SR) — values are actual ground reflectance in 0–1.
+        ``False`` uses Top-of-Atmosphere (TOA) reflectance — values still
+        contain atmospheric effects but have wider historical coverage.
+    tier : int
+        Data quality tier.  Tier 1 has the best geometric accuracy and is
+        suitable for time-series analysis.  Tier 2 has looser accuracy
+        requirements.
+    use_cloud_mask : bool
+        Apply the QA_PIXEL bitmask to remove clouds, cloud shadows, cirrus,
+        dilated clouds, and saturated pixels.
+    min_valid_pixel_count : int
+        Images with fewer valid pixels than this threshold over the ROI are
+        discarded entirely.
+    toa_cloud_filter_strength : int
+        0–100 score threshold for the Landsat Simple Cloud Score applied to
+        TOA images (lower = stricter).  Ignored when ``use_sr=True``.
+    border_pixels_to_erode : float
+        Inward buffer applied to the geometry before pixel extraction, in
+        multiples of ``pixelSize``.  Reduces edge artefacts from mixed pixels.
+    min_area_to_keep_border : int
+        Minimum geometry area (m²) required to apply the border erosion.
+        Smaller geometries are used as-is to avoid discarding them entirely.
+    use_pan_sharpening : bool
+        Merge the 15 m panchromatic band with RGB via HSV pan-sharpening.
+        Only available for TOA products (``use_sr=False``); raises
+        ``ValueError`` if combined with SR.
+    """
+
     _DEFAULT_BANDS_BOA: set[str] = {  # noqa: RUF012
         "blue",
         "green",
@@ -208,96 +264,37 @@ class AbstractLandsat(OpticalSatellite):
 
 
 class Landsat5(AbstractLandsat):
-    """
-    Satellite abstraction for Landsat 5 (TM sensor, Collection 2).
+    """Landsat 5 TM — global coverage from 1984-03-01 to 2013-05-05, 30 m resolution, 16-day revisit.
 
-    Landsat 5 was launched in 1984 and provided more than 29 years of Earth observation data.
-    This class supports both TOA and SR products, with optional cloud masking using the QA_PIXEL band.
+    Available bands: ``blue``, ``green``, ``red``, ``nir``, ``swir1``, ``swir2``.
 
     Parameters
     ----------
     bands : set of str, optional
-        Set of bands to select. Defaults to ['blue', 'green', 'red', 'nir', 'swir1', 'swir2'].
+        Subset of available bands to download.  Defaults to all six.
     indices : set of str, optional
-        Spectral indices to compute from the selected bands.
-    use_sr : bool, default=True
-        Whether to use surface reflectance products ('SR_B*' bands).
-        If False, uses top-of-atmosphere reflectance ('B*' bands).
-    tier : int, default=1
-        Landsat collection tier to use (1 or 2). Tier 1 has highest geometric accuracy.
-    use_cloud_mask : bool, default=True
-        Whether to apply QA_PIXEL-based cloud masking. If False, no cloud mask is applied.
-    min_valid_pixel_count : int, default=12
-        Minimum number of valid (non-cloud) pixels required to retain an image.
-    toa_cloud_filter_strength : int, default=15
-        Strength of the additional cloud filter applied to TOA imagery (if use_sr=False).
-        Used in the `remove_l_toa_tough_clouds` step.
-    border_pixels_to_erode : float, default=1
-        Number of pixels to erode from the geometry border.
-    min_area_to_keep_border : int, default=50_000
-        Minimum area (in m²) required to retain geometry after border erosion.
-
-    Cloud Masking
-    -------------
-    Cloud masking is based on the QA_PIXEL band, using bit flags defined by USGS:
-    - Applied to both TOA and SR products when `use_cloud_mask=True`
-    - For TOA collections, an additional filter (`remove_l_toa_tough_clouds`) is applied
-    to remove low-quality observations based on a simple cloud scoring method.
-
-    Satellite Information
-    ---------------------
-    +----------------------------+------------------------+
-    | Field                      | Value                  |
-    +----------------------------+------------------------+
-    | Name                       | Landsat 5 TM           |
-    | Sensor                     | TM (Thematic Mapper)   |
-    | Platform                   | Landsat 5              |
-    | Temporal Resolution        | 16 days                |
-    | Pixel Size                 | 30 meters              |
-    | Coverage                   | Global                 |
-    +----------------------------+------------------------+
-
-    Collection Dates
-    ----------------
-    +-------------+------------+------------+
-    | Product     | Start Date | End Date  |
-    +-------------+------------+------------+
-    | TOA         | 1984-03-01 | 2013-05-05 |
-    | SR          | 1984-03-01 | 2012-05-05 |
-    +-------------+------------+------------+
-
-    Band Information
-    ----------------
-    +-----------+----------+-----------+------------------------+
-    | Band Name | TOA Name | SR Name   | Spectral Wavelength    |
-    +-----------+----------+-----------+------------------------+
-    | blue      | B1       | SR_B1     | 450-520 nm             |
-    | green     | B2       | SR_B2     | 520-600 nm             |
-    | red       | B3       | SR_B3     | 630-690 nm             |
-    | nir       | B4       | SR_B4     | 770-900 nm             |
-    | swir1     | B5       | SR_B5     | 1550-1750 nm           |
-    | swir2     | B7       | SR_B7     | 2090-2350 nm           |
-    +-----------+----------+-----------+------------------------+
-
-    Notes
-    -----
-    - Landsat 5 TOA Collection (Tier 1):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_TOA
-
-    - Landsat 5 TOA Collection (Tier 2):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T2_TOA
-
-    - Landsat 5 SR Collection (Tier 1):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2
-
-    - Landsat 5 SR Collection (Tier 2):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T2_L2
-
-    - Cloud mask reference (QA_PIXEL flags):
-        https://www.usgs.gov/media/files/landsat-collection-2-pixel-quality-assessment
-
-    - TOA cloud filtering (Simple Cloud Score):
-        https://developers.google.com/earth-engine/guides/landsat?hl=pt-br#simple-cloud-score
+        Spectral indices to compute (e.g. ``{"ndvi", "evi2"}``).  Only indices
+        whose required bands are all in ``bands`` can be requested.
+    use_sr : bool, default True
+        Use atmospherically-corrected Surface Reflectance (SR) products.
+        Set to ``False`` for Top-of-Atmosphere (TOA) reflectance, which
+        extends coverage to 2013-05-05 (SR ends 2012-05-05).
+    tier : int, default 1
+        Collection tier.  Tier 1 has the highest geometric accuracy and is
+        recommended for time-series analysis.
+    use_cloud_mask : bool, default True
+        Apply the USGS QA_PIXEL bitmask to remove clouds, shadows, and
+        cirrus.  Disabling this delivers more images but with much more noise.
+    min_valid_pixel_count : int, default 12
+        Discard any image whose valid-pixel count over the ROI is below this.
+    toa_cloud_filter_strength : int, default 15
+        Additional cloud-score threshold for TOA imagery (0–100, lower =
+        stricter).  Ignored when ``use_sr=True``.
+    border_pixels_to_erode : float, default 1
+        Inward buffer in pixel-widths applied before extraction, to avoid
+        mixed-pixel artefacts at geometry edges.
+    min_area_to_keep_border : int, default 50_000
+        Skip border erosion for geometries smaller than this area (m²).
     """
 
     def __init__(
@@ -342,100 +339,41 @@ class Landsat5(AbstractLandsat):
 
 
 class Landsat7(AbstractLandsat):
-    """
-    Satellite abstraction for Landsat 7 (ETM+ sensor, Collection 2).
+    """Landsat 7 ETM+ — global coverage from 1999-04-15 to 2022-04-06, 30 m resolution, 16-day revisit.
 
-    Landsat 7 was launched in 1999 and provided over two decades of data.
-    This class supports both TOA and SR products, with optional cloud masking using the QA_PIXEL band.
+    Available bands: ``blue``, ``green``, ``red``, ``nir``, ``swir1``, ``swir2``, ``pan``.
 
     Parameters
     ----------
     bands : set of str, optional
-        Set of bands to select. Defaults to ['blue', 'green', 'red', 'nir', 'swir1', 'swir2'].
+        Subset of available bands to download.  Defaults to the six VNIR/SWIR
+        bands (``pan`` excluded from the SR default).
     indices : set of str, optional
-        Spectral indices to compute from the selected bands.
-    use_sr : bool, default=True
-        Whether to use surface reflectance products ('SR_B*' bands).
-        If False, uses top-of-atmosphere reflectance ('B*' bands).
-    tier : int, default=1
-        Landsat collection tier to use (1 or 2). Tier 1 has highest geometric accuracy.
-    use_cloud_mask : bool, default=True
-        Whether to apply QA_PIXEL-based cloud masking. If False, no cloud mask is applied.
-    min_valid_pixel_count : int, default=12
-        Minimum number of valid (non-cloud) pixels required to retain an image.
-    toa_cloud_filter_strength : int, default=15
-        Strength of the additional cloud filter applied to TOA imagery (if use_sr=False).
-        Used in the `remove_l_toa_tough_clouds` step.
-    border_pixels_to_erode : float, default=1
-        Number of pixels to erode from the geometry border.
-    min_area_to_keep_border : int, default=50_000
-        Minimum area (in m²) required to retain geometry after border erosion.
-    use_pan_sharpening : bool, default=False
-        If True, applies pan sharpening to the RGB bands using the 15m-resolution panchromatic band (B8).
-        Only applicable when `use_sr=False`. Raises ValueError if used with SR products.
-
-    Cloud Masking
-    -------------
-    Cloud masking is based on the QA_PIXEL band, using bit flags defined by USGS:
-    - Applied to both TOA and SR products when `use_cloud_mask=True`
-    - For TOA collections, an additional filter (`remove_l_toa_tough_clouds`) is applied
-    to remove low-quality observations based on a simple cloud scoring method.
-
-    Satellite Information
-    ---------------------
-    +----------------------------+------------------------+
-    | Field                      | Value                  |
-    +----------------------------+------------------------+
-    | Name                       | Landsat 7 ETM+         |
-    | Sensor                     | ETM+ (Enhanced TM Plus)|
-    | Platform                   | Landsat 7              |
-    | Temporal Resolution        | 16 days                |
-    | Pixel Size                 | 30 meters              |
-    | Coverage                   | Global                 |
-    +----------------------------+------------------------+
-
-    Collection Dates
-    ----------------
-    +-------------+------------+------------+
-    | Product     | Start Date | End Date  |
-    +-------------+------------+------------+
-    | TOA         | 1999-04-15 | 2022-04-06 |
-    | SR          | 1999-04-15 | 2022-04-06 |
-    +-------------+------------+------------+
-
-    Band Information
-    ----------------
-    +-----------+----------+-----------+------------------------+
-    | Band Name | TOA Name | SR Name   | Spectral Wavelength    |
-    +-----------+----------+-----------+------------------------+
-    | blue      | B1       | SR_B1     | 450-520 nm             |
-    | green     | B2       | SR_B2     | 520-600 nm             |
-    | red       | B3       | SR_B3     | 630-690 nm             |
-    | nir       | B4       | SR_B4     | 770-900 nm             |
-    | swir1     | B5       | SR_B5     | 1550-1750 nm           |
-    | swir2     | B7       | SR_B7     | 2090-2350 nm           |
-    | pan       | B8       |    —      | 520-900 nm (panchromatic) |
-    +-----------+----------+-----------+------------------------+
+        Spectral indices to compute (e.g. ``{"ndvi"}``).
+    use_sr : bool, default True
+        Surface Reflectance products (``SR_B*``).  Set to ``False`` for TOA.
+    tier : int, default 1
+        Collection tier (1 = best geometric accuracy).
+    use_cloud_mask : bool, default True
+        Apply QA_PIXEL bitmask cloud removal.
+    min_valid_pixel_count : int, default 12
+        Images below this valid-pixel count over the ROI are discarded.
+    toa_cloud_filter_strength : int, default 15
+        Additional cloud-score filter for TOA imagery (lower = stricter).
+    border_pixels_to_erode : float, default 1
+        Inward buffer (in pixel-widths) before extraction.
+    min_area_to_keep_border : int, default 50_000
+        Skip border erosion for geometries smaller than this area (m²).
+    use_pan_sharpening : bool, default False
+        HSV pan-sharpening of RGB using the 15 m panchromatic band.
+        Requires ``use_sr=False`` and ``"pan"`` in ``bands``.
 
     Notes
     -----
-    - Landsat 7 TOA Collection (Tier 1):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_TOA
-
-    - Landsat 7 TOA Collection (Tier 2):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T2_TOA
-
-    - Landsat 7 SR Collection (Tier 1):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2
-
-    - Landsat 7 SR Collection (Tier 2):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T2_L2
-
-    - Cloud mask reference (QA_PIXEL flags):
-        https://www.usgs.gov/media/files/landsat-collection-2-pixel-quality-assessment
-
-    - TOA cloud filtering (Simple Cloud Score):
-        https://developers.google.com/earth-engine/guides/landsat?hl=pt-br#simple-cloud-score
+    From 2003-05-31 onwards, the ETM+ scan-line corrector (SLC) failed,
+    introducing data gaps in a striped pattern over ~22 % of each scene.
+    Time-series analyses requiring gapless images should prefer Landsat 8/9
+    for post-2013 data.
     """
 
     def __init__(
@@ -481,100 +419,33 @@ class Landsat7(AbstractLandsat):
 
 
 class Landsat8(AbstractLandsat):
-    """
-    Satellite abstraction for Landsat 8 (OLI/TIRS sensor, Collection 2).
+    """Landsat 8 OLI/TIRS — global coverage from 2013-04-11 to present, 30 m resolution, 16-day revisit.
 
-    Landsat 8 was launched in 2013 and remains in operation, delivering high-quality Earth observation data.
-    This class supports both TOA and SR products, with optional cloud masking using the QA_PIXEL band.
+    Available bands: ``blue``, ``green``, ``red``, ``nir``, ``swir1``, ``swir2``, ``pan``.
 
     Parameters
     ----------
     bands : set of str, optional
-        Set of bands to select. Defaults to ['blue', 'green', 'red', 'nir', 'swir1', 'swir2'].
+        Subset of available bands.  Defaults to the six VNIR/SWIR bands.
     indices : set of str, optional
-        Spectral indices to compute from the selected bands.
-    use_sr : bool, default=True
-        Whether to use surface reflectance products ('SR_B*' bands).
-        If False, uses top-of-atmosphere reflectance ('B*' bands).
-    tier : int, default=1
-        Landsat collection tier to use (1 or 2). Tier 1 has highest geometric accuracy.
-    use_cloud_mask : bool, default=True
-        Whether to apply QA_PIXEL-based cloud masking. If False, no cloud mask is applied.
-    min_valid_pixel_count : int, default=12
-        Minimum number of valid (non-cloud) pixels required to retain an image.
-    toa_cloud_filter_strength : int, default=15
-        Strength of the additional cloud filter applied to TOA imagery (if use_sr=False).
-        Used in the `remove_l_toa_tough_clouds` step.
-    border_pixels_to_erode : float, default=1
-        Number of pixels to erode from the geometry border.
-    min_area_to_keep_border : int, default=50_000
-        Minimum area (in m²) required to retain geometry after border erosion.
-    use_pan_sharpening : bool, default=False
-        If True, applies pan sharpening to the RGB bands using the 15m-resolution panchromatic band (B8).
-        Only applicable when `use_sr=False`. Raises ValueError if used with SR products.
-
-    Cloud Masking
-    -------------
-    Cloud masking is based on the QA_PIXEL band, using bit flags defined by USGS:
-    - Applied to both TOA and SR products when `use_cloud_mask=True`
-    - For TOA collections, an additional filter (`remove_l_toa_tough_clouds`) is applied
-    to remove low-quality observations based on a simple cloud scoring method.
-
-    Satellite Information
-    ---------------------
-    +----------------------------+------------------------+
-    | Field                      | Value                  |
-    +----------------------------+------------------------+
-    | Name                       | Landsat 8 OLI/TIRS     |
-    | Sensor                     | OLI + TIRS             |
-    | Platform                   | Landsat 8              |
-    | Temporal Resolution        | 16 days                |
-    | Pixel Size                 | 30 meters              |
-    | Coverage                   | Global                 |
-    +----------------------------+------------------------+
-
-    Collection Dates
-    ----------------
-    +-------------+------------+------------+
-    | Product     | Start Date | End Date  |
-    +-------------+------------+------------+
-    | TOA         | 2013-04-11 | present   |
-    | SR          | 2013-04-11 | present   |
-    +-------------+------------+------------+
-
-    Band Information
-    ----------------
-    +-----------+----------+-----------+------------------------+
-    | Band Name | TOA Name | SR Name   | Spectral Wavelength    |
-    +-----------+----------+-----------+------------------------+
-    | blue      | B2       | SR_B2     | 450-515 nm             |
-    | green     | B3       | SR_B3     | 525-600 nm             |
-    | red       | B4       | SR_B4     | 630-680 nm             |
-    | nir       | B5       | SR_B5     | 845-885 nm             |
-    | swir1     | B6       | SR_B6     | 1560-1660 nm           |
-    | swir2     | B7       | SR_B7     | 2100-2300 nm           |
-    | pan       | B8       |    —      | 520-900 nm (panchromatic) |
-    +-----------+----------+-----------+------------------------+
-
-    Notes
-    -----
-    - Landsat 8 TOA Collection (Tier 1):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_TOA
-
-    - Landsat 8 TOA Collection (Tier 2):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T2_TOA
-
-    - Landsat 8 SR Collection (Tier 1):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2
-
-    - Landsat 8 SR Collection (Tier 2):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T2_L2
-
-    - Cloud mask reference (QA_PIXEL flags):
-        https://www.usgs.gov/media/files/landsat-collection-2-pixel-quality-assessment
-
-    - TOA cloud filtering (Simple Cloud Score):
-        https://developers.google.com/earth-engine/guides/landsat?hl=pt-br#simple-cloud-score
+        Spectral indices to compute (e.g. ``{"ndvi", "evi2", "ndwi"}``).
+    use_sr : bool, default True
+        Surface Reflectance products.  Set to ``False`` for TOA.
+    tier : int, default 1
+        Collection tier (1 = best geometric accuracy).
+    use_cloud_mask : bool, default True
+        Apply QA_PIXEL bitmask cloud removal.
+    min_valid_pixel_count : int, default 12
+        Images below this valid-pixel count over the ROI are discarded.
+    toa_cloud_filter_strength : int, default 15
+        Additional cloud-score filter for TOA imagery.
+    border_pixels_to_erode : float, default 1
+        Inward buffer (in pixel-widths) before extraction.
+    min_area_to_keep_border : int, default 50_000
+        Skip border erosion for geometries smaller than this area (m²).
+    use_pan_sharpening : bool, default False
+        HSV pan-sharpening of RGB using the 15 m panchromatic band.
+        Requires ``use_sr=False`` and ``"pan"`` in ``bands``.
     """
 
     def __init__(
@@ -620,101 +491,34 @@ class Landsat8(AbstractLandsat):
 
 
 class Landsat9(AbstractLandsat):
-    """
-    Satellite abstraction for Landsat 9 (OLI-2/TIRS-2 sensor, Collection 2).
+    """Landsat 9 OLI-2/TIRS-2 — global coverage from 2021-11-01 to present, 30 m resolution, 16-day revisit.
 
-    Landsat 9 is the latest mission in the Landsat program, launched in 2021. It is nearly identical to Landsat 8
-    and provides continuity for high-quality multispectral Earth observation. This class supports both TOA and SR
-    products, with optional cloud masking using the QA_PIXEL band.
+    Nearly identical to Landsat 8; provides mission continuity with improved radiometric performance.
+    Available bands: ``blue``, ``green``, ``red``, ``nir``, ``swir1``, ``swir2``, ``pan``.
 
     Parameters
     ----------
     bands : set of str, optional
-        Set of bands to select. Defaults to ['blue', 'green', 'red', 'nir', 'swir1', 'swir2'].
+        Subset of available bands.  Defaults to the six VNIR/SWIR bands.
     indices : set of str, optional
-        Spectral indices to compute from the selected bands.
-    use_sr : bool, default=True
-        Whether to use surface reflectance products ('SR_B*' bands).
-        If False, uses top-of-atmosphere reflectance ('B*' bands).
-    tier : int, default=1
-        Landsat collection tier to use (1 or 2). Tier 1 has highest geometric accuracy.
-    use_cloud_mask : bool, default=True
-        Whether to apply QA_PIXEL-based cloud masking. If False, no cloud mask is applied.
-    min_valid_pixel_count : int, default=12
-        Minimum number of valid (non-cloud) pixels required to retain an image.
-    toa_cloud_filter_strength : int, default=15
-        Strength of the additional cloud filter applied to TOA imagery (if use_sr=False).
-        Used in the `remove_l_toa_tough_clouds` step.
-    border_pixels_to_erode : float, default=1
-        Number of pixels to erode from the geometry border.
-    min_area_to_keep_border : int, default=50_000
-        Minimum area (in m²) required to retain geometry after border erosion.
-    use_pan_sharpening : bool, default=False
-        If True, applies pan sharpening to the RGB bands using the 15m-resolution panchromatic band (B8).
-        Only applicable when `use_sr=False`. Raises ValueError if used with SR products.
-
-    Cloud Masking
-    -------------
-    Cloud masking is based on the QA_PIXEL band, using bit flags defined by USGS:
-    - Applied to both TOA and SR products when `use_cloud_mask=True`
-    - For TOA collections, an additional filter (`remove_l_toa_tough_clouds`) is applied
-    to remove low-quality observations based on a simple cloud scoring method.
-
-    Satellite Information
-    ---------------------
-    +----------------------------+------------------------+
-    | Field                      | Value                  |
-    +----------------------------+------------------------+
-    | Name                       | Landsat 9 OLI-2/TIRS-2 |
-    | Sensor                     | OLI-2 + TIRS-2         |
-    | Platform                   | Landsat 9              |
-    | Temporal Resolution        | 16 days                |
-    | Pixel Size                 | 30 meters              |
-    | Coverage                   | Global                 |
-    +----------------------------+------------------------+
-
-    Collection Dates
-    ----------------
-    +-------------+------------+------------+
-    | Product     | Start Date | End Date  |
-    +-------------+------------+------------+
-    | TOA         | 2021-11-01 | present   |
-    | SR          | 2021-11-01 | present   |
-    +-------------+------------+------------+
-
-    Band Information
-    ----------------
-    +-----------+----------+-----------+------------------------+
-    | Band Name | TOA Name | SR Name   | Spectral Wavelength    |
-    +-----------+----------+-----------+------------------------+
-    | blue      | B2       | SR_B2     | 450-515 nm             |
-    | green     | B3       | SR_B3     | 525-600 nm             |
-    | red       | B4       | SR_B4     | 630-680 nm             |
-    | nir       | B5       | SR_B5     | 845-885 nm             |
-    | swir1     | B6       | SR_B6     | 1560-1660 nm           |
-    | swir2     | B7       | SR_B7     | 2100-2300 nm           |
-    | pan       | B8       |    —      | 520-900 nm (panchromatic) |
-    +-----------+----------+-----------+------------------------+
-
-    Notes
-    -----
-    - Landsat 9 TOA Collection (Tier 1):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_TOA
-
-    - Landsat 9 TOA Collection (Tier 2):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T2_TOA
-
-    - Landsat 9 SR Collection (Tier 1):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2
-
-    - Landsat 9 SR Collection (Tier 2):
-        https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T2_L2
-
-    - Cloud mask reference (QA_PIXEL flags):
-        https://www.usgs.gov/media/files/landsat-collection-2-pixel-quality-assessment
-
-    - TOA cloud filtering (Simple Cloud Score):
-        https://developers.google.com/earth-engine/guides/landsat?hl=pt-br#simple-cloud-score
+        Spectral indices to compute (e.g. ``{"ndvi", "evi2"}``).
+    use_sr : bool, default True
+        Surface Reflectance products.  Set to ``False`` for TOA.
+    tier : int, default 1
+        Collection tier (1 = best geometric accuracy).
+    use_cloud_mask : bool, default True
+        Apply QA_PIXEL bitmask cloud removal.
+    min_valid_pixel_count : int, default 12
+        Images below this valid-pixel count over the ROI are discarded.
+    toa_cloud_filter_strength : int, default 15
+        Additional cloud-score filter for TOA imagery.
+    border_pixels_to_erode : float, default 1
+        Inward buffer (in pixel-widths) before extraction.
+    min_area_to_keep_border : int, default 50_000
+        Skip border erosion for geometries smaller than this area (m²).
+    use_pan_sharpening : bool, default False
+        HSV pan-sharpening of RGB using the 15 m panchromatic band.
+        Requires ``use_sr=False`` and ``"pan"`` in ``bands``.
     """
 
     def __init__(

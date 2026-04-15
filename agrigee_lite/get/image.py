@@ -27,33 +27,42 @@ def download_multiple_images(  # noqa: C901
     force_redownload: bool = False,
     image_indices: list[int] | None = None,
 ) -> list[str]:
-    """
-    Download multiple satellite images for a given geometry and date range.
+    """Download raw satellite images (as GeoTIFF ZIPs) for a geometry and date range.
+
+    Each image is saved as a ``.zip`` file in
+    ``~/.cache/agrigee_lite/images/<hash>/``, where the hash encodes all
+    relevant parameters so cached results are reused automatically on
+    subsequent calls.
 
     Parameters
     ----------
     geometry : Polygon or MultiPolygon
-        The area of interest as a shapely Polygon or MultiPolygon.
+        Area of interest.
     start_date : pd.Timestamp or str
-        Start date for image collection.
+        Start of the date range (ISO-8601 or ``YYYY-MM-DD``).
     end_date : pd.Timestamp or str
-        End date for image collection.
+        End of the date range (inclusive).
     satellite : AbstractSatellite
-        The satellite configuration to use for image collection.
-    invalid_images_threshold : float, optional
-        Threshold for filtering images based on valid pixels (0.0-1.0), by default 0.5.
-    max_parallel_downloads : int, optional
-        Maximum number of parallel downloads, by default 40.
-    force_redownload : bool, optional
-        Whether to force re-download of existing files, by default False.
-    image_indices : list[int] or None, optional
-        List of specific image indices to download (e.g., [0, 1] for first two images).
-        If None, all images in the date range will be downloaded, by default None.
+        Satellite configuration, e.g. ``Sentinel2(bands={"red", "nir"})``.
+    invalid_images_threshold : float, default 0.5
+        Fraction of the maximum valid-pixel count used as a quality filter.
+        Images with fewer valid pixels than
+        ``max_valid_pixels * invalid_images_threshold`` are excluded.
+        Set to 0.0 to keep all images regardless of cloud cover.
+    max_parallel_downloads : int, default 40
+        Maximum simultaneous downloads via aria2.
+    force_redownload : bool, default False
+        Delete cached ZIPs and re-download from scratch.
+    image_indices : list of int or None, optional
+        If given, only download the images at these positions in the
+        (filtered, sorted) collection.  Useful for previewing a subset
+        without downloading everything.
 
     Returns
     -------
-    list[str]
-        List of image names (dates in YYYY-MM-DD format) that were downloaded.
+    list of str
+        Dates of the downloaded images in ``YYYY-MM-DD`` format, in the same
+        order as the files on disk.
     """
 
     start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
@@ -279,12 +288,36 @@ async def download_multiple_images_async(
     force_redownload: bool = False,
     image_indices: list[int] | None = None,
 ) -> list[str]:
-    """
-    Async version of :func:`download_multiple_images`.
+    """Async version of :func:`download_multiple_images`.
 
-    GEE URL fetches are issued concurrently via ``asyncio.to_thread``; aria2
-    progress is polled with ``asyncio.sleep`` so the event loop stays free.
-    Multiple coroutines can run in parallel without blocking each other.
+    Identical semantics to the synchronous version but non-blocking: GEE URL
+    resolution runs in a thread pool via ``asyncio.to_thread`` and aria2 is
+    polled with ``asyncio.sleep``, so the event loop stays responsive.  Use
+    this variant inside the REST API or any other async context.
+
+    Parameters
+    ----------
+    geometry : Polygon or MultiPolygon
+        Area of interest.
+    start_date : pd.Timestamp or str
+        Start of the date range.
+    end_date : pd.Timestamp or str
+        End of the date range.
+    satellite : AbstractSatellite
+        Satellite configuration.
+    invalid_images_threshold : float, default 0.5
+        Quality filter — see :func:`download_multiple_images`.
+    max_parallel_downloads : int, default 40
+        Maximum simultaneous aria2 downloads.
+    force_redownload : bool, default False
+        Re-download even if cached ZIPs exist.
+    image_indices : list of int or None, optional
+        Restrict to specific collection positions.
+
+    Returns
+    -------
+    list of str
+        Dates of the downloaded images in ``YYYY-MM-DD`` format.
     """
     start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
     end_date = end_date.strftime("%Y-%m-%d") if isinstance(end_date, pd.Timestamp) else end_date

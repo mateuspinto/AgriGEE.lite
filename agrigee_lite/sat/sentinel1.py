@@ -14,89 +14,38 @@ from agrigee_lite.sat.abstract_satellite import RadarSatellite
 
 
 class Sentinel1GRD(RadarSatellite):
-    """
-    ⚠️⚠️⚠️ Sentinel-1 Availability Warning
-    ---------------------------------
-    Due to the failure of the Sentinel-1B satellite in December 2021, the constellation has been operating solely
-    with Sentinel-1A. This has led to reduced data availability in many regions — particularly in the Southern
-    Hemisphere — with revisit times increasing from ~6 days to ~12 days or more. Some areas may experience
-    significant temporal gaps, especially after early 2022. ⚠️⚠️⚠️
+    """Sentinel-1 C-band SAR GRD — global coverage from 2014-10-03 to present, ~10 m resolution.
 
-    Satellite abstraction for Sentinel-1 Ground Range Detected (GRD) product.
+    Unlike optical sensors, SAR works in all weather and at night.  Band values
+    are backscatter intensity in decibels (dB), not reflectance.  Ascending and
+    descending orbit passes image the same area from different angles, yielding
+    different backscatter signatures.
 
-    Sentinel-1 is a constellation of two polar-orbiting satellites (Sentinel-1A and 1B)
-    operated by ESA, equipped with C-band Synthetic Aperture Radar (SAR). It provides
-    all-weather, day-and-night imaging of Earth's surface.
+    Available bands: ``vv`` (vertical–vertical), ``vh`` (vertical–horizontal).
 
-    This class wraps the Sentinel-1 GRD product and allows users to select polarizations,
-    filter by orbit pass, and apply edge masks to remove low-backscatter areas (e.g., layover).
+    .. warning::
+        Sentinel-1B failed in December 2021.  Since then only Sentinel-1A is
+        operational, roughly halving revisit frequency (~12 days instead of ~6)
+        in many regions, especially the Southern Hemisphere.
 
     Parameters
     ----------
     bands : set of str, optional
-        Set of polarizations to select. Defaults to {'vv', 'vh'}.
+        Polarisation channels to include.  Defaults to ``{"vv", "vh"}``.
     indices : set of str, optional
-        Set of radar indices (e.g. ratios). Defaults to [].
-    ascending : bool, default=True
-        If True, selects ASCENDING orbit passes. If False, selects DESCENDING.
-    use_edge_mask : bool, optional
-        Whether to apply an edge mask to remove extreme low-backscatter areas
-        (commonly occurring near the edges of acquisitions or in layover/shadow zones).
-        Default is True.
-    min_valid_pixel_count : int, default=20
-        Minimum number of valid (non-cloud) pixels required to retain an image.
-    border_pixels_to_erode : float, default=1
-        Number of pixels to erode from the geometry border.
-    min_area_to_keep_border : int, default=35_000
-        Minimum area (in m²) required to retain geometry after border erosion.
-
-    Edge Masking
-    ------------
-    Sentinel-1 radar images often contain low-backscatter areas near image borders or over layover zones.
-    This class applies a threshold-based edge mask (`< -30 dB`) to reduce artifacts.
-
-    Satellite Information
-    ---------------------
-    +-------------------------------+-------------------------------+
-    | Field                         | Value                         |
-    +-------------------------------+-------------------------------+
-    | Name                          | Sentinel-1                    |
-    | Agency                        | ESA (Copernicus)              |
-    | Instrument                    | C-band Synthetic Aperture Radar (SAR) |
-    | Revisit Time (full mission)   | ~6 days (1A + 1B constellation)|
-    | Revisit Time (post-2021)      | ~12 days (only 1A active)     |
-    | Orbit Type                    | Sun-synchronous (polar)       |
-    | Pixel Size                    | ~10 meters                    |
-    | Coverage                      | Global                        |
-    +-------------------------------+-------------------------------+
-
-    Collection Dates
-    ----------------
-    +------------------+-------------+-----------+
-    | Product          | Start Date  | End Date  |
-    +------------------+-------------+-----------+
-    | GRD              | 2014-10-03  | present   |
-    +------------------+-------------+-----------+
-
-    Band Information
-    ----------------
-    +------------+-----------+-------------+------------------------------+
-    | Band Name  | Frequency | Resolution  | Description                  |
-    +------------+-----------+-------------+------------------------------+
-    | VV         | 5.405 GHz | ~10 meters  | Vertical transmit/receive    |
-    | VH         | 5.405 GHz | ~10 meters  | Vertical transmit, horizontal receive |
-    +------------+-----------+-------------+------------------------------+
-
-    Notes
-    -----
-    - Official GRD collection (Earth Engine):
-      https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S1_GRD
-
-    - Sentinel-1 User Guide:
-      https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar
-
-    - Orbit direction filter:
-      https://developers.google.com/earth-engine/sentinel1#orbit-direction
+        Radar-derived indices to compute (e.g. ``{"vhvv"}``).
+    ascending : bool, default True
+        Use ascending orbit passes.  Set to ``False`` for descending.
+        Mixing both in the same time series introduces geometric inconsistencies.
+    use_edge_mask : bool, default True
+        Mask pixels below −30 dB, which typically correspond to acquisition
+        edges and radar shadow/layover artefacts.
+    min_valid_pixel_count : int, default 20
+        Images with fewer valid pixels over the ROI are discarded.
+    border_pixels_to_erode : float, default 1
+        Inward buffer in pixel-widths before extraction.
+    min_area_to_keep_border : int, default 35_000
+        Skip border erosion for geometries smaller than this area (m²).
     """
 
     def __init__(
