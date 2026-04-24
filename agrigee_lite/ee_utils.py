@@ -1,7 +1,6 @@
 import json
 import os
-import random
-import string
+import tempfile
 
 import ee
 import geopandas as gpd
@@ -89,7 +88,8 @@ def ee_map_valid_pixels(img: ee.Image, ee_geometry: ee.Geometry, pixel_size: int
     mask = ee.Image(img).select([0]).gt(0)
 
     valid_pixels = ee.Number(
-        mask.rename("valid")
+        mask
+        .rename("valid")
         .reduceRegion(
             reducer=ee.Reducer.count(),
             geometry=ee_geometry,
@@ -180,20 +180,25 @@ def ee_gdf_to_feature_collection(
         columns={start_date_column_name: "s", end_date_column_name: "e", original_index_column_name: "0"}, inplace=True
     )  # saving memory when uploading geojson to GEE
 
-    geo_json = os.path.join(os.getcwd(), "".join(random.choice(string.ascii_lowercase) for i in range(6)) + ".geojson")  # noqa: S311
     gdf = gdf.to_crs(4326)
-    gdf.to_file(geo_json, driver="GeoJSON")
+    with tempfile.NamedTemporaryFile(suffix=".geojson", delete=False) as tmp:
+        geo_json = tmp.name
 
-    with open(os.path.abspath(geo_json), encoding="utf-8") as f:
-        json_dict = json.load(f)
+    try:
+        gdf.to_file(geo_json, driver="GeoJSON")
 
-    if json_dict["type"] == "FeatureCollection":
+        with open(geo_json, encoding="utf-8") as f:
+            json_dict = json.load(f)
+
+        if json_dict["type"] != "FeatureCollection":
+            raise ValueError(f"Expected a GeoJSON FeatureCollection, got '{json_dict['type']}'")
+
         for feature in json_dict["features"]:
             if feature["geometry"]["type"] != "Point":
                 feature["geometry"]["geodesic"] = True
         features = ee.FeatureCollection(json_dict)
-
-    os.remove(geo_json)
+    finally:
+        os.remove(geo_json)
 
     return features
 
@@ -400,10 +405,7 @@ def ee_get_reducers(reducer_names: set[str] | None = None) -> ee.Reducer:  # noq
     >>> # Multiple reducers including percentiles
     >>> reducer = ee_get_reducers({"mean", "std", "p10", "p90"})
     """
-    if reducer_names is None:
-        reducer_names = ["median"]
-
-    names = sorted([n.lower() for n in reducer_names])
+    names: list[str] = ["median"] if reducer_names is None else sorted([n.lower() for n in reducer_names])
 
     pct_vals = sorted({int(n[1:]) for n in names if n.startswith("p")})
 
@@ -489,7 +491,8 @@ def ee_filter_img_collection_invalid_pixels(
     )
 
     ee_img_collection = (
-        ee_img_collection.map(lambda img: img.set("ZZ_USER_TIME_DUMMY", img.date().format("YYYY-MM-dd")))
+        ee_img_collection
+        .map(lambda img: img.set("ZZ_USER_TIME_DUMMY", img.date().format("YYYY-MM-dd")))
         .sort("ZZ_USER_TIME_DUMMY")
         .distinct("ZZ_USER_TIME_DUMMY")
     )
@@ -681,13 +684,19 @@ def ee_quick_start() -> None:
     GOOGLE_APPLICATION_CREDENTIALS environment variable for use Google Cloud Storage.
     """
 
+    gee_vars = ["GEE_KEY", "GEE_KEY_MULTIPLE_ACCOUNTS", "GOOGLE_APPLICATION_CREDENTIALS"]
+    print("GEE environment variables:")
+    for var in gee_vars:
+        value = os.environ.get(var)
+        print(f"  {var} = {value!r}")
+
     if not ee_is_authenticated():
         if "GEE_KEY" in os.environ:
             gee_key = os.environ["GEE_KEY"]
 
             if gee_key.endswith(".json"):  # with service account
                 credentials = ee.ServiceAccountCredentials(gee_key, gee_key)
-                ee.Initialize(credentials)
+                ee.Initialize(credentials, opt_url="https://earthengine-highvolume.googleapis.com")
 
                 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gee_key
 
@@ -723,7 +732,7 @@ def get_number_of_available_service_accounts() -> int:
         return 1
 
 
-def login_with_service_account_n(n: int) -> None:
+def login_with_service_account_n(n: int) -> str:
     """
     Login to Earth Engine using the nth service account specified in the GEE_KEY_MULTIPLE_ACCOUNTS environment variable.
 
@@ -732,28 +741,33 @@ def login_with_service_account_n(n: int) -> None:
     n : int
         The index of the service account to use (0-based).
 
+    Returns
+    -------
+    str
+        The ``project_id`` of the selected service account, or an empty string
+        when ``GEE_KEY_MULTIPLE_ACCOUNTS`` is not set.
+
     Raises
     ------
     IndexError
         If the specified index is out of range of the available service accounts.
     """
-    if "GEE_KEY_MULTIPLE_ACCOUNTS" in os.environ:
-        gee_key_multiple_accounts = os.environ["GEE_KEY_MULTIPLE_ACCOUNTS"]
-        service_accounts = [sa.strip() for sa in gee_key_multiple_accounts.split(",") if sa.strip()]
+    if "GEE_KEY_MULTIPLE_ACCOUNTS" not in os.environ:
+        return ""
 
-        if n < 0 or n >= len(service_accounts):
-            raise IndexError(f"Service account index {n} is out of range. Available accounts: {len(service_accounts)}")  # noqa: TRY003
+    gee_key_multiple_accounts = os.environ["GEE_KEY_MULTIPLE_ACCOUNTS"]
+    service_accounts = [sa.strip() for sa in gee_key_multiple_accounts.split(",") if sa.strip()]
 
-        selected_service_account = service_accounts[n]
-        credentials = ee.ServiceAccountCredentials(selected_service_account, selected_service_account)
-        ee.Initialize(credentials)
+    if n < 0 or n >= len(service_accounts):
+        raise IndexError(f"Service account index {n} is out of range. Available accounts: {len(service_accounts)}")  # noqa: TRY003
 
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = selected_service_account
+    selected_service_account = service_accounts[n]
+    credentials = ee.ServiceAccountCredentials(selected_service_account, selected_service_account)
+    ee.Initialize(credentials)
 
-        with open(selected_service_account) as f:
-            key_data = json.load(f)
-            print(f"Now using - {key_data.get('project_id', 'Unknown')}, {key_data.get('client_email', 'Unknown')}.")
-    else:
-        print(
-            "Environment variable GEE_KEY_MULTIPLE_ACCOUNTS is not set. Please set it to use multiple service accounts."
-        )
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = selected_service_account
+
+    with open(selected_service_account) as f:
+        key_data = json.load(f)
+
+    return str(key_data.get("project_id", "unknown"))

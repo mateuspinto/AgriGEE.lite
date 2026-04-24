@@ -8,63 +8,29 @@ from agrigee_lite.sat.abstract_satellite import SingleImageSatellite
 
 
 class ANADEM(SingleImageSatellite):
-    """
-    Satellite abstraction for ANADEM (Altimetric and Topographic Attributes of the Brazilian Territory).
+    """ANADEM — Brazilian territory DEM, 30 m resolution (single static image).
 
-    ANADEM is a DEM-derived (Digital Elevation Model) product designed to support land analysis
-    based on elevation, slope, and aspect characteristics across the Brazilian territory.
-    It is particularly useful for ecological zoning, terrain classification, hydrological modeling,
-    and environmental risk assessment.
+    Topographic product covering Brazil, derived from SRTM and auxiliary DEMs
+    by FURGS / ANA.  Unlike time-series satellites, this returns one row per
+    geometry with terrain statistics.
+
+    ``compute()`` produces:
+    - ``elevation_mean`` — mean elevation (m above sea level).
+    - ``slope_*`` — fraction of pixels in six slope classes (flat ≤3°,
+      gentle 3–8°, undulating 8–20°, strong 20–45°, mountainous 45–75°,
+      steep >75°).
+    - ``cardinal_*`` — fraction of pixels in each of the eight compass
+      aspect directions.
 
     Parameters
     ----------
     bands : list of str, optional
-        List of bands to select. Defaults to ['elevation', 'slope', 'aspect'].
-        - 'elevation': Ground elevation in meters.
-        - 'slope': Degree of inclination derived from elevation.
-        - 'aspect': Direction of slope (0-360°), where 0 = North.
-    border_pixels_to_erode : float, default=1
-        Number of pixels to erode from the geometry border to reduce edge artifacts.
-    min_area_to_keep_border : int, default=50_000
-        Minimum area (in m²) required to retain geometry after border erosion.
-
-    Satellite Information
-    ---------------------
-    +------------------------------------+-----------------------------+
-    | Field                              | Value                       |
-    +------------------------------------+-----------------------------+
-    | Name                               | ANADEM                      |
-    | Resolution                         | 30 meters                   |
-    | Source                             | FURGS, ANA                  |
-    | Coverage                           | Brazil                      |
-    | Derived From                       | SRTM + auxiliary DEMs       |
-    +------------------------------------+-----------------------------+
-
-    Band Information
-    ----------------
-    +-----------+----------------------------+---------------------------+
-    | Band Name | Description                | Unit / Range              |
-    +-----------+----------------------------+---------------------------+
-    | elevation | Ground elevation           | meters above sea level    |
-    | slope     | Terrain slope              | degrees (0°-90°)          |
-    | aspect    | Orientation of slope       | degrees (0°-360° from N)  |
-    +-----------+----------------------------+---------------------------+
-
-    Notes
-    -----
-    - The slope and aspect bands are computed from the elevation layer using the
-    `ee.Terrain.products()` utility.
-    - The `compute()` method calculates:
-        - Mean elevation over the region.
-        - Percentage breakdown of slope classes:
-            - Flat (0-3°), Gentle (3-8°), Undulating (8-20°),
-            Strong (20-45°), Mountainous (45-75°), and Steep (>75°).
-        - Percentage breakdown of aspect classes:
-            - North, NE, East, SE, South, SW, West, NW.
-    - These statistics are returned as a `FeatureCollection` with a single feature
-    containing the computed values.
-    - Reference paper: https://www.mdpi.com/2072-4292/16/13/2321
-    - Data source: https://hge-iph.github.io/anadem/
+        Subset of ``["elevation", "slope", "aspect"]``.  Defaults to all three.
+        Omitting a band also omits its derived statistics from the output.
+    border_pixels_to_erode : float, default 1
+        Inward buffer in pixel-widths before extraction.
+    min_area_to_keep_border : int, default 50_000
+        Skip border erosion for geometries smaller than this area (m²).
     """
 
     def __init__(
@@ -124,7 +90,7 @@ class ANADEM(SingleImageSatellite):
         return selectors
 
     def image(self, ee_feature: ee.Feature) -> ee.Image:
-        image = ee.Image(self.imageName).updateMask(ee.Image(self.imageName).neq(-9999))
+        image = ee.Image(self.imageName).updateMask(ee.Image(self.imageName).neq(ee.Number(-9999)))
 
         requested_bands = [b for b, _ in self.selectedBands]
 
@@ -168,7 +134,7 @@ class ANADEM(SingleImageSatellite):
                     reducer=ee.Reducer.mean(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .get("elevation")
@@ -196,7 +162,7 @@ class ANADEM(SingleImageSatellite):
                     reducer=ee.Reducer.count(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .getNumber("constant")
@@ -210,7 +176,7 @@ class ANADEM(SingleImageSatellite):
                         reducer=ee.Reducer.count(),
                         geometry=ee_geometry,
                         scale=self.pixelSize,
-                        maxPixels=subsampling_max_pixels,
+                        maxPixels=int(subsampling_max_pixels),
                         bestEffort=True,
                     )
                     .getNumber("constant")
@@ -241,7 +207,7 @@ class ANADEM(SingleImageSatellite):
                     reducer=ee.Reducer.count(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .getNumber("constant")
@@ -255,7 +221,7 @@ class ANADEM(SingleImageSatellite):
                         reducer=ee.Reducer.count(),
                         geometry=ee_geometry,
                         scale=self.pixelSize,
-                        maxPixels=subsampling_max_pixels,
+                        maxPixels=int(subsampling_max_pixels),
                         bestEffort=True,
                     )
                     .getNumber("constant")
@@ -283,62 +249,27 @@ class ANADEM(SingleImageSatellite):
 
 
 class CopernicusDEM(SingleImageSatellite):
-    """
-    Satellite abstraction for Copernicus DEM GLO30 (Digital Elevation Model).
+    """Copernicus DEM GLO30 — global DEM, 30 m resolution (single static image).
 
-    The Copernicus DEM GLO30 is a global Digital Elevation Model with 30-meter spatial resolution
-    derived from the Copernicus program. It provides worldwide coverage of terrain elevation
-    and is an essential dataset for hydrological modeling, terrain classification, and
-    environmental analysis.
+    Global Digital Elevation Model from ESA's Copernicus programme.  Same
+    output schema as ``ANADEM`` but with worldwide coverage.
+
+    ``compute()`` produces:
+    - ``elevation_mean`` — mean elevation (m above sea level).
+    - ``slope_*`` — fraction of pixels in six slope classes (flat ≤3°,
+      gentle 3–8°, undulating 8–20°, strong 20–45°, mountainous 45–75°,
+      steep >75°).
+    - ``cardinal_*`` — fraction of pixels in each of the eight compass
+      aspect directions.
 
     Parameters
     ----------
     bands : list of str, optional
-        List of bands to select. Defaults to ['elevation', 'slope', 'aspect'].
-        - 'elevation': Ground elevation in meters above sea level.
-        - 'slope': Degree of inclination derived from elevation.
-        - 'aspect': Direction of slope (0-360°), where 0 = North.
-    border_pixels_to_erode : float, default=1
-        Number of pixels to erode from the geometry border to reduce edge artifacts.
-    min_area_to_keep_border : int, default=50_000
-        Minimum area (in m²) required to retain geometry after border erosion.
-
-    Satellite Information
-    ---------------------
-    +------------------------------------+-----------------------------+
-    | Field                              | Value                       |
-    +------------------------------------+-----------------------------+
-    | Name                               | Copernicus DEM GLO30        |
-    | Resolution                         | 30 meters                   |
-    | Source                             | European Space Agency (ESA) |
-    | Coverage                           | Worldwide                   |
-    | Derived From                       | SRTM + additional datasets  |
-    +------------------------------------+-----------------------------+
-
-    Band Information
-    ----------------
-    +-----------+----------------------------+---------------------------+
-    | Band Name | Description                | Unit / Range              |
-    +-----------+----------------------------+---------------------------+
-    | elevation | Ground elevation           | meters above sea level    |
-    | slope     | Terrain slope              | degrees (0°-90°)          |
-    | aspect    | Orientation of slope       | degrees (0°-360° from N)  |
-    +-----------+----------------------------+---------------------------+
-
-    Notes
-    -----
-    - The slope and aspect bands are computed from the elevation layer using the
-    `ee.Terrain.products()` utility.
-    - The `compute()` method calculates:
-        - Mean elevation over the region.
-        - Percentage breakdown of slope classes:
-            - Flat (0-3°), Gentle (3-8°), Undulating (8-20°),
-            Strong (20-45°), Mountainous (45-75°), and Steep (>75°).
-        - Percentage breakdown of aspect classes:
-            - North, NE, East, SE, South, SW, West, NW.
-    - These statistics are returned as a `FeatureCollection` with a single feature
-    containing the computed values.
-    - Data source: https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_DEM_GLO30
+        Subset of ``["elevation", "slope", "aspect"]``.  Defaults to all three.
+    border_pixels_to_erode : float, default 1
+        Inward buffer in pixel-widths before extraction.
+    min_area_to_keep_border : int, default 50_000
+        Skip border erosion for geometries smaller than this area (m²).
     """
 
     def __init__(
@@ -398,7 +329,7 @@ class CopernicusDEM(SingleImageSatellite):
         return selectors
 
     def image(self, ee_feature: ee.Feature) -> ee.Image:
-        image = ee.Image(self.imageName).updateMask(ee.Image(self.imageName).neq(-32768))
+        image = ee.Image(self.imageName).updateMask(ee.Image(self.imageName).neq(ee.Number(-32768)))
 
         requested_bands = [b for b, _ in self.selectedBands]
 
@@ -442,7 +373,7 @@ class CopernicusDEM(SingleImageSatellite):
                     reducer=ee.Reducer.mean(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .get("elevation")
@@ -470,7 +401,7 @@ class CopernicusDEM(SingleImageSatellite):
                     reducer=ee.Reducer.count(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .getNumber("constant")
@@ -484,7 +415,7 @@ class CopernicusDEM(SingleImageSatellite):
                         reducer=ee.Reducer.count(),
                         geometry=ee_geometry,
                         scale=self.pixelSize,
-                        maxPixels=subsampling_max_pixels,
+                        maxPixels=int(subsampling_max_pixels),
                         bestEffort=True,
                     )
                     .getNumber("constant")
@@ -515,7 +446,7 @@ class CopernicusDEM(SingleImageSatellite):
                     reducer=ee.Reducer.count(),
                     geometry=ee_geometry,
                     scale=self.pixelSize,
-                    maxPixels=subsampling_max_pixels,
+                    maxPixels=int(subsampling_max_pixels),
                     bestEffort=True,
                 )
                 .getNumber("constant")
@@ -529,7 +460,7 @@ class CopernicusDEM(SingleImageSatellite):
                         reducer=ee.Reducer.count(),
                         geometry=ee_geometry,
                         scale=self.pixelSize,
-                        maxPixels=subsampling_max_pixels,
+                        maxPixels=int(subsampling_max_pixels),
                         bestEffort=True,
                     )
                     .getNumber("constant")

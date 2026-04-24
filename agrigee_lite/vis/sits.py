@@ -78,7 +78,7 @@ def visualize_single_sits(
     None
         The function creates a plot but doesn't return any value.
     """
-    import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt  # pyright: ignore[reportMissingImports]
 
     long_sits = download_single_sits(geometry, start_date, end_date, satellite, reducers={reducer})
 
@@ -157,7 +157,7 @@ def visualize_multiple_sits(
     pattern analysis. The original timestamps are converted using the `year_fraction`
     function and then normalized to start from zero.
     """
-    import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt  # pyright: ignore[reportMissingImports]
 
     long_sits = download_multiple_sits(gdf, satellite, reducers={reducer}, force_redownload=force_redownload)
 

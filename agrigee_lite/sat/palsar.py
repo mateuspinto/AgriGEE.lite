@@ -14,75 +14,34 @@ from agrigee_lite.sat.abstract_satellite import RadarSatellite
 
 
 class PALSAR2ScanSAR(RadarSatellite):
-    """
-    Satellite abstraction for ALOS PALSAR-2 ScanSAR (Level 2.2).
+    """ALOS PALSAR-2 ScanSAR L2.2 — from 2014-08-04 to present, ~25 m resolution, ~14-day revisit.
 
-    PALSAR-2 is an L-band Synthetic Aperture Radar (SAR) sensor onboard the ALOS-2 satellite,
-    operated by JAXA. This class provides preprocessing and abstraction for the Level 2.2
-    ScanSAR data product with 25-meter resolution. Optionally applies the MSK quality mask.
+    L-band SAR from JAXA's ALOS-2 satellite.  L-band (longer wavelength than
+    Sentinel-1's C-band) penetrates vegetation canopy better, making it useful
+    for forest structure and biomass studies.  Band values are backscatter
+    in dB after DN→power→dB conversion.
+
+    Available bands: ``hh`` (horizontal–horizontal), ``hv`` (horizontal–vertical).
 
     Parameters
     ----------
     bands : set of str, optional
-        Set of bands to select. Defaults to ['hh', 'hv'].
+        Subset of available bands.  Defaults to ``{"hh", "hv"}``.
     indices : set of str, optional
-        Radar indices to compute (e.g., polarization ratios). Defaults to [].
-    use_quality_mask : bool, default=True
-        Whether to apply the MSK bitmask quality filter. If False, all pixels are retained,
-        including those marked as low-quality or invalid.
-    min_valid_pixel_count : int, default=20
-        Minimum number of valid (non-cloud) pixels required to retain an image.
-    border_pixels_to_erode : float, default=1
-        Number of pixels to erode from the geometry border.
-    min_area_to_keep_border : int, default=35_000
-        Minimum area (in m²) required to retain geometry after border erosion.
-
-    Quality Masking
-    ---------------
-    When `use_quality_mask=True`, the `MSK` band is used to filter out invalid pixels.
-    The first 3 bits of the `MSK` band indicate data quality:
-        - 1 → Valid
-        - 5 → Invalid
-    Only pixels with value 1 are retained.
-
-    Satellite Information
-    ---------------------
-    +----------------------------+-------------------------------+
-    | Field                      | Value                         |
-    +----------------------------+-------------------------------+
-    | Name                       | ALOS PALSAR-2 ScanSAR         |
-    | Sensor                     | PALSAR-2 (L-band SAR)         |
-    | Platform                   | ALOS-2                        |
-    | Revisit Time               | ~14 days                      |
-    | Pixel Size                 | ~25 meters                    |
-    | Coverage                   | Japan + selected global areas |
-    +----------------------------+-------------------------------+
-
-    Collection Dates
-    ----------------
-    +----------------+-------------+------------+
-    | Collection     | Start Date  | End Date   |
-    +----------------+-------------+------------+
-    | Level 2.2      | 2014-08-04  | present    |
-    +----------------+-------------+------------+
-
-    Band Information
-    ----------------
-    +-----------+---------+------------+-------------------------------------------+
-    | Band Name | Type    | Resolution | Description                               |
-    +-----------+---------+------------+-------------------------------------------+
-    | hh        | L-band  | ~25 m      | Horizontal transmit and receive           |
-    | hv        | L-band  | ~25 m      | Horizontal transmit, vertical receive     |
-    | msk       | Bitmask | ~25 m      | MSK quality band (used only if enabled)   |
-    +-----------+---------+------------+-------------------------------------------+
+        Radar indices to compute (e.g. ``{"hhhv"}``).
+    use_quality_mask : bool, default True
+        Apply the MSK bitmask (bits 0–2) to retain only valid pixels (value 1).
+    min_valid_pixel_count : int, default 20
+        Images with fewer valid pixels over the ROI are discarded.
+    border_pixels_to_erode : float, default 1
+        Inward buffer in pixel-widths before extraction.
+    min_area_to_keep_border : int, default 35_000
+        Skip border erosion for geometries smaller than this area (m²).
 
     Notes
     -----
-    - Earth Engine Dataset:
-        https://developers.google.com/earth-engine/datasets/catalog/JAXA_ALOS_PALSAR-2_Level2_2_ScanSAR
-
-    - MSK Quality Mask Details (bit pattern):
-        https://www.eorc.jaxa.jp/ALOS/en/palsar_fnf/data/Format_PALSAR-2.html
+    Coverage is primarily Japan and selected global observation areas; it is
+    not fully global like Sentinel-1.
     """
 
     def __init__(
@@ -94,9 +53,9 @@ class PALSAR2ScanSAR(RadarSatellite):
         border_pixels_to_erode: float = 1,
         min_area_to_keep_border: int = 35000,
     ):
-        bands = sorted({"hh", "hv"}) if bands is None else sorted(bands)
+        bands_: list[str] = sorted({"hh", "hv"}) if bands is None else sorted(bands)
 
-        indices = [] if indices is None else sorted(indices)
+        indices_: list[str] = [] if indices is None else sorted(indices)
 
         super().__init__()
 
@@ -108,11 +67,11 @@ class PALSAR2ScanSAR(RadarSatellite):
 
         self.availableBands: dict[str, str] = {"hh": "HH", "hv": "HV"}
 
-        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands)]
+        self.selectedBands: list[tuple[str, str]] = [(band, f"{(n + 10):02}_{band}") for n, band in enumerate(bands_)]
 
-        self.selectedIndices: list[str] = [
+        self.selectedIndices = [
             (self.availableIndices[indice_name], indice_name, f"{(n + 40):02}_{indice_name}")
-            for n, indice_name in enumerate(indices)
+            for n, indice_name in enumerate(indices_)
         ]
 
         self.use_quality_mask = use_quality_mask
@@ -163,7 +122,10 @@ class PALSAR2ScanSAR(RadarSatellite):
         )
 
         palsar_img = palsar_img.map(
-            lambda img: ee.Image(img).addBands(ee.Image(img).pow(2).log10().multiply(10).subtract(83), overwrite=True)
+            lambda img: ee.Image(img).addBands(
+                ee.Image(img).pow(ee.Number(2)).log10().multiply(ee.Number(10)).subtract(ee.Number(83)),
+                overwrite=True,
+            )
         )
 
         if self.selectedIndices:

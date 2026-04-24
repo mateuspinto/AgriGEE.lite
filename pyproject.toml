@@ -10,10 +10,13 @@ dependencies = [
     "earthengine-api>=1.5.7",
     "ee-s1-ard>=1.0.5",
     "geopandas>=1.0.1",
+    "pandas>=3.0.0",
     "tqdm>=4.67.1",
     "pandera>=0.26.1",
     "topojson>=1.9",
     "aria2p>=0.12.1",
+    "pyarrow>=19.0.1",
+    "sqlalchemy>=2.0.0",
 ]
 classifiers = [
     "Intended Audience :: Developers",
@@ -28,17 +31,20 @@ classifiers = [
 
 [project.optional-dependencies]
 visualization = ["matplotlib>=3.10.1", "plotly>=6.2.0"]
-tasks = ["smart_open[gcs]>=7.1.0", "textual-pandas>=0.2.3", "pyarrow>=19.0.1"]
+tasks = ["smart_open[gcs]>=7.1.0"]
+api = ["fastapi[standard]>=0.115.0", "uvicorn[standard]>=0.34.0"]
+postgis = ["psycopg2-binary>=2.9.0"]
 all = [
     "matplotlib>=3.10.1",
     "plotly>=6.2.0",
     "smart_open[gcs]>=7.1.0",
-    "textual-pandas>=0.2.3",
-    "pyarrow>=19.0.1",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "psycopg2-binary>=2.9.0",
 ]
 
 [project.scripts]
-agl_tm = "agrigee_lite.tgui_task_manager:main"
+agl_api = "agrigee_lite.api:main"
 test_service_account = "agrigee_lite.check_service_account:main"
 
 [project.urls]
@@ -46,27 +52,85 @@ Homepage = "https://mateuspinto.github.io/agrigee_lite/"
 Repository = "https://github.com/mateuspinto/agrigee_lite"
 Documentation = "https://mateuspinto.github.io/agrigee_lite/"
 
-[dependency-groups]
-dev = [
-    "pytest>=8.3.5",
-    "pre-commit>=4.2.0",
-    "tox-uv>=1.25.0",
-    "deptry>=0.23.0",
-    "pyright>=1.1.407",
-    "pytest-cov>=6.0.0",
-    "ruff>=0.11.2",
-    "mkdocs>=1.6.1",
-    "mkdocs-material>=9.6.9",
-    "mkdocstrings[python]>=0.29.0",
-    "ipykernel>=6.29.5",
-    "pandas-stubs>=2.2.3.250308",
-    "types-shapely>=2.0.0.20250202",
-    "types-tqdm>=4.67.0.20250319",
-]
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pixi.workspace]
+name = "agrigee_lite"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "osx-64"]
+
+[tool.pixi.pypi-dependencies]
+agrigee_lite = { path = ".", editable = true }
+pyarrow = ">=19.0.1"
+
+[tool.pixi.feature.dev.pypi-dependencies]
+pytest = ">=8.3.5"
+pre-commit = ">=4.2.0"
+deptry = ">=0.23.0"
+pyright = ">=1.1.407"
+pytest-cov = ">=6.0.0"
+ruff = ">=0.11.2"
+mkdocs = ">=1.6.1"
+mkdocs-material = ">=9.6.9"
+mkdocstrings = { version = ">=0.29.0", extras = ["python"] }
+ipykernel = ">=6.29.5"
+pandas-stubs = ">=3.0.0"
+types-shapely = ">=2.0.0.20250202"
+types-tqdm = ">=4.67.0.20250319"
+build = ">=1.2.0"
+twine = ">=6.0.0"
+
+[tool.pixi.feature.visualization.pypi-dependencies]
+matplotlib = ">=3.10.1"
+plotly = ">=6.2.0"
+
+[tool.pixi.feature.tasks-extra.pypi-dependencies]
+smart-open = { version = ">=7.1.0", extras = ["gcs"] }
+
+[tool.pixi.feature.api.pypi-dependencies]
+fastapi = { version = ">=0.115.0", extras = ["standard"] }
+uvicorn = { version = ">=0.34.0", extras = ["standard"] }
+
+[tool.pixi.feature.postgis.pypi-dependencies]
+psycopg2-binary = ">=2.9.0"
+
+[tool.pixi.feature.py311.dependencies]
+python = "3.11.*"
+
+[tool.pixi.feature.py312.dependencies]
+python = "3.12.*"
+
+[tool.pixi.feature.py313.dependencies]
+python = "3.13.*"
+
+[tool.pixi.environments]
+default = { features = ["dev"], solve-group = "default" }
+visualization = { features = ["visualization"], solve-group = "default" }
+tasks-extra = { features = ["tasks-extra"], solve-group = "tasks-extra" }
+api = { features = ["api"], solve-group = "default" }
+all-features = { features = ["visualization", "api", "postgis", "dev"], solve-group = "default" }
+py311 = { features = ["dev", "py311"], solve-group = "py311" }
+py312 = { features = ["dev", "py312"], solve-group = "py312" }
+py313 = { features = ["dev", "py313"], solve-group = "py313" }
+
+[tool.pixi.tasks]
+pre-commit-install = "pre-commit install"
+check = { cmd = "pre-commit run -a && pyright && deptry ." }
+test = "python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml"
+download-test-files = "python tests/download_test_files.py"
+docs = "mkdocs serve"
+docs-test = "mkdocs build -s"
+docs-publish = "mkdocs gh-deploy"
+build = "python -m build"
+publish = "twine upload --repository-url https://upload.pypi.org/legacy/ dist/*"
+
+[tool.pixi.dependencies]
+sqlalchemy = ">=2.0.47,<3"
+
+[tool.pixi.feature.dev.dependencies]
+pandas = ">=3.0.0"
 
 [tool.setuptools]
 py-modules = ["agrigee_lite"]
@@ -123,6 +187,9 @@ ignore = [
 [tool.ruff.format]
 preview = true
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.coverage.report]
 skip_empty = true
 
@@ -140,7 +207,37 @@ exclude = [
     "mkdocs.yml",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["agrigee_lite"]
+
 [tool.pyright]
-venvPath = "."
-venv = ".venv"
-reportPrivateImportUsage = false
+venvPath = ".pixi/envs"
+venv = "default"
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+
+# Paths
+include = ["agrigee_lite"]
+exclude = ["**/__pycache__", "**/*.pyc", ".pixi", "dist", "build", "agrigee_lite/api"]
+
+# Strictness overrides — tightened from "standard" defaults
+reportMissingImports = true
+reportMissingTypeStubs = false       # third-party stubs not always available
+reportPrivateImportUsage = false     # GEE SDK uses private internals
+reportUnknownVariableType = false    # EE objects are dynamically typed
+reportUnknownMemberType = false      # EE objects are dynamically typed
+reportUnknownArgumentType = false    # EE calls accept Any
+reportUnknownParameterType = false
+reportMissingParameterType = false
+reportReturnType = true
+reportIndexIssue = true
+reportAttributeAccessIssue = true
+reportOperatorIssue = true
+reportCallIssue = true
+reportArgumentType = true
+reportAssignmentType = true
+reportGeneralTypeIssues = true
+
+# Deprecation / completeness checks
+reportUnnecessaryTypeIgnoreComment = true
+reportDeprecated = true

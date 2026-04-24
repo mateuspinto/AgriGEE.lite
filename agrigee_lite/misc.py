@@ -2,8 +2,10 @@ import concurrent.futures
 import hashlib
 import inspect
 import json
+import multiprocessing
 import warnings
 from collections import deque
+from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
@@ -13,7 +15,7 @@ from topojson import Topology
 from tqdm.std import tqdm
 
 
-def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> list[list[int]]:
+def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> list[np.ndarray]:
     """
     Build a quadtree iteratively to cluster geometries into groups of max_size.
 
@@ -55,7 +57,7 @@ def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> lis
     return leaves
 
 
-def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) -> list[list[int]]:
+def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) -> list[np.ndarray]:
     """
     Build a quadtree recursively to cluster geometries into groups of max_size.
 
@@ -108,8 +110,9 @@ def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:
     -------
     geopandas.GeoDataFrame
         GeoDataFrame with simplified geometries.
-    """
-    """
+
+    Notes
+    -----
     1. Detect duplicate geometries once, using WKB-hex as a stable key.
     2. Run TopoJSON simplification only on the unique geometries.
     3. Propagate the simplified result back to every original row.
@@ -127,6 +130,7 @@ def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:
     # ---------------------------------------------------------------
     topo = Topology(unique_gdf[["geometry"]], prequantize=False)
     topo = topo.toposimplify(tol, prevent_oversimplify=True)
+    assert topo is not None
     simplified_unique = topo.to_gdf()
 
     # topo.to_gdf() returns rows in the same order, so align keys back
@@ -201,7 +205,8 @@ def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoD
 
     unique_cluster_ids = gdf["cluster_id"].unique()
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
+    new_geoms: dict = {}
+    with concurrent.futures.ProcessPoolExecutor(mp_context=multiprocessing.get_context("fork")) as executor:
         futures = {
             executor.submit(_simplify_cluster, gdf[gdf.cluster_id == cluster_id][["geometry"]], cluster_id): cluster_id
             for cluster_id in unique_cluster_ids
@@ -213,8 +218,11 @@ def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoD
             desc="Simplifying clusters",
             smoothing=0.5,
         ):
-            cluster_id, simplified_geom = future.result()
-            gdf.loc[gdf["cluster_id"] == cluster_id, "geometry"] = simplified_geom.values
+            _cluster_id, simplified_geom = future.result()
+            new_geoms.update(simplified_geom.to_dict())
+
+    crs = gdf.crs
+    gdf = gdf.set_geometry(gpd.GeoSeries(new_geoms, crs=crs).reindex(gdf.index))
 
     return gdf
 
@@ -276,7 +284,10 @@ def log_dict_function_call_summary(ignore: list[str] | None = None) -> dict[str,
     dict
         Dictionary mapping function name to argument values.
     """
-    frame = inspect.currentframe().f_back
+    _current = inspect.currentframe()
+    assert _current is not None
+    frame = _current.f_back
+    assert frame is not None
     func_name = frame.f_code.co_name
     args, _, _, values = inspect.getargvalues(frame)
     ignore = ignore or []
@@ -320,9 +331,7 @@ def create_grid_centroids_numpy(geometry: Polygon | MultiPolygon | Point, n_cell
 
         if count >= n_cells:
             return centroids[np.random.choice(count, size=n_cells, replace=False)]
-        if count == n_cells:
-            return centroids[np.random.choice(count, size=n_cells, replace=True)]
-        else:  # count < n_cells:
+        else:  # count < n_cells
             return np.zeros((n_cells, 2), dtype=np.float32)
     except:  # noqa: E722
         return np.zeros((n_cells, 2), dtype=np.float32)
@@ -385,7 +394,7 @@ def random_points_from_gdf(
     if buffer != 0:
         gdf = gdf.copy()
         gdf = quadtree_clustering(gdf)
-        gdf["geometry"] = gdf.to_crs(gdf.estimate_utm_crs()).buffer(-10).to_crs("EPSG:4326")
+        gdf["geometry"] = gdf.to_crs(gdf.estimate_utm_crs()).buffer(buffer).to_crs("EPSG:4326")
 
     gdf["geometry_id"] = pd.factorize(gdf["geometry"])[0]
     points_gdf = generate_grid_random_points_from_gdf(gdf, num_points_per_geometry)
@@ -397,6 +406,18 @@ def random_points_from_gdf(
     points_gdf = points_gdf[points_gdf.geometry.x != 0].reset_index(drop=True)
 
     return points_gdf
+
+
+def get_sample_gdf() -> gpd.GeoDataFrame:
+    """
+    Load the bundled sample GeoDataFrame.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        Sample GeoDataFrame for testing and demonstration purposes.
+    """
+    return gpd.read_parquet(Path(__file__).parent / "data" / "sample.parquet")
 
 
 def get_reducer_names(reducer_names: set[str] | None = None) -> list[str]:
