@@ -59,7 +59,7 @@ build-backend = "hatchling.build"
 [tool.pixi.workspace]
 name = "agrigee_lite"
 channels = ["conda-forge"]
-platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
+platforms = ["linux-64", "osx-arm64", "osx-64"]
 
 [tool.pixi.pypi-dependencies]
 agrigee_lite = { path = ".", editable = true }
