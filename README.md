@@ -265,6 +265,16 @@ AgriGEE.lite aims to be a **simple, direct, and high-performance solution** for 
 Found this project helpful? ⭐ **Give it a star!**
 Want to contribute? 🚀 **Open a Pull Request** - we welcome all contributions!
 
+### Professional Services & Commercial Partnerships
+
+Building a product or project that involves **remote sensing, satellite data, or earth observation**? The author of AgriGEE.lite collaborates with [FARM Analytica](https://farmanalytica.com.br), a company specializing in applied remote sensing and agri-tech solutions.
+
+Whether you need custom development, consulting, or a full-stack earth observation pipeline — reach out:
+
+- 🌐 [farmanalytica.com.br](https://farmanalytica.com.br)
+- 💼 [LinkedIn](https://www.linkedin.com/company/farm-analytica)
+- 📧 [comercial@farmanalytica.com.br](mailto:comercial@farmanalytica.com.br)
+
 ## Frequently Asked Questions
 
 ### Why use Google Earth Engine instead of STAC?
