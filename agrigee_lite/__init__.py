@@ -17,12 +17,15 @@ __all__ = [
     "get",
     "get_all_tasks",
     "get_sample_gdf",
+    "initialize",
     "quadtree_clustering",
     "random_points_from_gdf",
     "sat",
     "vis",
 ]
 
-init_cache()
-print_cache_status()
-ee_quick_start()
+
+def initialize():
+    init_cache()
+    print_cache_status()
+    ee_quick_start()
