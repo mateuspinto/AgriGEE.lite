@@ -732,6 +732,19 @@ def get_number_of_available_service_accounts() -> int:
         return 1
 
 
+def _tune_ee_http() -> None:
+    from requests.adapters import HTTPAdapter  # pyright: ignore[reportMissingModuleSource]
+
+    state = ee.data._get_state()
+    if state.requests_session is not None:
+        adapter = HTTPAdapter(pool_connections=50, pool_maxsize=50)
+        state.requests_session.mount("https://", adapter)
+        state.requests_session.mount("http://", adapter)
+
+    ee.data.setMaxRetries(0)
+    ee.data.setDeadline(90_000)
+
+
 def login_with_service_account_n(n: int) -> str:
     """
     Login to Earth Engine using the nth service account specified in the GEE_KEY_MULTIPLE_ACCOUNTS environment variable.
