@@ -3,6 +3,8 @@ import getpass
 import io
 import json
 import logging
+import signal
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any
 
@@ -381,6 +383,8 @@ async def download_multiple_sits_async(
     num_chunks = (len(gdf) + chunksize - 1) // chunksize
     selectors = build_selectors(satellite, reducers)
     semaphore = asyncio.Semaphore(max_concurrent)
+    loop = asyncio.get_running_loop()
+    executor = ThreadPoolExecutor(max_workers=max_concurrent, thread_name_prefix="agrigee_gee")
     pbar = tqdm(
         total=num_chunks,
         unit="chunk",
@@ -403,7 +407,7 @@ async def download_multiple_sits_async(
             )
             return expr.getDownloadURL(filetype="csv", selectors=selectors, filename=str(chunk_id))
 
-        url = await asyncio.to_thread(get_url)
+        url = await loop.run_in_executor(executor, get_url)
 
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=600)) as resp:
             resp.raise_for_status()
@@ -428,12 +432,30 @@ async def download_multiple_sits_async(
             finally:
                 pbar.update(1)
 
-    connector = aiohttp.TCPConnector(limit=max_concurrent)
-    async with aiohttp.ClientSession(connector=connector) as session:
-        tasks = [fetch_with_retry(session, cid) for cid in range(num_chunks)]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+    def _cancel_all() -> None:
+        import os
+        logging.warning("Download interrupted. Exiting.")
+        os._exit(1)
 
-    pbar.close()
+    _signals_registered = False
+    try:
+        loop.add_signal_handler(signal.SIGINT, _cancel_all)
+        loop.add_signal_handler(signal.SIGTERM, _cancel_all)
+        _signals_registered = True
+    except (NotImplementedError, ValueError):
+        pass
+
+    connector = aiohttp.TCPConnector(limit=max_concurrent)
+    try:
+        async with aiohttp.ClientSession(connector=connector) as session:
+            tasks = [asyncio.create_task(fetch_with_retry(session, cid)) for cid in range(num_chunks)]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+        if _signals_registered:
+            loop.remove_signal_handler(signal.SIGINT)
+            loop.remove_signal_handler(signal.SIGTERM)
+        pbar.close()
 
     frames: list[pd.DataFrame] = []
     for cid, res in enumerate(results):
