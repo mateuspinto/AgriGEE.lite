@@ -4,95 +4,15 @@ import inspect
 import json
 import multiprocessing
 import warnings
-from collections import deque
 from pathlib import Path
 
 import geopandas as gpd
+import h3
 import numpy as np
 import pandas as pd
 from shapely.geometry import MultiPolygon, Point, Polygon
 from topojson import Topology
 from tqdm.std import tqdm
-
-
-def build_quadtree_iterative(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> list[np.ndarray]:
-    """
-    Build a quadtree iteratively to cluster geometries into groups of max_size.
-
-    Parameters
-    ----------
-    gdf : geopandas.GeoDataFrame
-        GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
-    max_size : int, optional
-        Maximum number of geometries per cluster (default is 1000).
-
-    Returns
-    -------
-    list of list of int
-        List of clusters, each cluster is a list of indices of geometries in gdf.
-    """
-    queue: deque[tuple[gpd.GeoDataFrame, int]] = deque()
-    queue.append((gdf, 0))
-    leaves = []
-
-    while queue:
-        subset, depth = queue.popleft()
-        n = len(subset)
-        if n <= max_size:
-            leaves.append(subset.index.to_numpy())
-            continue
-
-        dim = "centroid_x" if depth % 2 == 0 else "centroid_y"
-
-        subset_sorted = subset.sort_values(by=dim)
-        median_idx = n // 2
-        median_val = subset_sorted.iloc[median_idx][dim]
-
-        left = subset_sorted[subset_sorted[dim] <= median_val]
-        right = subset_sorted[subset_sorted[dim] > median_val]
-
-        queue.append((left, depth + 1))
-        queue.append((right, depth + 1))
-
-    return leaves
-
-
-def build_quadtree(gdf: gpd.GeoDataFrame, max_size: int = 1000, depth: int = 0) -> list[np.ndarray]:
-    """
-    Build a quadtree recursively to cluster geometries into groups of max_size.
-
-    Parameters
-    ----------
-    gdf : geopandas.GeoDataFrame
-        GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
-    max_size : int, optional
-        Maximum number of geometries per cluster (default is 1000).
-    depth : int, optional
-        Current depth in the quadtree (default is 0).
-
-    Returns
-    -------
-    list of list of int
-        List of clusters, each cluster is a list of indices of geometries in gdf.
-    """
-    n = len(gdf)
-    if n <= max_size:
-        return [gdf.index.to_numpy()]
-
-    dim = "centroid_x" if depth % 2 == 0 else "centroid_y"
-
-    gdf_sorted = gdf.sort_values(by=dim)
-
-    median_idx = n // 2
-    median_val = gdf_sorted.iloc[median_idx][dim]
-
-    left = gdf_sorted[gdf_sorted[dim] <= median_val]
-    right = gdf_sorted[gdf_sorted[dim] > median_val]
-
-    left_clusters = build_quadtree(left, max_size, depth + 1)
-    right_clusters = build_quadtree(right, max_size, depth + 1)
-
-    return left_clusters + right_clusters
 
 
 def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:
@@ -140,7 +60,8 @@ def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:
     # 3.  Merge the simplified geometries back to the original
     # -------------------------------------------------------
     out = (
-        gdf.drop(columns="geometry")
+        gdf
+        .drop(columns="geometry")
         .merge(simplified_unique[["_geom_key", "geometry"]], on="_geom_key", how="left")
         .drop(columns="_geom_key")
         .set_geometry("geometry")
@@ -169,39 +90,57 @@ def _simplify_cluster(cluster: gpd.GeoDataFrame, cluster_id: int) -> tuple[int, 
     return cluster_id, simplified.geometry
 
 
-def quadtree_clustering(gdf: gpd.GeoDataFrame, max_size: int = 1000) -> gpd.GeoDataFrame:
+def h3_clustering(
+    gdf: gpd.GeoDataFrame,
+    coarse_resolution: int = 5,
+    fine_resolution: int = 8,
+) -> gpd.GeoDataFrame:
     """
-    Cluster geometries in a GeoDataFrame using a quadtree and simplify clusters.
+    Cluster and order geometries using H3 hierarchical spatial indexing.
+
+    Each geometry's centroid is mapped to two H3 resolutions:
+
+    - **coarse**: defines cluster boundaries — geometries in the same coarse cell
+      share a ``cluster_id``.  A chunk that would span multiple coarse cells is
+      split into separate clusters, so every GEE request covers one contiguous
+      geographic region.
+    - **fine**: used only for ordering within a cluster, ensuring consecutive
+      rows are as spatially close as possible.
 
     Parameters
     ----------
     gdf : geopandas.GeoDataFrame
         GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
-    max_size : int, optional
-        Maximum number of geometries per cluster (default is 1000).
+    coarse_resolution : int, optional
+        H3 resolution for cluster boundaries (default 5, ≈14 km edge length).
+    fine_resolution : int, optional
+        H3 resolution for intra-cluster ordering (default 8, ≈460 m edge length).
 
     Returns
     -------
     geopandas.GeoDataFrame
-        GeoDataFrame with cluster labels and simplified geometries.
+        GeoDataFrame with ``cluster_id`` column (integer, one per coarse cell),
+        sorted by ``(coarse_cell, fine_cell)``, with geometries simplified per
+        cluster via TopoJSON.
     """
     gdf = gdf.copy()
 
-    # Centroid columns (ignore CRS warning)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=UserWarning)
-        gdf["centroid_x"] = gdf.geometry.centroid.x
-        gdf["centroid_y"] = gdf.geometry.centroid.y
+        centroids = gdf.geometry.centroid
 
-    # Build quadtree and label clusters
-    clusters = build_quadtree_iterative(gdf, max_size=max_size)
+    tqdm.pandas(desc="H3 cells", leave=True)
+    gdf["_h3_fine"] = centroids.progress_apply(lambda pt: h3.latlng_to_cell(pt.y, pt.x, fine_resolution))
+    gdf["_h3_coarse"] = gdf["_h3_fine"].apply(lambda cell: h3.cell_to_parent(cell, coarse_resolution))
 
-    cluster_array = np.zeros(len(gdf), dtype=int)
-    for i, cluster_indexes in enumerate(clusters):
-        cluster_array[cluster_indexes] = i
+    gdf = gdf.sort_values(by=["_h3_coarse", "_h3_fine"]).reset_index(drop=True)
 
-    gdf["cluster_id"] = cluster_array
-    gdf = gdf.sort_values(by=["cluster_id", "centroid_x"]).reset_index(drop=True)
+    gdf["cluster_id"] = pd.factorize(gdf["_h3_coarse"])[0]
+    gdf = gdf.drop(columns=["_h3_coarse", "_h3_fine"])
+
+    all_points = gdf.geometry.geom_type.eq("Point").all()
+    if all_points:
+        return gdf
 
     unique_cluster_ids = gdf["cluster_id"].unique()
 
@@ -393,7 +332,7 @@ def random_points_from_gdf(
     """
     if buffer != 0:
         gdf = gdf.copy()
-        gdf = quadtree_clustering(gdf)
+        gdf = h3_clustering(gdf)
         gdf["geometry"] = gdf.to_crs(gdf.estimate_utm_crs()).buffer(buffer).to_crs("EPSG:4326")
 
     gdf["geometry_id"] = pd.factorize(gdf["geometry"])[0]

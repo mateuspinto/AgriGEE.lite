@@ -73,6 +73,7 @@ class Sentinel2(OpticalSatellite):
         self.shortName: str = "s2sr" if use_sr else "s2"
 
         self.availableBands: dict[str, str] = {
+            "cblue": "B1",
             "blue": "B2",
             "green": "B3",
             "red": "B4",
@@ -110,7 +111,8 @@ class Sentinel2(OpticalSatellite):
         ee_filter = ee.Filter.And(ee.Filter.bounds(ee_geometry), ee.Filter.date(ee_start_date, ee_end_date))
 
         s2_img = (
-            ee.ImageCollection(self.imageCollectionName)
+            ee
+            .ImageCollection(self.imageCollectionName)
             .filter(ee_filter)
             .select(
                 list(self.availableBands.values()),
@@ -133,7 +135,8 @@ class Sentinel2(OpticalSatellite):
         )
 
         s2_cloud_mask = (
-            ee.ImageCollection("GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED")
+            ee
+            .ImageCollection("GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED")
             .filter(ee_filter)
             .select(["cs_cdf"], ["cloud"])
         )

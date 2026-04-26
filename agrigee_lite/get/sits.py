@@ -28,8 +28,8 @@ from agrigee_lite.misc import (
     create_dict_hash,
     create_gdf_hash,
     get_reducer_names,
+    h3_clustering,
     log_dict_function_call_summary,
-    quadtree_clustering,
 )
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite, OpticalSatellite
 from agrigee_lite.task_manager import GEETaskManager
@@ -174,7 +174,8 @@ def sanitize_and_prepare_input_gdf(
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     original_index_column_name: str,
-    cluster_size: int,
+    coarse_resolution: int = 5,
+    fine_resolution: int = 8,
     start_date_column_name: str = "start_date",
     end_date_column_name: str = "end_date",
 ) -> gpd.GeoDataFrame:
@@ -189,8 +190,10 @@ def sanitize_and_prepare_input_gdf(
         Satellite configuration object.
     original_index_column_name : str
         Name of the column to store original indices.
-    cluster_size : int
-        Maximum size for spatial clustering.
+    coarse_resolution : int, optional
+        H3 resolution for cluster boundaries (default 5).
+    fine_resolution : int, optional
+        H3 resolution for intra-cluster ordering (default 8).
     start_date_column_name : str, optional
         Name of the start date column, by default "start_date".
     end_date_column_name : str, optional
@@ -244,7 +247,7 @@ def sanitize_and_prepare_input_gdf(
 
     gdf = gdf[~mask_no_intersection].reset_index(drop=True)
 
-    gdf = quadtree_clustering(gdf, max_size=cluster_size)
+    gdf = h3_clustering(gdf, coarse_resolution=coarse_resolution, fine_resolution=fine_resolution)
 
     return gdf
 
@@ -384,28 +387,32 @@ def download_multiple_sits(  # noqa: C901
         return pd.DataFrame()
 
     gdf = sanitize_and_prepare_input_gdf(
-        gdf, satellite, original_index_column_name, 1000, start_date_column_name, end_date_column_name
+        gdf,
+        satellite,
+        original_index_column_name,
+        start_date_column_name=start_date_column_name,
+        end_date_column_name=end_date_column_name,
     )
 
-    # --- SpatiaLite cache: check per feature, keep only uncached rows ---
-    _engine = get_engine()
-    cached_frames: list[pd.DataFrame] = []
-    if _engine is not None and not force_redownload and len(gdf) > 0:
-        uncached_positions: list[Any] = []
-        for pos, row in gdf.iterrows():
-            s = str(row[start_date_column_name])[:10]
-            e = str(row[end_date_column_name])[:10]
-            hit = fetch_sits(_engine, row.geometry, s, e, satellite, reducers, subsampling_max_pixels)
-            if hit is not None:
-                hit[original_index_column_name] = row[original_index_column_name]
-                cached_frames.append(hit)
-            else:
-                uncached_positions.append(pos)
-        gdf = gdf.loc[uncached_positions].reset_index(drop=True)
-        if gdf.empty:
-            logging.debug("Cache: all %d features already cached.", len(cached_frames))
-            return pd.concat(cached_frames, ignore_index=True) if cached_frames else pd.DataFrame()
-    # --- end cache check ---
+    # # --- SpatiaLite cache: check per feature, keep only uncached rows ---
+    # _engine = get_engine()
+    # cached_frames: list[pd.DataFrame] = []
+    # if _engine is not None and not force_redownload and len(gdf) > 0:
+    #     uncached_positions: list[Any] = []
+    #     for pos, row in gdf.iterrows():
+    #         s = str(row[start_date_column_name])[:10]
+    #         e = str(row[end_date_column_name])[:10]
+    #         hit = fetch_sits(_engine, row.geometry, s, e, satellite, reducers, subsampling_max_pixels)
+    #         if hit is not None:
+    #             hit[original_index_column_name] = row[original_index_column_name]
+    #             cached_frames.append(hit)
+    #         else:
+    #             uncached_positions.append(pos)
+    #     gdf = gdf.loc[uncached_positions].reset_index(drop=True)
+    #     if gdf.empty:
+    #         logging.debug("Cache: all %d features already cached.", len(cached_frames))
+    #         return pd.concat(cached_frames, ignore_index=True) if cached_frames else pd.DataFrame()
+    # # --- end cache check ---
 
     metadata_dict: dict[str, Any] = {}
     metadata_dict |= log_dict_function_call_summary(["gdf", "satellite", "max_parallel_downloads", "force_redownload"])
@@ -442,6 +449,7 @@ def download_multiple_sits(  # noqa: C901
 
     def fetch_chunk_url(chunk_id: int) -> tuple[int, str]:
         import socket
+
         old_timeout = socket.getdefaulttimeout()
         socket.setdefaulttimeout(90)
         try:
@@ -488,7 +496,7 @@ def download_multiple_sits(  # noqa: C901
     # ThreadPoolExecutor lives for the entire download session — no per-batch
     # creation/destruction overhead.
     with ThreadPoolExecutor(max_workers=7) as executor:
-        while (True):
+        while True:
             # Single RPC call covers all status checks this iteration.
             snap = downloader._get_downloads_snapshot()
             stats = downloader.stats_from_snapshot(snap)
@@ -519,10 +527,9 @@ def download_multiple_sits(  # noqa: C901
                 # Retire finished/failed chunks from this account's active set.
                 current_active_set = account_active_chunks[current_account_idx]
                 current_active_set -= {
-                    cid for cid in current_active_set
-                    if (output_path / f"{cid}.csv").exists()
-                    or cid in failed_within_limit
-                    or cid in not_sent_to_server
+                    cid
+                    for cid in current_active_set
+                    if (output_path / f"{cid}.csv").exists() or cid in failed_within_limit or cid in not_sent_to_server
                 }
 
                 available_slots = max_parallel_downloads - len(current_active_set)
@@ -549,7 +556,9 @@ def download_multiple_sits(  # noqa: C901
                     except TimeoutError:
                         for f, cid in future_to_chunk.items():
                             if not f.done():
-                                logging.warning("%s - Chunk id=%s - GEE getDownloadURL timed out, requeuing.", output_path, cid)
+                                logging.warning(
+                                    "%s - Chunk id=%s - GEE getDownloadURL timed out, requeuing.", output_path, cid
+                                )
                                 not_sent_to_server.append(cid)
 
                     if new_downloads:
@@ -564,7 +573,8 @@ def download_multiple_sits(  # noqa: C901
                 time.sleep(2.0)
 
             download_with_too_many_errors = sum(
-                1 for my_id, d in snap.items()
+                1
+                for my_id, d in snap.items()
                 if d.status == "error" and downloader.retry_count.get(my_id, 0) >= max_retries_per_chunk
             )
             update_pbar(snap)
@@ -607,7 +617,8 @@ def download_multiple_sits_chunks_gdrive(
     start_date_column_name: str = "start_date",
     end_date_column_name: str = "end_date",
     subsampling_max_pixels: float = 1_000,
-    cluster_size: int = 500,
+    coarse_resolution: int = 5,
+    fine_resolution: int = 8,
     gee_save_folder: str = "AGL_EXPORTS",
     force_redownload: bool = False,
     wait: bool = True,
@@ -631,8 +642,10 @@ def download_multiple_sits_chunks_gdrive(
         Name of the end date column, by default "end_date".
     subsampling_max_pixels : float, optional
         Maximum pixels for sampling: >1 = absolute count, ≤1 = fraction of area (e.g., 0.5 = 50% sampling), by default 1_000.
-    cluster_size : int, optional
-        Maximum cluster size for spatial grouping, by default 500.
+    coarse_resolution : int, optional
+        H3 resolution for cluster boundaries, by default 5.
+    fine_resolution : int, optional
+        H3 resolution for intra-cluster ordering, by default 8.
     gee_save_folder : str, optional
         Google Drive folder name for saving exports, by default "AGL_EXPORTS".
     force_redownload : bool, optional
@@ -711,7 +724,13 @@ def download_multiple_sits_chunks_gdrive(
         return task
 
     gdf = sanitize_and_prepare_input_gdf(
-        gdf, satellite, original_index_column_name, cluster_size, start_date_column_name, end_date_column_name
+        gdf,
+        satellite,
+        original_index_column_name,
+        coarse_resolution=coarse_resolution,
+        fine_resolution=fine_resolution,
+        start_date_column_name=start_date_column_name,
+        end_date_column_name=end_date_column_name,
     )
 
     task_mgr = GEETaskManager()
@@ -726,7 +745,8 @@ def download_multiple_sits_chunks_gdrive(
     hashname = create_gdf_hash(gdf, start_date_column_name, end_date_column_name)
 
     for cluster_id in tqdm(
-        sorted(gdf.cluster_id.unique()), desc=f"Creating GEE tasks ({satellite.shortName}_{hashname}_{cluster_size})"
+        sorted(gdf.cluster_id.unique()),
+        desc=f"Creating GEE tasks ({satellite.shortName}_{hashname}_r{coarse_resolution})",
     ):
         cluster_id = int(cluster_id)
 
@@ -763,7 +783,8 @@ def download_multiple_sits_chunks_gcs(
     start_date_column_name: str = "start_date",
     end_date_column_name: str = "end_date",
     subsampling_max_pixels: float = 1_000,
-    cluster_size: int = 500,
+    coarse_resolution: int = 5,
+    fine_resolution: int = 8,
     force_redownload: bool = False,
     wait: bool = True,
 ) -> None | pd.DataFrame:
@@ -788,8 +809,10 @@ def download_multiple_sits_chunks_gcs(
         Name of the end date column, by default "end_date".
     subsampling_max_pixels : float, optional
         Maximum pixels for sampling: >1 = absolute count, ≤1 = fraction of area (e.g., 0.5 = 50% sampling), by default 1_000.
-    cluster_size : int, optional
-        Maximum cluster size for spatial grouping, by default 500.
+    coarse_resolution : int, optional
+        H3 resolution for cluster boundaries, by default 5.
+    fine_resolution : int, optional
+        H3 resolution for intra-cluster ordering, by default 8.
     force_redownload : bool, optional
         Whether to force re-download of existing data, by default False.
     wait : bool, optional
@@ -875,7 +898,13 @@ def download_multiple_sits_chunks_gcs(
         return task
 
     gdf = sanitize_and_prepare_input_gdf(
-        gdf, satellite, original_index_column_name, cluster_size, start_date_column_name, end_date_column_name
+        gdf,
+        satellite,
+        original_index_column_name,
+        coarse_resolution=coarse_resolution,
+        fine_resolution=fine_resolution,
+        start_date_column_name=start_date_column_name,
+        end_date_column_name=end_date_column_name,
     )
 
     task_mgr = GEETaskManager()
@@ -957,6 +986,7 @@ def _fetch_sits_chunk_url_sync(
 ) -> tuple[int, str]:
     """Resolve the download URL for a single GEE SITS chunk (blocking, runs in a thread)."""
     import socket
+
     old_timeout = socket.getdefaulttimeout()
     socket.setdefaulttimeout(90)
     try:
@@ -1004,7 +1034,11 @@ async def download_multiple_sits_async(
         return pd.DataFrame()
 
     gdf = sanitize_and_prepare_input_gdf(
-        gdf, satellite, original_index_column_name, 1000, start_date_column_name, end_date_column_name
+        gdf,
+        satellite,
+        original_index_column_name,
+        start_date_column_name=start_date_column_name,
+        end_date_column_name=end_date_column_name,
     )
 
     metadata_dict: dict[str, Any] = {}

@@ -159,3 +159,6 @@ data/
 *.zip
 *.npg
 aria2.session
+# pixi environments
+.pixi/*
+!.pixi/config.toml
