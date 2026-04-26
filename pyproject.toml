@@ -15,6 +15,9 @@ dependencies = [
     "pandera>=0.26.1",
     "topojson>=1.9",
     "aria2p>=0.12.1",
+    "aiohttp>=3.13.5",
+    "tenacity>=9.1.4",
+    "uvloop>=0.22.1",
     "pyarrow>=19.0.1",
     "sqlalchemy>=2.0.0",
 ]

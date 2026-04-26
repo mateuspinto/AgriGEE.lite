@@ -1,10 +1,11 @@
+import asyncio
 from typing import Any
 
 import geopandas as gpd
 import pandas as pd
 from shapely import MultiPolygon, Point, Polygon
 
-from agrigee_lite.get.sits import download_multiple_sits, download_single_sits
+from agrigee_lite.get.sits import download_multiple_sits_async, download_single_sits
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 
@@ -159,7 +160,7 @@ def visualize_multiple_sits(
     """
     import matplotlib.pyplot as plt  # pyright: ignore[reportMissingImports]
 
-    long_sits = download_multiple_sits(gdf, satellite, reducers={reducer}, force_redownload=force_redownload)
+    long_sits = asyncio.run(download_multiple_sits_async(gdf, satellite, reducers={reducer}, force_redownload=force_redownload))
 
     if len(long_sits) == 0:
         return None

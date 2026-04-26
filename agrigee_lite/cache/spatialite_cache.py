@@ -279,6 +279,9 @@ def _compute_geom_hash(geometry) -> str:
     return hashlib.sha1(geometry.wkb).hexdigest()  # noqa: S324
 
 
+compute_geom_hash = _compute_geom_hash
+
+
 def _compute_params_hash(
     satellite: AbstractSatellite,
     reducers: set[str] | None,
@@ -374,6 +377,80 @@ def fetch_sits(
     df = pd.DataFrame(rows, columns=["timestamp", *band_cols])
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     return df
+
+
+def fetch_sits_cache_index(
+    engine: sa.Engine,
+    satellite: AbstractSatellite,
+    reducers: set[str] | None,
+    subsampling_max_pixels: float,
+) -> dict[tuple[str, str, str], int]:
+    """Return a dict mapping (geom_hash, start_date, end_date) → request_id.
+
+    Single query. Used to batch-check N rows without N round-trips.
+    """
+    params_hash = _compute_params_hash(satellite, reducers, subsampling_max_pixels)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sa.text("""
+                SELECT g.geom_hash, r.start_date, r.end_date, r.id
+                FROM requests r
+                JOIN geometries g ON r.geometry_id = g.id
+                WHERE r.satellite_short_name = :sat
+                  AND r.params_hash          = :ph
+            """),
+            {"sat": satellite.shortName, "ph": params_hash},
+        ).fetchall()
+    return {(r[0], r[1], r[2]): r[3] for r in rows}
+
+
+def fetch_sits_by_request_ids(
+    engine: sa.Engine,
+    satellite: AbstractSatellite,
+    request_ids: list[int],
+) -> dict[int, pd.DataFrame]:
+    """Batch-fetch cached SITS rows for a list of request_ids.
+
+    Single query via IN clause. Returns dict mapping request_id → DataFrame.
+    """
+    if not request_ids:
+        return {}
+
+    table_name = satellite.shortName
+    band_cols = _get_band_columns(satellite)
+    cols_sql = ", ".join(f'"{c}"' for c in ["timestamp", *band_cols])
+    placeholders = ", ".join(f":id{i}" for i in range(len(request_ids)))
+    params: dict[str, int] = {f"id{i}": rid for i, rid in enumerate(request_ids)}
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sa.text(
+                f'SELECT request_id, {cols_sql} FROM "{table_name}"'
+                f" WHERE request_id IN ({placeholders})"
+                f" ORDER BY request_id, timestamp"
+            ),
+            params,
+        ).fetchall()
+
+    result: dict[int, pd.DataFrame] = {}
+    current_id: int | None = None
+    current_rows: list = []
+    for row in rows:
+        rid = row[0]
+        if rid != current_id:
+            if current_id is not None and current_rows:
+                df = pd.DataFrame(current_rows, columns=["timestamp", *band_cols])
+                df["timestamp"] = pd.to_datetime(df["timestamp"])
+                result[current_id] = df
+            current_id = rid
+            current_rows = []
+        current_rows.append(row[1:])
+    if current_id is not None and current_rows:
+        df = pd.DataFrame(current_rows, columns=["timestamp", *band_cols])
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        result[current_id] = df
+
+    return result
 
 
 def store_sits(

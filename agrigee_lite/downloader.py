@@ -146,6 +146,34 @@ class DownloaderStrategy:
     def is_empty(self) -> bool:
         return len(self.downloads_map) == 0
 
+    def prune_finished(self, max_retries: int) -> int:
+        """Remove completed and permanently-failed downloads from tracking.
+
+        Keeps downloads_map bounded to in-flight chunks only, so
+        aria2.get_downloads() never grows past max_parallel_downloads.
+
+        Returns the number of newly completed (not errored) chunks pruned.
+        """
+        snap = self._get_downloads_snapshot()
+        completed_pruned = 0
+        for my_id, d in snap.items():
+            if d.status == "complete":
+                gid = self.downloads_map.pop(my_id, None)
+                if gid is not None:
+                    completed_pruned += 1
+                    try:
+                        self.aria2.remove_result(gid)
+                    except Exception:  # noqa: BLE001
+                        pass
+            elif d.status == "error" and self.retry_count.get(my_id, 0) >= max_retries:
+                gid = self.downloads_map.pop(my_id, None)
+                if gid is not None:
+                    try:
+                        self.aria2.remove_result(gid)
+                    except Exception:  # noqa: BLE001
+                        pass
+        return completed_pruned
+
     def reset_downloads(self) -> None:
         self.downloads_map.clear()
         self.retry_count.clear()
