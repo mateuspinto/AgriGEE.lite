@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import MultiPolygon, Point, Polygon
 from topojson import Topology
-from tqdm.std import tqdm
+from tqdm.auto import tqdm
 
 
 def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:

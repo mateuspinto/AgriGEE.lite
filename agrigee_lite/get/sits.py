@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import signal
+import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -16,7 +17,7 @@ import pandas as pd
 import pandera.pandas as pa
 from shapely import MultiPolygon, Point, Polygon
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
-from tqdm.std import tqdm
+from tqdm.auto import tqdm
 
 from agrigee_lite.cache.spatialite_cache import (
     compute_geom_hash,
@@ -431,12 +432,12 @@ async def download_multiple_sits_async(  # noqa: C901
     semaphore = asyncio.Semaphore(max_parallel_downloads)
     loop = asyncio.get_running_loop()
     executor = ThreadPoolExecutor(max_workers=max_parallel_downloads, thread_name_prefix="agrigee_gee")
+    _is_tty = hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
     pbar = tqdm(
         total=num_chunks,
         unit="chunk",
         smoothing=0,
-        mininterval=0.3,
-        maxinterval=1.0,
+        mininterval=0.3 if _is_tty else 30.0,
         dynamic_ncols=True,
         bar_format="{percentage:3.0f}% | {n_fmt}/{total_fmt} | [{elapsed}<{remaining}, {rate_fmt}] | {postfix}",
     )

@@ -49,6 +49,7 @@ mkdocs = ">=1.6.1"
 mkdocs-material = ">=9.6.9"
 mkdocstrings = { version = ">=0.29.0", extras = ["python"] }
 ipykernel = ">=6.29.5"
+ipywidgets = ">=8.0.0"
 pandas-stubs = ">=3.0.0"
 types-shapely = ">=2.0.0.20250202"
 types-tqdm = ">=4.67.0.20250319"
