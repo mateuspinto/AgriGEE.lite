@@ -9,7 +9,7 @@ AgriGEE.lite is a high-performance **Google Earth Engine (GEE) wrapper** designe
 ### What makes AgriGEE.lite special?
 
 - **Simplified API**: Download satellite time series with just a few lines of code
-- **High Performance**: Utilizes **aria2 downloader** under the hood, achieving **16-22 time series downloads per second**
+- **High Performance**: Utilizes **async aiohttp downloads** under the hood, achieving high throughput in parallel workloads
 - **Multimodal Support**: Seamlessly integrates optical satellites, radar sensors, and derived products
 - **Vegetation/Agricultural Focus**: Optimized for crop monitoring, vegetation analysis, and land use applications
 - **GeoPandas Integration**: Built to work natively with spatial geodataframes
@@ -107,6 +107,7 @@ Or programmatically:
 
 ```python
 import agrigee_lite.api as agl_api
+
 agl_api.serve(host="0.0.0.0", port=8080)
 ```
 
@@ -148,16 +149,16 @@ The database `agrigeelite` is created automatically if it does not exist.
 | `DELETE` | `/jobs/{job_id}` | Delete a completed or failed job |
 | `GET` | `/jobs/{job_id}/download` | Download result as Parquet (SITS) or ZIP (images) |
 
-## High-Performance Downloads with aria2
+## High-Performance Async Downloads
 
-One of AgriGEE.lite's key features is its use of **aria2**, a lightweight multi-protocol & multi-source command-line download utility. This integration provides:
+One of AgriGEE.lite's key features is its use of **native async downloads with aiohttp + uvloop**. This integration provides:
 
 - **Parallel Downloads**: Multiple simultaneous connections for faster data retrieval
-- **Resume Capability**: Automatic resumption of interrupted downloads
+- **Async-first Runtime**: Fully asynchronous download pipeline for multi-geometry and multi-image workflows
 - **Optimized Performance**: Achieving **16-22 time series per second** (for 1-year cloud-free Sentinel-2 BOA series)
 - **Reliability**: Robust error handling and retry mechanisms
 
-The aria2 integration runs transparently behind the scenes, requiring no additional configuration from users while dramatically improving download speeds compared to traditional sequential downloading methods.
+The async integration runs transparently behind the scenes, requiring no additional configuration from users while dramatically improving download speeds compared to traditional sequential downloading methods.
 
 ## Library Architecture
 
@@ -310,7 +311,7 @@ If you're an artist interested in creating a new mascot design, we'd love to mak
 - [x] **Radar Sensors**: Sentinel-1 GRD, ALOS-2 PALSAR-2
 - [x] **Derived Products**: MapBiomas Brazil, MODIS Terra/Aqua
 - [x] **Time Series**: Satellite Image Time Series (SITS) with aggregations
-- [x] **Downloads**: Online and task-based download methods with **aria2 integration**
+- [x] **Downloads**: Online and task-based download methods with async aiohttp integration
 - [x] **Visualizations**: matplotlib-based plotting for images and time series
 - [x] **Cloud Recovery**: smart_open[gcs] integration for automatic data recovery
 - [x] **Advanced Processing**: Configurable cloud masking, Landsat pan-sharpening

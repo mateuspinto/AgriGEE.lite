@@ -30,6 +30,8 @@ requests
     params_hash            TEXT NOT NULL  -- SHA-1(satellite config + reducers + subsampling)
     reducers               TEXT           -- JSON array or NULL
     subsampling_max_pixels REAL NOT NULL
+    h3_coarse              TEXT NOT NULL  -- H3 cell used for spatial prefiltering
+    h3_fine                TEXT NOT NULL  -- H3 child cell used for spatial prefiltering
     start_date             TEXT NOT NULL  -- ISO-8601
     end_date               TEXT NOT NULL  -- ISO-8601
     fetched_at             DATETIME / TIMESTAMPTZ NOT NULL
@@ -50,7 +52,9 @@ import logging
 import os
 import pathlib
 from datetime import UTC, datetime
+from typing import Any
 
+import h3
 import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy import event
@@ -133,28 +137,32 @@ def _ensure_spatial_metadata(conn: sa.Connection) -> None:
 
 
 def _ensure_geometries_table_sl(conn: sa.Connection) -> None:
-    exists = conn.execute(
-        sa.text("SELECT name FROM sqlite_master WHERE type='table' AND name='geometries'")
-    ).fetchone()
+    exists = conn.execute(sa.text("SELECT name FROM sqlite_master WHERE type='table' AND name='geometries'")).fetchone()
     if exists is not None:
         return
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
         CREATE TABLE geometries (
             id        INTEGER PRIMARY KEY AUTOINCREMENT,
             geom_hash TEXT NOT NULL UNIQUE
         )
-    """))
+    """)
+    )
     conn.execute(sa.text("SELECT AddGeometryColumn('geometries', 'geometry', 4326, 'GEOMETRY', 'XY')"))
     conn.execute(sa.text("SELECT CreateSpatialIndex('geometries', 'geometry')"))
 
 
 def _ensure_requests_table_sl(conn: sa.Connection) -> None:
-    exists = conn.execute(
-        sa.text("SELECT name FROM sqlite_master WHERE type='table' AND name='requests'")
-    ).fetchone()
+    exists = conn.execute(sa.text("SELECT name FROM sqlite_master WHERE type='table' AND name='requests'")).fetchone()
     if exists is not None:
+        columns = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(requests)")).fetchall()}
+        if "h3_coarse" not in columns:
+            conn.execute(sa.text("ALTER TABLE requests ADD COLUMN h3_coarse TEXT NOT NULL DEFAULT ''"))
+        if "h3_fine" not in columns:
+            conn.execute(sa.text("ALTER TABLE requests ADD COLUMN h3_fine TEXT NOT NULL DEFAULT ''"))
         return
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
         CREATE TABLE requests (
             id                     INTEGER PRIMARY KEY AUTOINCREMENT,
             geometry_id            INTEGER NOT NULL REFERENCES geometries(id),
@@ -162,15 +170,18 @@ def _ensure_requests_table_sl(conn: sa.Connection) -> None:
             params_hash            TEXT NOT NULL,
             reducers               TEXT,
             subsampling_max_pixels REAL NOT NULL,
+            h3_coarse              TEXT NOT NULL,
+            h3_fine                TEXT NOT NULL,
             start_date             TEXT NOT NULL,
             end_date               TEXT NOT NULL,
             fetched_at             DATETIME NOT NULL,
             UNIQUE (geometry_id, satellite_short_name, params_hash, start_date, end_date)
         )
-    """))
-    conn.execute(sa.text(
-        "CREATE INDEX idx_requests_lookup ON requests (geometry_id, satellite_short_name, params_hash)"
-    ))
+    """)
+    )
+    conn.execute(
+        sa.text("CREATE INDEX idx_requests_lookup ON requests (geometry_id, satellite_short_name, params_hash)")
+    )
 
 
 def _ensure_satellite_table_sl(conn: sa.Connection, table_name: str, band_columns: list[str]) -> None:
@@ -183,14 +194,16 @@ def _ensure_satellite_table_sl(conn: sa.Connection, table_name: str, band_column
     if exists is not None:
         return
     band_cols_sql = ",\n    ".join(f'"{col}" REAL' for col in band_columns)
-    conn.execute(sa.text(f"""
+    conn.execute(
+        sa.text(f"""
         CREATE TABLE "{table_name}" (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             request_id INTEGER NOT NULL REFERENCES requests(id),
             timestamp  DATETIME,
             {band_cols_sql}
         )
-    """))
+    """)
+    )
     conn.execute(sa.text(f'CREATE INDEX "idx_{table_name}_rid" ON "{table_name}" (request_id)'))
     conn.execute(sa.text(f'CREATE INDEX "idx_{table_name}_ts"  ON "{table_name}" (timestamp)'))
 
@@ -205,20 +218,21 @@ def _ensure_postgis_extension(conn: sa.Connection) -> None:
 
 
 def _ensure_geometries_table_pg(conn: sa.Connection) -> None:
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
         CREATE TABLE IF NOT EXISTS geometries (
             id        SERIAL PRIMARY KEY,
             geom_hash TEXT NOT NULL UNIQUE,
             geometry  geometry(Geometry, 4326)
         )
-    """))
-    conn.execute(sa.text(
-        "CREATE INDEX IF NOT EXISTS idx_geometries_geom ON geometries USING GIST (geometry)"
-    ))
+    """)
+    )
+    conn.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_geometries_geom ON geometries USING GIST (geometry)"))
 
 
 def _ensure_requests_table_pg(conn: sa.Connection) -> None:
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
         CREATE TABLE IF NOT EXISTS requests (
             id                     SERIAL PRIMARY KEY,
             geometry_id            INTEGER NOT NULL REFERENCES geometries(id),
@@ -226,36 +240,53 @@ def _ensure_requests_table_pg(conn: sa.Connection) -> None:
             params_hash            TEXT NOT NULL,
             reducers               TEXT,
             subsampling_max_pixels REAL NOT NULL,
+            h3_coarse              TEXT NOT NULL DEFAULT '',
+            h3_fine                TEXT NOT NULL DEFAULT '',
             start_date             TEXT NOT NULL,
             end_date               TEXT NOT NULL,
             fetched_at             TIMESTAMPTZ NOT NULL,
             UNIQUE (geometry_id, satellite_short_name, params_hash, start_date, end_date)
         )
-    """))
-    conn.execute(sa.text(
-        "CREATE INDEX IF NOT EXISTS idx_requests_lookup "
-        "ON requests (geometry_id, satellite_short_name, params_hash)"
-    ))
+    """)
+    )
+    existing_columns = {
+        row[0]
+        for row in conn.execute(
+            sa.text("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'requests'
+        """)
+        ).fetchall()
+    }
+    if "h3_coarse" not in existing_columns:
+        conn.execute(sa.text("ALTER TABLE requests ADD COLUMN h3_coarse TEXT NOT NULL DEFAULT ''"))
+    if "h3_fine" not in existing_columns:
+        conn.execute(sa.text("ALTER TABLE requests ADD COLUMN h3_fine TEXT NOT NULL DEFAULT ''"))
+    conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_requests_lookup "
+            "ON requests (geometry_id, satellite_short_name, params_hash)"
+        )
+    )
 
 
 def _ensure_satellite_table_pg(conn: sa.Connection, table_name: str, band_columns: list[str]) -> None:
     if not band_columns:
         return
     band_cols_sql = ",\n    ".join(f'"{col}" REAL' for col in band_columns)
-    conn.execute(sa.text(f"""
+    conn.execute(
+        sa.text(f"""
         CREATE TABLE IF NOT EXISTS "{table_name}" (
             id         SERIAL PRIMARY KEY,
             request_id INTEGER NOT NULL REFERENCES requests(id),
             timestamp  TIMESTAMPTZ,
             {band_cols_sql}
         )
-    """))
-    conn.execute(sa.text(
-        f'CREATE INDEX IF NOT EXISTS "idx_{table_name}_rid" ON "{table_name}" (request_id)'
-    ))
-    conn.execute(sa.text(
-        f'CREATE INDEX IF NOT EXISTS "idx_{table_name}_ts" ON "{table_name}" (timestamp)'
-    ))
+    """)
+    )
+    conn.execute(sa.text(f'CREATE INDEX IF NOT EXISTS "idx_{table_name}_rid" ON "{table_name}" (request_id)'))
+    conn.execute(sa.text(f'CREATE INDEX IF NOT EXISTS "idx_{table_name}_ts" ON "{table_name}" (timestamp)'))
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +313,14 @@ def _compute_geom_hash(geometry) -> str:
 compute_geom_hash = _compute_geom_hash
 
 
+def _compute_h3_cells(geometry, coarse_resolution: int = 5, fine_resolution: int = 8) -> tuple[str, str]:
+    """Return the coarse and fine H3 cells for a geometry centroid."""
+    centroid = geometry.centroid
+    fine_cell = h3.latlng_to_cell(centroid.y, centroid.x, fine_resolution)
+    coarse_cell = h3.cell_to_parent(fine_cell, coarse_resolution)
+    return coarse_cell, fine_cell
+
+
 def _compute_params_hash(
     satellite: AbstractSatellite,
     reducers: set[str] | None,
@@ -294,6 +333,53 @@ def _compute_params_hash(
         "subsampling_max_pixels": subsampling_max_pixels,
     }
     return hashlib.sha1(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()  # noqa: S324
+
+
+def _chunked(values: list[Any], size: int) -> list[list[Any]]:
+    return [values[i : i + size] for i in range(0, len(values), size)]
+
+
+def fetch_sits_cache_records_by_h3(
+    engine: sa.Engine,
+    satellite: AbstractSatellite,
+    reducers: set[str] | None,
+    subsampling_max_pixels: float,
+    h3_pairs: set[tuple[str, str]],
+) -> list[tuple[str, str, str, str, str, int]]:
+    """Return cached requests filtered by H3 coarse/fine pairs.
+
+    The returned rows include geom_hash so callers can confirm the exact
+    geometry/date match after the spatial prefilter.
+    """
+    if not h3_pairs:
+        return []
+
+    params_hash = _compute_params_hash(satellite, reducers, subsampling_max_pixels)
+    rows_all: list[tuple[str, str, str, str, str, int]] = []
+    pair_list = sorted(h3_pairs)
+
+    with engine.connect() as conn:
+        for chunk in _chunked(pair_list, 400):
+            pair_sql = ", ".join(f"(:c{i}, :f{i})" for i in range(len(chunk)))
+            params: dict[str, Any] = {"sat": satellite.shortName, "ph": params_hash}
+            for i, (coarse_cell, fine_cell) in enumerate(chunk):
+                params[f"c{i}"] = coarse_cell
+                params[f"f{i}"] = fine_cell
+
+            rows = conn.execute(
+                sa.text(f"""
+                    SELECT g.geom_hash, r.h3_coarse, r.h3_fine, r.start_date, r.end_date, r.id
+                    FROM requests r
+                    JOIN geometries g ON r.geometry_id = g.id
+                    WHERE r.satellite_short_name = :sat
+                      AND r.params_hash = :ph
+                      AND (r.h3_coarse, r.h3_fine) IN ({pair_sql})
+                """),
+                params,
+            ).fetchall()
+            rows_all.extend((r[0], r[1], r[2], r[3], r[4], r[5]) for r in rows)
+
+    return rows_all
 
 
 # ---------------------------------------------------------------------------
@@ -419,36 +505,39 @@ def fetch_sits_by_request_ids(
     table_name = satellite.shortName
     band_cols = _get_band_columns(satellite)
     cols_sql = ", ".join(f'"{c}"' for c in ["timestamp", *band_cols])
-    placeholders = ", ".join(f":id{i}" for i in range(len(request_ids)))
-    params: dict[str, int] = {f"id{i}": rid for i, rid in enumerate(request_ids)}
-
-    with engine.connect() as conn:
-        rows = conn.execute(
-            sa.text(
-                f'SELECT request_id, {cols_sql} FROM "{table_name}"'
-                f" WHERE request_id IN ({placeholders})"
-                f" ORDER BY request_id, timestamp"
-            ),
-            params,
-        ).fetchall()
 
     result: dict[int, pd.DataFrame] = {}
-    current_id: int | None = None
-    current_rows: list = []
-    for row in rows:
-        rid = row[0]
-        if rid != current_id:
+    unique_request_ids = list(dict.fromkeys(request_ids))
+
+    with engine.connect() as conn:
+        for chunk in _chunked(unique_request_ids, 400):
+            placeholders = ", ".join(f":id{i}" for i in range(len(chunk)))
+            params: dict[str, int] = {f"id{i}": rid for i, rid in enumerate(chunk)}
+            rows = conn.execute(
+                sa.text(
+                    f'SELECT request_id, {cols_sql} FROM "{table_name}"'
+                    f" WHERE request_id IN ({placeholders})"
+                    f" ORDER BY request_id, timestamp"
+                ),
+                params,
+            ).fetchall()
+
+            current_id: int | None = None
+            current_rows: list[Any] = []
+            for row in rows:
+                rid = row[0]
+                if rid != current_id:
+                    if current_id is not None and current_rows:
+                        df = pd.DataFrame(current_rows, columns=["timestamp", *band_cols])
+                        df["timestamp"] = pd.to_datetime(df["timestamp"])
+                        result[current_id] = df
+                    current_id = rid
+                    current_rows = []
+                current_rows.append(row[1:])
             if current_id is not None and current_rows:
                 df = pd.DataFrame(current_rows, columns=["timestamp", *band_cols])
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
                 result[current_id] = df
-            current_id = rid
-            current_rows = []
-        current_rows.append(row[1:])
-    if current_id is not None and current_rows:
-        df = pd.DataFrame(current_rows, columns=["timestamp", *band_cols])
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
-        result[current_id] = df
 
     return result
 
@@ -462,7 +551,9 @@ def store_sits(
     satellite: AbstractSatellite,
     reducers: set[str] | None,
     subsampling_max_pixels: float,
-) -> None:
+    h3_coarse: str | None = None,
+    h3_fine: str | None = None,
+) -> int | None:
     """Persist a SITS DataFrame into the cache.
 
     Parameters
@@ -483,13 +574,15 @@ def store_sits(
         Subsampling parameter used during download.
     """
     if df.empty:
-        return
+        return None
 
     is_pg = engine.dialect.name == "postgresql"
     geom_hash = _compute_geom_hash(geometry)
     params_hash = _compute_params_hash(satellite, reducers, subsampling_max_pixels)
     table_name = satellite.shortName
     band_cols = _get_band_columns(satellite)
+    if h3_coarse is None or h3_fine is None:
+        h3_coarse, h3_fine = _compute_h3_cells(geometry)
 
     if is_pg:
         geom_fn = "ST_GeomFromWKB(:wkb, 4326)"
@@ -497,8 +590,8 @@ def store_sits(
         ignore_req = """
             INSERT INTO requests
               (geometry_id, satellite_short_name, params_hash, reducers,
-               subsampling_max_pixels, start_date, end_date, fetched_at)
-            VALUES (:gid, :sat, :ph, :red, :sub, :sd, :ed, :now)
+               subsampling_max_pixels, h3_coarse, h3_fine, start_date, end_date, fetched_at)
+            VALUES (:gid, :sat, :ph, :red, :sub, :h3c, :h3f, :sd, :ed, :now)
             ON CONFLICT (geometry_id, satellite_short_name, params_hash, start_date, end_date) DO NOTHING
         """
     else:
@@ -507,8 +600,8 @@ def store_sits(
         ignore_req = """
             INSERT OR IGNORE INTO requests
               (geometry_id, satellite_short_name, params_hash, reducers,
-               subsampling_max_pixels, start_date, end_date, fetched_at)
-            VALUES (:gid, :sat, :ph, :red, :sub, :sd, :ed, :now)
+               subsampling_max_pixels, h3_coarse, h3_fine, start_date, end_date, fetched_at)
+            VALUES (:gid, :sat, :ph, :red, :sub, :h3c, :h3f, :sd, :ed, :now)
         """
 
     with engine.begin() as conn:
@@ -530,6 +623,8 @@ def store_sits(
                 "ph": params_hash,
                 "red": json.dumps(sorted(reducers)) if reducers else None,
                 "sub": subsampling_max_pixels,
+                "h3c": h3_coarse,
+                "h3f": h3_fine,
                 "sd": start_date,
                 "ed": end_date,
                 "now": datetime.now(UTC).isoformat(),
@@ -552,7 +647,7 @@ def store_sits(
             {"rid": req_id},
         ).fetchone()
         if already_exists:
-            return
+            return req_id
 
         # --- satellite rows ---
         present_band_cols = [c for c in band_cols if c in df.columns]
@@ -580,6 +675,8 @@ def store_sits(
                 rows_to_insert,
             )
 
+    return req_id
+
 
 # ---------------------------------------------------------------------------
 # Initialisation
@@ -602,11 +699,21 @@ def print_cache_status(engine: sa.Engine | None = None) -> None:
     is_pg = eng.dialect.name == "postgresql"
 
     _SL_SYSTEM_TABLES = {
-        "geometries", "requests", "spatial_ref_sys", "geometry_columns",
-        "views_geometry_columns", "virts_geometry_columns", "spatialite_history",
-        "sql_statements_log", "geometry_columns_statistics",
-        "geometry_columns_field_infos", "geometry_columns_time",
-        "geometry_columns_auth", "data_licenses", "KNN", "KNN2",
+        "geometries",
+        "requests",
+        "spatial_ref_sys",
+        "geometry_columns",
+        "views_geometry_columns",
+        "virts_geometry_columns",
+        "spatialite_history",
+        "sql_statements_log",
+        "geometry_columns_statistics",
+        "geometry_columns_field_infos",
+        "geometry_columns_time",
+        "geometry_columns_auth",
+        "data_licenses",
+        "KNN",
+        "KNN2",
         "ElementaryGeometries",
     }
     _PG_SYSTEM_TABLES = {"geometries", "requests", "spatial_ref_sys", "geometry_columns"}
@@ -617,10 +724,12 @@ def print_cache_status(engine: sa.Engine | None = None) -> None:
         total_sits: int = _count_row[0]
 
         if is_pg:
-            rows = conn.execute(sa.text(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
-            )).fetchall()
+            rows = conn.execute(
+                sa.text(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+                )
+            ).fetchall()
             sat_tables = sorted(r[0] for r in rows if r[0] not in _PG_SYSTEM_TABLES)
         else:
             rows = conn.execute(sa.text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()

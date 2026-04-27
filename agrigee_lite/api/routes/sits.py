@@ -15,7 +15,7 @@ router = APIRouter(prefix="/sits", tags=["sits"])
 
 
 # ---------------------------------------------------------------------------
-# Single geometry — synchronous (no aria2 involved); fast enough for one row
+# Single geometry — synchronous; fast enough for one row
 # ---------------------------------------------------------------------------
 
 
@@ -42,7 +42,7 @@ async def get_single_sits(request: SitsRequest) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Multiple geometries — async (uses aria2); long-running → background job
+# Multiple geometries — async (aiohttp); long-running → background job
 # ---------------------------------------------------------------------------
 
 

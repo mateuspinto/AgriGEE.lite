@@ -4,9 +4,10 @@ import io
 import json
 import logging
 import signal
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 import ee
@@ -21,9 +22,16 @@ from agrigee_lite.cache.spatialite_cache import (
     compute_geom_hash,
     fetch_sits,
     fetch_sits_by_request_ids,
-    fetch_sits_cache_index,
+    fetch_sits_cache_records_by_h3,
     get_engine,
     store_sits,
+)
+from agrigee_lite.config import (
+    AIOHTTP_CONNECTOR_LIMIT,
+    AIOHTTP_TIMEOUT_SECONDS,
+    ASYNC_MAX_PARALLEL_DOWNLOADS,
+    ASYNC_MAX_RETRIES_PER_CHUNK,
+    SITS_CHUNKSIZE,
 )
 from agrigee_lite.ee_utils import (
     ee_gdf_to_feature_collection,
@@ -37,6 +45,12 @@ from agrigee_lite.misc import (
 )
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite, OpticalSatellite
 from agrigee_lite.task_manager import GEETaskManager
+
+logger = logging.getLogger(__name__)
+
+
+def _as_date_str(value: pd.Timestamp | str) -> str:
+    return str(value)[:10]
 
 
 def build_ee_expression(
@@ -212,7 +226,7 @@ def sanitize_and_prepare_input_gdf(
 
     if original_index_column_name == "original_index":
         gdf = gdf.reset_index().rename(columns={"index": original_index_column_name})
-        logging.info(f"Column '{original_index_column_name}' created to store original index.")
+        logger.debug("Column '%s' created to store original index.", original_index_column_name)
 
     schema = pa.DataFrameSchema(
         {
@@ -240,11 +254,11 @@ def sanitize_and_prepare_input_gdf(
 
     pct_none = 100 * count_none / len(gdf)
     if pct_none > 0:
-        logging.warning(f"{pct_none:.2f}% of the data do not intersect the satellite period.")
+        logger.debug("%.2f%% of the data do not intersect the satellite period.", pct_none)
 
     pct_partial = 100 * count_partial / len(gdf)
     if pct_partial > 0:
-        logging.info(f"{pct_partial:.2f}% of the data partially intersect the satellite period.")
+        logger.debug("%.2f%% of the data partially intersect the satellite period.", pct_partial)
 
     if pct_none == 100:
         return gpd.GeoDataFrame()
@@ -292,8 +306,8 @@ def download_single_sits(
     ValueError
         If the requested period does not intersect with satellite's temporal range.
     """
-    start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
-    end_date = end_date.strftime("%Y-%m-%d") if isinstance(end_date, pd.Timestamp) else end_date
+    start_date = _as_date_str(start_date)
+    end_date = _as_date_str(end_date)
 
     if end_date < satellite.startDate or start_date > satellite.endDate:
         raise ValueError(  # noqa: TRY003
@@ -305,7 +319,7 @@ def download_single_sits(
     if _engine is not None:
         cached = fetch_sits(_engine, geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels)
         if cached is not None:
-            logging.debug("Cache hit: %s %s→%s", satellite.shortName, start_date, end_date)
+            logger.debug("Cache hit: %s %s→%s", satellite.shortName, start_date, end_date)
             return cached
 
     ee_feature = ee.Feature(
@@ -323,7 +337,7 @@ def download_single_sits(
     return sits_df
 
 
-async def download_multiple_sits_async(
+async def download_multiple_sits_async(  # noqa: C901
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
     reducers: set[str] | None = None,
@@ -331,9 +345,9 @@ async def download_multiple_sits_async(
     start_date_column_name: str = "start_date",
     end_date_column_name: str = "end_date",
     subsampling_max_pixels: float = 1_000,
-    chunksize: int = 10,
-    max_concurrent: int = 20,
-    max_retries: int = 3,
+    chunksize: int = SITS_CHUNKSIZE,
+    max_parallel_downloads: int = ASYNC_MAX_PARALLEL_DOWNLOADS,
+    max_retries_per_chunk: int = ASYNC_MAX_RETRIES_PER_CHUNK,
     force_redownload: bool = False,
 ) -> pd.DataFrame:
     if len(gdf) == 0:
@@ -351,49 +365,100 @@ async def download_multiple_sits_async(
         return pd.DataFrame()
 
     _engine = get_engine()
-    cached_frames: list[pd.DataFrame] = []
-    if _engine is not None and not force_redownload:
-        cache_index = fetch_sits_cache_index(_engine, satellite, reducers, subsampling_max_pixels)
-        if cache_index:
-            hit_request_ids: dict[int, Any] = {}
-            uncached_positions: list[Any] = []
-            for pos, row in gdf.iterrows():
-                key = (
-                    compute_geom_hash(row.geometry),
-                    str(row[start_date_column_name])[:10],
-                    str(row[end_date_column_name])[:10],
-                )
-                req_id = cache_index.get(key)
-                if req_id is not None:
-                    hit_request_ids[req_id] = (pos, row[original_index_column_name])
-                else:
-                    uncached_positions.append(pos)
+    if _engine is None:
+        raise RuntimeError
+    request_to_original_indices: dict[int, list[Any]] = defaultdict(list)
+    uncached_request_rows: gpd.GeoDataFrame = gdf
 
-            if hit_request_ids:
-                cached_data = fetch_sits_by_request_ids(_engine, satellite, list(hit_request_ids.keys()))
-                for req_id, df in cached_data.items():
-                    _, orig_idx = hit_request_ids[req_id]
-                    df[original_index_column_name] = orig_idx
-                    cached_frames.append(df)
+    cache_lookup: dict[tuple[str, str, str], int] = {}
+    if not force_redownload:
+        h3_pairs = {(str(row.h3_coarse), str(row.h3_fine)) for _, row in gdf.iterrows()}
+        cache_records = fetch_sits_cache_records_by_h3(
+            _engine,
+            satellite,
+            reducers,
+            subsampling_max_pixels,
+            h3_pairs,
+        )
+        cache_lookup = {
+            (geom_hash, start_date, end_date): req_id
+            for geom_hash, _h3_coarse, _h3_fine, start_date, end_date, req_id in cache_records
+        }
 
-            gdf = gdf.loc[uncached_positions].reset_index(drop=True)
-            if gdf.empty:
-                return pd.concat(cached_frames, ignore_index=True) if cached_frames else pd.DataFrame()
+    uncached_positions: list[int] = []
+    for pos, row in gdf.iterrows():
+        key = (
+            compute_geom_hash(row.geometry),
+            str(row[start_date_column_name])[:10],
+            str(row[end_date_column_name])[:10],
+        )
+        req_id = cache_lookup.get(key)
+        if req_id is None:
+            uncached_positions.append(cast(int, pos))
+        else:
+            request_to_original_indices[req_id].append(row[original_index_column_name])
 
-    num_chunks = (len(gdf) + chunksize - 1) // chunksize
+    uncached_request_rows = gdf.loc[uncached_positions].reset_index(drop=True)
+
+    def _finalize_from_spatialite() -> pd.DataFrame:
+
+        request_ids = list(request_to_original_indices.keys())
+        if not request_ids:
+            return pd.DataFrame()
+
+        cached_data = fetch_sits_by_request_ids(_engine, satellite, request_ids)
+        frames: list[pd.DataFrame] = []
+        for req_id, df in cached_data.items():
+            original_indices = request_to_original_indices.get(req_id, [])
+            for original_index in original_indices:
+                df_copy = df.copy()
+                df_copy[original_index_column_name] = original_index
+                frames.append(df_copy)
+
+        if not frames:
+            return pd.DataFrame()
+
+        whole_result = pd.concat(frames, ignore_index=True)
+        whole_result = whole_result.sort_values(by=[original_index_column_name, "timestamp"], kind="stable")
+        return whole_result.reset_index(drop=True)
+
+    if uncached_request_rows.empty:
+        return _finalize_from_spatialite()
+
+    num_chunks = (len(uncached_request_rows) + chunksize - 1) // chunksize
+
     selectors = build_selectors(satellite, reducers)
-    semaphore = asyncio.Semaphore(max_concurrent)
+    semaphore = asyncio.Semaphore(max_parallel_downloads)
     loop = asyncio.get_running_loop()
-    executor = ThreadPoolExecutor(max_workers=max_concurrent, thread_name_prefix="agrigee_gee")
+    executor = ThreadPoolExecutor(max_workers=max_parallel_downloads, thread_name_prefix="agrigee_gee")
     pbar = tqdm(
         total=num_chunks,
         unit="chunk",
         smoothing=0,
-        bar_format="{percentage:3.0f}% | {n_fmt}/{total_fmt} | [{elapsed}<{remaining}, {rate_fmt}]",
+        mininterval=0.3,
+        maxinterval=1.0,
+        dynamic_ncols=True,
+        bar_format="{percentage:3.0f}% | {n_fmt}/{total_fmt} | [{elapsed}<{remaining}, {rate_fmt}] | {postfix}",
     )
 
+    stats: dict[str, int] = {
+        "cache": len(request_to_original_indices),
+        "done": 0,
+        "ok": 0,
+        "err": 0,
+        "retry": 0,
+    }
+
+    def _update_postfix() -> None:
+        pbar.set_postfix_str(
+            f"d:{stats['done']} ok:{stats['ok']} e:{stats['err']} r:{stats['retry']} c:{stats['cache']}",
+            refresh=False,
+        )
+
+    _update_postfix()
+
     async def fetch_chunk(session: aiohttp.ClientSession, chunk_id: int) -> pd.DataFrame:
-        sub = gdf.iloc[chunk_id * chunksize : (chunk_id + 1) * chunksize].copy()
+        sub = uncached_request_rows.iloc[chunk_id * chunksize : (chunk_id + 1) * chunksize].copy()
 
         def get_url() -> str:
             expr = build_ee_expression(
@@ -409,33 +474,45 @@ async def download_multiple_sits_async(
 
         url = await loop.run_in_executor(executor, get_url)
 
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=600)) as resp:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=AIOHTTP_TIMEOUT_SECONDS)) as resp:
             resp.raise_for_status()
             data = await resp.read()
 
-        return pd.read_csv(io.BytesIO(data))
+        chunk_df = pd.read_csv(io.BytesIO(data))
+        return prepare_output_df(chunk_df, satellite, original_index_column_name)
 
-    async def fetch_with_retry(session: aiohttp.ClientSession, chunk_id: int) -> pd.DataFrame | None:
+    async def fetch_with_retry(session: aiohttp.ClientSession, chunk_id: int) -> pd.DataFrame:
         async with semaphore:
+            chunk_df: pd.DataFrame = pd.DataFrame()
             try:
-                _result: pd.DataFrame | None = None
                 async for attempt in AsyncRetrying(
-                    stop=stop_after_attempt(max_retries),
+                    stop=stop_after_attempt(max_retries_per_chunk),
                     wait=wait_exponential(multiplier=1, min=2, max=30),
                 ):
+                    if attempt.retry_state.attempt_number > 1:
+                        stats["retry"] += 1
+                        _update_postfix()
                     with attempt:
-                        _result = await fetch_chunk(session, chunk_id)
-                return _result
+                        chunk_df = await fetch_chunk(session, chunk_id)
+                stats["ok"] += 1
             except RetryError:
-                logging.error("Chunk %d failed after %d attempts.", chunk_id, max_retries)
-                return None
+                stats["err"] += 1
+                logger.debug("Chunk %d failed after %d attempts.", chunk_id, max_retries_per_chunk, exc_info=True)
+                return pd.DataFrame()
+            except Exception:
+                stats["err"] += 1
+                logger.debug("Chunk %d failed with unexpected error.", chunk_id, exc_info=True)
+                return pd.DataFrame()
+            else:
+                return chunk_df
             finally:
+                stats["done"] += 1
+                _update_postfix()
                 pbar.update(1)
 
     def _cancel_all() -> None:
-        import os
-        logging.warning("Download interrupted. Exiting.")
-        os._exit(1)
+        logger.warning("Download interrupted. Exiting.")
+        raise SystemExit(1)
 
     _signals_registered = False
     try:
@@ -445,7 +522,7 @@ async def download_multiple_sits_async(
     except (NotImplementedError, ValueError):
         pass
 
-    connector = aiohttp.TCPConnector(limit=max_concurrent)
+    connector = aiohttp.TCPConnector(limit=max(max_parallel_downloads, AIOHTTP_CONNECTOR_LIMIT))
     try:
         async with aiohttp.ClientSession(connector=connector) as session:
             tasks = [asyncio.create_task(fetch_with_retry(session, cid)) for cid in range(num_chunks)]
@@ -460,8 +537,8 @@ async def download_multiple_sits_async(
     frames: list[pd.DataFrame] = []
     for cid, res in enumerate(results):
         if isinstance(res, BaseException):
-            logging.error("Chunk %d raised: %s", cid, res)
-        elif res is not None and not res.empty:
+            logger.debug("Chunk %d raised: %s", cid, res)
+        elif not res.empty:
             frames.append(res)
 
     whole_result_df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
@@ -479,10 +556,9 @@ async def download_multiple_sits_async(
                 satellite,
                 reducers,
                 subsampling_max_pixels,
+                h3_coarse=str(orig_row.h3_coarse),
+                h3_fine=str(orig_row.h3_fine),
             )
-
-    if cached_frames:
-        whole_result_df = pd.concat([pd.concat(cached_frames, ignore_index=True), whole_result_df], ignore_index=True)
 
     return whole_result_df
 
@@ -498,7 +574,6 @@ def download_multiple_sits_chunks_gdrive(
     coarse_resolution: int = 5,
     fine_resolution: int = 8,
     gee_save_folder: str = "AGL_EXPORTS",
-    force_redownload: bool = False,
     wait: bool = True,
 ) -> None:
     """
@@ -526,8 +601,6 @@ def download_multiple_sits_chunks_gdrive(
         H3 resolution for intra-cluster ordering, by default 8.
     gee_save_folder : str, optional
         Google Drive folder name for saving exports, by default "AGL_EXPORTS".
-    force_redownload : bool, optional
-        Whether to force re-download of existing data, by default False.
     wait : bool, optional
         Whether to wait for task completion, by default True.
     """
@@ -628,9 +701,7 @@ def download_multiple_sits_chunks_gdrive(
     ):
         cluster_id = int(cluster_id)
 
-        if (force_redownload) or (
-            f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks
-        ):
+        if f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks:
             task = download_multiple_sits_task_gdrive(
                 gdf[gdf.cluster_id == cluster_id],
                 satellite,
@@ -663,7 +734,6 @@ def download_multiple_sits_chunks_gcs(
     subsampling_max_pixels: float = 1_000,
     coarse_resolution: int = 5,
     fine_resolution: int = 8,
-    force_redownload: bool = False,
     wait: bool = True,
 ) -> None | pd.DataFrame:
     """
@@ -691,8 +761,6 @@ def download_multiple_sits_chunks_gcs(
         H3 resolution for cluster boundaries, by default 5.
     fine_resolution : int, optional
         H3 resolution for intra-cluster ordering, by default 8.
-    force_redownload : bool, optional
-        Whether to force re-download of existing data, by default False.
     wait : bool, optional
         Whether to wait for task completion, by default True.
 
@@ -702,7 +770,7 @@ def download_multiple_sits_chunks_gcs(
         If wait is True, returns DataFrame with combined results.
         If wait is False, returns None.
     """
-    from smart_open import open  # pyright: ignore[reportMissingImports]
+    from smart_open import open as smart_open  # pyright: ignore[reportMissingImports]
 
     if len(gdf) == 0:
         logging.warning("Empty GeoDataFrame, nothing to download")
@@ -802,10 +870,10 @@ def download_multiple_sits_chunks_gcs(
     metadata_dict["user"] = username
     metadata_dict["creation_date"] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    with open(f"gs://{bucket_name}/{gcs_save_folder}/metadata.json", "w") as f:
+    with smart_open(f"gs://{bucket_name}/{gcs_save_folder}/metadata.json", "w") as f:
         json.dump(metadata_dict, f, indent=4)
 
-    with open(f"gs://{bucket_name}/{gcs_save_folder}/geodataframe.parquet", "wb") as f:
+    with smart_open(f"gs://{bucket_name}/{gcs_save_folder}/geodataframe.parquet", "wb") as f:
         gdf.to_parquet(f, compression="brotli")
 
     file_uris = []
@@ -813,9 +881,7 @@ def download_multiple_sits_chunks_gcs(
     for cluster_id in tqdm(sorted(gdf.cluster_id.unique())):
         cluster_id = int(cluster_id)
 
-        if (force_redownload) or (
-            f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks
-        ):
+        if f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks:
             # TODO: Also skip if the file already exists in GCS
             task = download_multiple_sits_task_gcs(
                 gdf[gdf.cluster_id == cluster_id],
@@ -841,7 +907,7 @@ def download_multiple_sits_chunks_gcs(
 
         df = pd.DataFrame()
         for file_uri in file_uris:
-            with open(file_uri, "r") as f:
+            with smart_open(file_uri, "r") as f:
                 sub_df = pd.read_csv(f)
                 df = pd.concat([df, sub_df], ignore_index=True)
 

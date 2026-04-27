@@ -2,7 +2,7 @@ import logging
 
 from agrigee_lite.cache import clear_cache, init_cache, print_cache_status
 from agrigee_lite.ee_utils import ee_get_tasks_status as get_all_tasks
-from agrigee_lite.ee_utils import _tune_ee_http, ee_quick_start
+from agrigee_lite.ee_utils import _install_uvloop, _tune_ee_http, ee_quick_start
 from agrigee_lite.misc import get_sample_gdf, h3_clustering, random_points_from_gdf
 
 from . import (
@@ -26,6 +26,7 @@ __all__ = [
 
 
 def initialize():
+    _install_uvloop()
     init_cache()
     print_cache_status()
     ee_quick_start()

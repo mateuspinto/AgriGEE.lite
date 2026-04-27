@@ -34,7 +34,6 @@ earthengine-api = ">=1.5.7"
 ee-s1-ard = ">=1.0.5"
 pandera = ">=0.26.1"
 topojson = ">=1.9"
-aria2p = { version = ">=0.12.1, <0.13", extras = ["tui"] }
 aiohttp = ">=3.13.5, <4"
 tenacity = ">=9.1.4, <10"
 uvloop = ">=0.22.1, <0.23"

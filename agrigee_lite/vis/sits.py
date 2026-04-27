@@ -79,14 +79,14 @@ def visualize_single_sits(
     None
         The function creates a plot but doesn't return any value.
     """
-    import matplotlib.pyplot as plt  # pyright: ignore[reportMissingImports]
+    import matplotlib.pyplot as plt
 
     long_sits = download_single_sits(geometry, start_date, end_date, satellite, reducers={reducer})
 
     if len(long_sits) == 0:
         return None
 
-    y = long_sits[band_or_indice_to_plot].values
+    y = long_sits[band_or_indice_to_plot].to_numpy()
 
     if ax is None:
         plt.plot(
@@ -158,7 +158,7 @@ def visualize_multiple_sits(
     pattern analysis. The original timestamps are converted using the `year_fraction`
     function and then normalized to start from zero.
     """
-    import matplotlib.pyplot as plt  # pyright: ignore[reportMissingImports]
+    import matplotlib.pyplot as plt
 
     long_sits = asyncio.run(download_multiple_sits_async(gdf, satellite, reducers={reducer}, force_redownload=force_redownload))
 

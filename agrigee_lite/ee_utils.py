@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import tempfile
@@ -6,6 +7,8 @@ import ee
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+
+from agrigee_lite.config import HIGH_VOLUME_ENDPOINT, USE_UVLOOP
 
 
 def ee_map_bands_and_doy(
@@ -644,11 +647,27 @@ def ee_is_authenticated() -> bool:
     >>>     print("Authentication required")
     """
     try:
-        ee.Initialize()
+        ee.Initialize(opt_url=HIGH_VOLUME_ENDPOINT)
     except Exception:
         return False
     else:
         return True
+
+
+def _install_uvloop() -> None:
+    """Install uvloop when enabled and no event loop is currently running."""
+    if not USE_UVLOOP:
+        return
+
+    try:
+        import uvloop
+    except ImportError:
+        return
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        uvloop.install()
 
 
 def ee_quick_start() -> None:
@@ -696,7 +715,7 @@ def ee_quick_start() -> None:
 
             if gee_key.endswith(".json"):  # with service account
                 credentials = ee.ServiceAccountCredentials(gee_key, gee_key)
-                ee.Initialize(credentials, opt_url="https://earthengine-highvolume.googleapis.com")
+                ee.Initialize(credentials, opt_url=HIGH_VOLUME_ENDPOINT)
 
                 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gee_key
 
@@ -707,7 +726,7 @@ def ee_quick_start() -> None:
                     )
 
             else:  # using token
-                ee.Initialize(opt_url="https://earthengine-highvolume.googleapis.com", project=gee_key)
+                ee.Initialize(opt_url=HIGH_VOLUME_ENDPOINT, project=gee_key)
                 print(f"Earth Engine initialized successfully using AgriGEE.lite using token (project={gee_key}).")
 
         else:
@@ -733,16 +752,13 @@ def get_number_of_available_service_accounts() -> int:
 
 
 def _tune_ee_http() -> None:
-    from requests.adapters import HTTPAdapter  # pyright: ignore[reportMissingModuleSource]
+    """Disable Earth Engine client-side retry/timeout tuning.
 
-    state = ee.data._get_state()
-    if state.requests_session is not None:
-        adapter = HTTPAdapter(pool_connections=50, pool_maxsize=50)
-        state.requests_session.mount("https://", adapter)
-        state.requests_session.mount("http://", adapter)
-
+    Retry, timeout, and concurrency controls are handled by AgriGEE.lite
+    (aiohttp + tenacity) on the library side.
+    """
     ee.data.setMaxRetries(0)
-    ee.data.setDeadline(90_000)
+    ee.data.setDeadline(0)
 
 
 def login_with_service_account_n(n: int) -> str:
@@ -776,7 +792,7 @@ def login_with_service_account_n(n: int) -> str:
 
     selected_service_account = service_accounts[n]
     credentials = ee.ServiceAccountCredentials(selected_service_account, selected_service_account)
-    ee.Initialize(credentials)
+    ee.Initialize(credentials, opt_url=HIGH_VOLUME_ENDPOINT)
 
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = selected_service_account
 

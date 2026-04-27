@@ -5,6 +5,7 @@ import json
 import multiprocessing
 import warnings
 from pathlib import Path
+from typing import cast
 
 import geopandas as gpd
 import h3
@@ -129,14 +130,16 @@ def h3_clustering(
         warnings.simplefilter("ignore", category=UserWarning)
         centroids = gdf.geometry.centroid
 
-    tqdm.pandas(desc="H3 cells", leave=True)
-    gdf["_h3_fine"] = centroids.progress_apply(lambda pt: h3.latlng_to_cell(pt.y, pt.x, fine_resolution))
+    gdf["_h3_fine"] = [
+        h3.latlng_to_cell(cast(Point, pt).y, cast(Point, pt).x, fine_resolution)
+        for pt in tqdm(centroids, desc="H3 cells", leave=True)
+    ]
     gdf["_h3_coarse"] = gdf["_h3_fine"].apply(lambda cell: h3.cell_to_parent(cell, coarse_resolution))
 
     gdf = gdf.sort_values(by=["_h3_coarse", "_h3_fine"]).reset_index(drop=True)
 
     gdf["cluster_id"] = pd.factorize(gdf["_h3_coarse"])[0]
-    gdf = gdf.drop(columns=["_h3_coarse", "_h3_fine"])
+    gdf = gdf.rename(columns={"_h3_coarse": "h3_coarse", "_h3_fine": "h3_fine"})
 
     all_points = gdf.geometry.geom_type.eq("Point").all()
     if all_points:

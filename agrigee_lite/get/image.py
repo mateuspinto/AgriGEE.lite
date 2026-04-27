@@ -1,31 +1,41 @@
 import asyncio
 import logging
 import pathlib
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, cast
 
+import aiohttp
 import ee
 import numpy as np
 import pandas as pd
 from shapely import MultiPolygon, Point, Polygon
+from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 from tqdm.std import tqdm
 
-from agrigee_lite.downloader import DownloaderStrategy
+from agrigee_lite.config import (
+    AIOHTTP_CONNECTOR_LIMIT,
+    AIOHTTP_TIMEOUT_SECONDS,
+    ASYNC_MAX_PARALLEL_DOWNLOADS,
+    ASYNC_MAX_RETRIES_PER_CHUNK,
+)
 from agrigee_lite.ee_utils import ee_img_to_numpy
 from agrigee_lite.misc import create_dict_hash, log_dict_function_call_summary
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite, SingleImageSatellite
 
 
-def download_multiple_images(  # noqa: C901
+def _as_date_str(value: pd.Timestamp | str) -> str:
+    return str(value)[:10]
+
+
+def download_multiple_images(
     geometry: Polygon | MultiPolygon,
     start_date: pd.Timestamp | str,
     end_date: pd.Timestamp | str,
     satellite: AbstractSatellite,
     invalid_images_threshold: float = 0.5,
-    max_parallel_downloads: int = 40,
+    max_parallel_downloads: int = ASYNC_MAX_PARALLEL_DOWNLOADS,
     force_redownload: bool = False,
     image_indices: list[int] | None = None,
+    max_retries_per_chunk: int = ASYNC_MAX_RETRIES_PER_CHUNK,
 ) -> list[str]:
     """Download raw satellite images (as GeoTIFF ZIPs) for a geometry and date range.
 
@@ -50,13 +60,15 @@ def download_multiple_images(  # noqa: C901
         ``max_valid_pixels * invalid_images_threshold`` are excluded.
         Set to 0.0 to keep all images regardless of cloud cover.
     max_parallel_downloads : int, default 40
-        Maximum simultaneous downloads via aria2.
+        Maximum simultaneous downloads.
     force_redownload : bool, default False
         Delete cached ZIPs and re-download from scratch.
     image_indices : list of int or None, optional
         If given, only download the images at these positions in the
         (filtered, sorted) collection.  Useful for previewing a subset
         without downloading everything.
+    max_retries_per_chunk : int, default 5
+        Maximum retry attempts per image download.
 
     Returns
     -------
@@ -65,129 +77,29 @@ def download_multiple_images(  # noqa: C901
         order as the files on disk.
     """
 
-    start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
-    end_date = end_date.strftime("%Y-%m-%d") if isinstance(end_date, pd.Timestamp) else end_date
+    start_date_str = _as_date_str(start_date)
+    end_date_str = _as_date_str(end_date)
 
-    ee_geometry = ee.Geometry(geometry.__geo_interface__)
-    ee_feature = ee.Feature(
-        ee_geometry,
-        {"s": start_date, "e": end_date, "0": 1},
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(
+            download_multiple_images_async(
+                geometry=geometry,
+                start_date=start_date_str,
+                end_date=end_date_str,
+                satellite=satellite,
+                invalid_images_threshold=invalid_images_threshold,
+                max_parallel_downloads=max_parallel_downloads,
+                force_redownload=force_redownload,
+                image_indices=image_indices,
+                max_retries_per_chunk=max_retries_per_chunk,
+            )
+        )
+
+    raise RuntimeError(
+        "download_multiple_images cannot run inside an active event loop. Use download_multiple_images_async instead."
     )
-    ee_expression = satellite.imageCollection(ee_feature)
-
-    metadata_dict: dict[str, Any] = {}
-    metadata_dict |= log_dict_function_call_summary([
-        "geometry",
-        "start_date",
-        "end_date",
-        "satellite",
-        "max_parallel_downloads",
-        "force_redownload",
-    ])
-    metadata_dict |= satellite.log_dict()
-    metadata_dict["start_date"] = start_date
-    metadata_dict["end_date"] = end_date
-    metadata_dict["centroid_x"] = geometry.centroid.x
-    metadata_dict["centroid_y"] = geometry.centroid.y
-
-    if ee_expression.size().getInfo() == 0:
-        print("No images found for the specified parameters.")
-        return []
-    else:
-        print(f"Found {ee_expression.size().getInfo()} images for the specified parameters.")
-
-    max_valid_pixels = ee_expression.aggregate_max("ZZ_USER_VALID_PIXELS")
-    threshold = ee.Number(max_valid_pixels).multiply(invalid_images_threshold)
-    ee_expression = ee_expression.filter(ee.Filter.gte("ZZ_USER_VALID_PIXELS", threshold))
-
-    image_names: list[str] = cast(list[str], ee_expression.aggregate_array("ZZ_USER_TIME_DUMMY").getInfo())
-    image_indexes: list[str] = cast(list[str], ee_expression.aggregate_array("system:index").getInfo())
-
-    # Filter images by indices if provided
-    if image_indices is not None:
-        # Ensure indices are valid
-        valid_indices = [i for i in image_indices if 0 <= i < len(image_indexes)]
-        if not valid_indices:
-            print("No valid image indices provided.")
-            return []
-
-        image_names = [image_names[i] for i in valid_indices]
-        image_indexes = [image_indexes[i] for i in valid_indices]
-
-    output_path = pathlib.Path.home() / ".cache" / "agrigee_lite" / "images" / f"{create_dict_hash(metadata_dict)}"
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    if force_redownload:
-        for f in output_path.glob("*.zip"):
-            f.unlink()
-
-    downloader = DownloaderStrategy(download_folder=output_path)
-
-    already_downloaded_stems = {x.stem for x in output_path.glob("*.zip")}
-    pending_chunks = sorted(i for i in range(len(image_indexes)) if image_names[i] not in already_downloaded_stems)
-
-    pbar = tqdm(total=len(pending_chunks), desc=f"Downloading images ({output_path.name})", unit="feature")
-
-    def update_pbar():
-        snap = downloader._get_downloads_snapshot()
-        stats = downloader.stats_from_snapshot(snap)
-        pbar.n = stats["completed"]
-        pbar.refresh()
-        pbar.set_postfix({
-            "aria2_errors": stats["errors"],
-            "active_downloads": stats["active"],
-        })
-
-    def download_task(chunk_index):
-        import socket
-        old_timeout = socket.getdefaulttimeout()
-        socket.setdefaulttimeout(90)
-        try:
-            img = ee.Image(ee_expression.filter(ee.Filter.eq("system:index", image_indexes[chunk_index])).first())
-            # Use only the image date as filename (GEE standard format)
-            image_date = image_names[chunk_index]
-            filename = f"{image_date}"
-            url = img.getDownloadURL({"name": filename, "region": ee_geometry})
-            downloader.add_download([(chunk_index, url)])
-            return chunk_index, True  # noqa: TRY300
-        except Exception as _:
-            return chunk_index, False
-        finally:
-            socket.setdefaulttimeout(old_timeout)
-
-    while downloader.num_completed_downloads < len(pending_chunks):
-        with ThreadPoolExecutor(max_workers=max_parallel_downloads) as executor:
-            futures = {executor.submit(download_task, chunk): chunk for chunk in pending_chunks}
-
-            failed_chunks = []
-            try:
-                for future in as_completed(futures, timeout=120):
-                    chunk, success = future.result()
-                    if not success:
-                        failed_chunks.append(chunk)
-                        logging.warning(f"Download images - {output_path} - Failed to initiate download for chunk {chunk}.")
-
-                    update_pbar()
-
-                    while downloader.num_unfinished_downloads >= max_parallel_downloads:
-                        time.sleep(1)
-                        update_pbar()
-            except TimeoutError:
-                for f, chunk in futures.items():
-                    if not f.done():
-                        logging.warning(f"Download images - {output_path} - Chunk {chunk} GEE getDownloadURL timed out, requeuing.")
-                        failed_chunks.append(chunk)
-
-        while downloader.num_unfinished_downloads > 0:
-            time.sleep(1)
-            update_pbar()
-
-        pending_chunks = sorted(set(failed_chunks + downloader.failed_downloads))
-
-    update_pbar()
-    pbar.close()
-
-    return image_names
 
 
 def download_single_image(
@@ -250,31 +162,54 @@ async def _resolve_ee_image_collection(
     return image_names, image_indexes
 
 
-async def _fetch_and_queue_image(
+async def _download_url_to_path(
+    session: aiohttp.ClientSession,
+    url: str,
+    output_path: pathlib.Path,
+) -> None:
+    timeout = aiohttp.ClientTimeout(total=AIOHTTP_TIMEOUT_SECONDS)
+    async with session.get(url, timeout=timeout) as response:
+        response.raise_for_status()
+        content = await response.read()
+    output_path.write_bytes(content)
+
+
+async def _fetch_and_download_image(
     chunk_index: int,
     ee_expression: ee.ImageCollection,
     image_names: list[str],
     image_indexes: list[str],
     ee_geometry: ee.Geometry,
-    downloader: DownloaderStrategy,
+    session: aiohttp.ClientSession,
+    output_dir: pathlib.Path,
     semaphore: asyncio.Semaphore,
-    max_parallel_downloads: int,
-    update_pbar: object,
+    max_retries_per_chunk: int,
 ) -> tuple[int, bool]:
-    """Resolve a single GEE download URL and register it with aria2."""
+    """Resolve a single GEE download URL and save its ZIP payload to disk."""
     async with semaphore:
-        while downloader.num_unfinished_downloads >= max_parallel_downloads:
-            await asyncio.sleep(1)
-            update_pbar()  # type: ignore[call-arg]
         try:
-            img = ee.Image(ee_expression.filter(ee.Filter.eq("system:index", image_indexes[chunk_index])).first())
-            url = await asyncio.wait_for(
-                asyncio.to_thread(img.getDownloadURL, {"name": image_names[chunk_index], "region": ee_geometry}),
-                timeout=120,
-            )
-            downloader.add_download([(chunk_index, url)])
+            async for attempt in AsyncRetrying(
+                stop=stop_after_attempt(max_retries_per_chunk),
+                wait=wait_exponential(multiplier=1, min=1, max=30),
+            ):
+                with attempt:
+                    img = ee.Image(
+                        ee_expression.filter(ee.Filter.eq("system:index", image_indexes[chunk_index])).first()
+                    )
+                    url = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            img.getDownloadURL, {"name": image_names[chunk_index], "region": ee_geometry}
+                        ),
+                        timeout=180,
+                    )
+                    file_path = output_dir / f"{image_names[chunk_index]}.zip"
+                    await _download_url_to_path(session, url, file_path)
             return chunk_index, True  # noqa: TRY300
+        except RetryError:
+            logging.exception("Image chunk %d failed after %d attempts.", chunk_index, max_retries_per_chunk)
+            return chunk_index, False
         except Exception:
+            logging.exception("Image chunk %d failed with unexpected error.", chunk_index)
             return chunk_index, False
 
 
@@ -284,15 +219,16 @@ async def download_multiple_images_async(
     end_date: pd.Timestamp | str,
     satellite: AbstractSatellite,
     invalid_images_threshold: float = 0.5,
-    max_parallel_downloads: int = 40,
+    max_parallel_downloads: int = ASYNC_MAX_PARALLEL_DOWNLOADS,
     force_redownload: bool = False,
     image_indices: list[int] | None = None,
+    max_retries_per_chunk: int = ASYNC_MAX_RETRIES_PER_CHUNK,
 ) -> list[str]:
     """Async version of :func:`download_multiple_images`.
 
     Identical semantics to the synchronous version but non-blocking: GEE URL
-    resolution runs in a thread pool via ``asyncio.to_thread`` and aria2 is
-    polled with ``asyncio.sleep``, so the event loop stays responsive.  Use
+    resolution runs in a thread pool via ``asyncio.to_thread`` and payload
+    downloads run through ``aiohttp``, so the event loop stays responsive. Use
     this variant inside the REST API or any other async context.
 
     Parameters
@@ -308,19 +244,21 @@ async def download_multiple_images_async(
     invalid_images_threshold : float, default 0.5
         Quality filter — see :func:`download_multiple_images`.
     max_parallel_downloads : int, default 40
-        Maximum simultaneous aria2 downloads.
+        Maximum simultaneous downloads.
     force_redownload : bool, default False
         Re-download even if cached ZIPs exist.
     image_indices : list of int or None, optional
         Restrict to specific collection positions.
+    max_retries_per_chunk : int, default 5
+        Maximum retry attempts per image download.
 
     Returns
     -------
     list of str
         Dates of the downloaded images in ``YYYY-MM-DD`` format.
     """
-    start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, pd.Timestamp) else start_date
-    end_date = end_date.strftime("%Y-%m-%d") if isinstance(end_date, pd.Timestamp) else end_date
+    start_date = _as_date_str(start_date)
+    end_date = _as_date_str(end_date)
 
     ee_geometry = ee.Geometry(geometry.__geo_interface__)
     ee_feature = ee.Feature(ee_geometry, {"s": start_date, "e": end_date, "0": 1})
@@ -361,47 +299,44 @@ async def download_multiple_images_async(
         for f in output_path.glob("*.zip"):
             f.unlink()
 
-    downloader = DownloaderStrategy(download_folder=output_path)
     already_downloaded_stems = {x.stem for x in output_path.glob("*.zip")}
     pending_chunks = sorted(i for i in range(len(image_indexes)) if image_names[i] not in already_downloaded_stems)
 
     pbar = tqdm(total=len(pending_chunks), desc=f"Downloading images ({output_path.name})", unit="feature")
+    if not pending_chunks:
+        pbar.close()
+        return image_names
 
-    def update_pbar() -> None:
-        snap = downloader._get_downloads_snapshot()
-        stats = downloader.stats_from_snapshot(snap)
-        pbar.n = stats["completed"]
-        pbar.refresh()
-        pbar.set_postfix({
-            "aria2_errors": stats["errors"],
-            "active_downloads": stats["active"],
-        })
-
+    failed_chunks: list[int] = []
     semaphore = asyncio.Semaphore(max_parallel_downloads)
-
-    while downloader.num_completed_downloads < len(pending_chunks):
-        results = await asyncio.gather(*[
-            _fetch_and_queue_image(
-                i,
-                ee_expression,
-                image_names,
-                image_indexes,
-                ee_geometry,
-                downloader,
-                semaphore,
-                max_parallel_downloads,
-                update_pbar,
+    connector = aiohttp.TCPConnector(limit=max(max_parallel_downloads, AIOHTTP_CONNECTOR_LIMIT))
+    async with aiohttp.ClientSession(connector=connector) as session:
+        tasks = [
+            asyncio.create_task(
+                _fetch_and_download_image(
+                    chunk_index=i,
+                    ee_expression=ee_expression,
+                    image_names=image_names,
+                    image_indexes=image_indexes,
+                    ee_geometry=ee_geometry,
+                    session=session,
+                    output_dir=output_path,
+                    semaphore=semaphore,
+                    max_retries_per_chunk=max_retries_per_chunk,
+                )
             )
             for i in pending_chunks
-        ])
-        failed_chunks = [c for c, ok in results if not ok]
+        ]
 
-        while downloader.num_unfinished_downloads > 0:
-            await asyncio.sleep(1)
-            update_pbar()
+        for task in asyncio.as_completed(tasks):
+            chunk_id, success = await task
+            if not success:
+                failed_chunks.append(chunk_id)
+            pbar.update(1)
 
-        pending_chunks = sorted(set(failed_chunks + downloader.failed_downloads))
-
-    update_pbar()
     pbar.close()
+
+    if failed_chunks:
+        raise RuntimeError(f"Failed to download {len(failed_chunks)} image(s): {sorted(failed_chunks)}")
+
     return image_names

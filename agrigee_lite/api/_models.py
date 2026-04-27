@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agrigee_lite.config import ASYNC_MAX_PARALLEL_DOWNLOADS, ASYNC_MAX_RETRIES_PER_CHUNK, SITS_CHUNKSIZE
 from agrigee_lite.api._jobs import JobStatus, JobType
 
 # ---------------------------------------------------------------------------
@@ -101,7 +102,7 @@ class ImagesRequest(BaseModel):
                 "end_date": "2018-10-01",
                 "satellite": {"name": "Sentinel2", "params": {}},
                 "invalid_images_threshold": 0.5,
-                "max_parallel_downloads": 40,
+                "max_parallel_downloads": ASYNC_MAX_PARALLEL_DOWNLOADS,
                 "force_redownload": False,
                 "image_indices": [0],
             }
@@ -113,7 +114,7 @@ class ImagesRequest(BaseModel):
     end_date: str
     satellite: SatelliteSpec
     invalid_images_threshold: float = Field(0.5, ge=0.0, le=1.0)
-    max_parallel_downloads: int = Field(40, ge=1)
+    max_parallel_downloads: int = Field(ASYNC_MAX_PARALLEL_DOWNLOADS, ge=1)
     force_redownload: bool = False
     image_indices: list[int] | None = None
 
@@ -168,9 +169,9 @@ class MultipleSitsRequest(BaseModel):
                 "end_date_column": "end_date",
                 "original_index_column": "original_index",
                 "subsampling_max_pixels": 1000,
-                "chunksize": 10,
-                "max_parallel_downloads": 38,
-                "max_retries_per_chunk": 1,
+                "chunksize": SITS_CHUNKSIZE,
+                "max_parallel_downloads": ASYNC_MAX_PARALLEL_DOWNLOADS,
+                "max_retries_per_chunk": ASYNC_MAX_RETRIES_PER_CHUNK,
                 "force_redownload": False,
             }
         }
@@ -183,9 +184,9 @@ class MultipleSitsRequest(BaseModel):
     end_date_column: str = "end_date"
     original_index_column: str = "original_index"
     subsampling_max_pixels: float = 1_000
-    chunksize: int = 10
-    max_parallel_downloads: int = 38
-    max_retries_per_chunk: int = 1
+    chunksize: int = SITS_CHUNKSIZE
+    max_parallel_downloads: int = ASYNC_MAX_PARALLEL_DOWNLOADS
+    max_retries_per_chunk: int = ASYNC_MAX_RETRIES_PER_CHUNK
     force_redownload: bool = False
 
 

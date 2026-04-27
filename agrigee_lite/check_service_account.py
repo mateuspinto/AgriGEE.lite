@@ -3,6 +3,8 @@ import json
 
 import ee
 
+HIGH_VOLUME_ENDPOINT = "https://earthengine-highvolume.googleapis.com"
+
 
 def main():
     parser = argparse.ArgumentParser(description="Check GEE Service Account Authentication")
@@ -11,7 +13,7 @@ def main():
     service_account_key = args.service_account_key
 
     credentials = ee.ServiceAccountCredentials(service_account_key, service_account_key)
-    ee.Initialize(credentials)
+    ee.Initialize(credentials, opt_url=HIGH_VOLUME_ENDPOINT)
 
     ee.ImageCollection("LANDSAT/LC08/C02/T1_L2").first().getInfo()
 
