@@ -23,6 +23,8 @@ geopandas = ">=1.0.1"
 pandas = ">=3.0.0"
 tqdm = ">=4.67.1"
 pyarrow = ">=19.0.1"
+polars = ">=1.0.0"
+duckdb = ">=1.0.0"
 sqlalchemy = ">=2.0.47,<3"
 
 # Pure-Python packages only on PyPI

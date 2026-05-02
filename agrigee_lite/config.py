@@ -44,7 +44,8 @@ EE_BATCH_CONCURRENCY = _env_int("AGRIGEE_EE_BATCH_CONCURRENCY", 2, minimum=1)
 # Async runtime tuning.
 USE_UVLOOP = _env_bool("AGRIGEE_USE_UVLOOP", True)
 ASYNC_MAX_PARALLEL_DOWNLOADS = _env_int("AGRIGEE_MAX_PARALLEL_DOWNLOADS", 40, minimum=1)
-ASYNC_MAX_RETRIES_PER_CHUNK = _env_int("AGRIGEE_MAX_RETRIES_PER_CHUNK", 5, minimum=1)
+ASYNC_MAX_URL_WORKERS = _env_int("AGRIGEE_MAX_URL_WORKERS", 10, minimum=1)
+ASYNC_MAX_RETRIES_PER_CHUNK = _env_int("AGRIGEE_MAX_RETRIES_PER_CHUNK", 8, minimum=1)
 AIOHTTP_TIMEOUT_SECONDS = _env_int("AGRIGEE_AIOHTTP_TIMEOUT_SECONDS", 600, minimum=1)
 AIOHTTP_CONNECTOR_LIMIT = _env_int(
     "AGRIGEE_AIOHTTP_CONNECTOR_LIMIT",
@@ -52,3 +53,13 @@ AIOHTTP_CONNECTOR_LIMIT = _env_int(
     minimum=1,
 )
 SITS_CHUNKSIZE = _env_int("AGRIGEE_SITS_CHUNKSIZE", 10, minimum=1)
+
+# AIMD adaptive concurrency tuning.
+# Option A: slow rise — limit increments only every N successful chunks (default 5).
+ASYNC_AIMD_SUCCESS_STRIDE = _env_int("AGRIGEE_AIMD_SUCCESS_STRIDE", 5, minimum=1)
+# Option B: start below max — initial concurrency before AIMD ramps up (default = max).
+ASYNC_AIMD_INITIAL_DOWNLOADS = _env_int(
+    "AGRIGEE_AIMD_INITIAL_DOWNLOADS",
+    ASYNC_MAX_PARALLEL_DOWNLOADS,
+    minimum=1,
+)

@@ -117,13 +117,13 @@ Interactive docs are available at `http://127.0.0.1:8000/docs` (Swagger UI) once
 
 The SITS cache stores previously downloaded time series to avoid redundant GEE requests.
 
-**Default — SpatiaLite** (no configuration needed):
+**Default — DuckDB** (no configuration needed):
 
-The cache is stored in `~/.cache/agrigee_lite/sits_cache.db` using SpatiaLite. This requires `libsqlite3` with the `mod_spatialite` extension available on the system.
+The cache is stored in `~/.cache/agrigee_lite/sits_cache.duckdb` as a local DuckDB database. No system extensions required.
 
 **PostGIS** (recommended for production / multi-user deployments):
 
-Set the following environment variables before starting the API. When all three are present, PostGIS is used and the SpatiaLite file is ignored:
+Set the following environment variables before starting the API. When all three are present, PostGIS is used and the local DuckDB file is ignored:
 
 ```bash
 export AGRIGEE_PG_HOST=localhost
@@ -316,7 +316,7 @@ If you're an artist interested in creating a new mascot design, we'd love to mak
 - [x] **Cloud Recovery**: smart_open[gcs] integration for automatic data recovery
 - [x] **Advanced Processing**: Configurable cloud masking, Landsat pan-sharpening
 - [x] **REST API**: FastAPI server with async job system, Swagger UI, and downloadable results
-- [x] **SITS Cache**: SpatiaLite (default) and PostGIS backends for caching downloaded time series
+- [x] **SITS Cache**: DuckDB (default) and PostGIS backends for caching downloaded time series
 
 ### 🚧 In Development
 - [ ] **Enhanced Visualizations**: plotly-based interactive plotting

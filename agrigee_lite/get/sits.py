@@ -1,6 +1,5 @@
 import asyncio
 import getpass
-import io
 import json
 import logging
 import signal
@@ -15,11 +14,12 @@ import ee
 import geopandas as gpd
 import pandas as pd
 import pandera.pandas as pa
+import polars as pl
 from shapely import MultiPolygon, Point, Polygon
-from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
+from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_random_exponential
 from tqdm.auto import tqdm
 
-from agrigee_lite.cache.spatialite_cache import (
+from agrigee_lite.cache.backend import (
     compute_geom_hash,
     fetch_sits,
     fetch_sits_by_request_ids,
@@ -30,8 +30,11 @@ from agrigee_lite.cache.spatialite_cache import (
 from agrigee_lite.config import (
     AIOHTTP_CONNECTOR_LIMIT,
     AIOHTTP_TIMEOUT_SECONDS,
+    ASYNC_AIMD_INITIAL_DOWNLOADS,
+    ASYNC_AIMD_SUCCESS_STRIDE,
     ASYNC_MAX_PARALLEL_DOWNLOADS,
     ASYNC_MAX_RETRIES_PER_CHUNK,
+    ASYNC_MAX_URL_WORKERS,
     SITS_CHUNKSIZE,
 )
 from agrigee_lite.ee_utils import (
@@ -162,8 +165,6 @@ def prepare_output_df(df: pd.DataFrame, satellite: AbstractSatellite, original_i
     pd.DataFrame
         Cleaned and processed DataFrame with proper column names and data types.
     """
-    df = df.copy()
-
     df = df.drop(columns=["geo"], errors="ignore")
     df.columns = [column.split("_", 1)[1] if "_" in column else column for column in df.columns.tolist()]
 
@@ -338,6 +339,55 @@ def download_single_sits(
     return sits_df
 
 
+class _AdaptiveSemaphore:
+    """AIMD concurrency limiter: +1 every `success_stride` successes, //2 on rate-limit."""
+
+    def __init__(self, initial: int, minimum: int, maximum: int, success_stride: int = 1) -> None:
+        self._limit = initial
+        self._active = 0
+        self._minimum = minimum
+        self._maximum = maximum
+        self._success_stride = success_stride
+        self._success_count = 0
+        self._cond = asyncio.Condition()
+
+    async def __aenter__(self) -> "_AdaptiveSemaphore":
+        async with self._cond:
+            while self._active >= self._limit:
+                await self._cond.wait()
+            self._active += 1
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        async with self._cond:
+            self._active -= 1
+            self._cond.notify()
+
+    async def on_success(self) -> None:
+        async with self._cond:
+            self._success_count += 1
+            if self._success_count % self._success_stride == 0 and self._limit < self._maximum:
+                self._limit += 1
+                self._cond.notify()
+
+    async def on_rate_limit(self) -> None:
+        async with self._cond:
+            self._limit = max(self._minimum, self._limit // 2)
+
+    @property
+    def limit(self) -> int:
+        return self._limit
+
+
+def _is_429(exc: BaseException) -> bool:
+    if isinstance(exc, aiohttp.ClientResponseError) and exc.status == 429:
+        return True
+    if isinstance(exc, ee.EEException):
+        msg = str(exc)
+        return "429" in msg or "quota exceeded" in msg.lower()
+    return False
+
+
 async def download_multiple_sits_async(  # noqa: C901
     gdf: gpd.GeoDataFrame,
     satellite: AbstractSatellite,
@@ -401,37 +451,44 @@ async def download_multiple_sits_async(  # noqa: C901
 
     uncached_request_rows = gdf.loc[uncached_positions].reset_index(drop=True)
 
-    def _finalize_from_spatialite() -> pd.DataFrame:
+    def _finalize_from_cache() -> pd.DataFrame:
 
         request_ids = list(request_to_original_indices.keys())
         if not request_ids:
             return pd.DataFrame()
 
         cached_data = fetch_sits_by_request_ids(_engine, satellite, request_ids)
-        frames: list[pd.DataFrame] = []
+        pl_frames: list[pl.DataFrame] = []
         for req_id, df in cached_data.items():
-            original_indices = request_to_original_indices.get(req_id, [])
-            for original_index in original_indices:
-                df_copy = df.copy()
-                df_copy[original_index_column_name] = original_index
-                frames.append(df_copy)
+            pl_frame = pl.from_pandas(df)
+            for original_index in request_to_original_indices.get(req_id, []):
+                pl_frames.append(pl_frame.with_columns(pl.lit(original_index).alias(original_index_column_name)))
 
-        if not frames:
+        if not pl_frames:
             return pd.DataFrame()
 
-        whole_result = pd.concat(frames, ignore_index=True)
-        whole_result = whole_result.sort_values(by=[original_index_column_name, "timestamp"], kind="stable")
-        return whole_result.reset_index(drop=True)
+        return (
+            pl.concat(pl_frames, rechunk=False)
+            .sort([original_index_column_name, "timestamp"])
+            .to_pandas()
+            .reset_index(drop=True)
+        )
 
     if uncached_request_rows.empty:
-        return _finalize_from_spatialite()
+        return _finalize_from_cache()
 
     num_chunks = (len(uncached_request_rows) + chunksize - 1) // chunksize
 
     selectors = build_selectors(satellite, reducers)
-    semaphore = asyncio.Semaphore(max_parallel_downloads)
+    semaphore = _AdaptiveSemaphore(
+        initial=min(ASYNC_AIMD_INITIAL_DOWNLOADS, max_parallel_downloads),
+        minimum=1,
+        maximum=max_parallel_downloads,
+        success_stride=ASYNC_AIMD_SUCCESS_STRIDE,
+    )
+    url_semaphore = asyncio.Semaphore(ASYNC_MAX_URL_WORKERS)
     loop = asyncio.get_running_loop()
-    executor = ThreadPoolExecutor(max_workers=max_parallel_downloads, thread_name_prefix="agrigee_gee")
+    executor = ThreadPoolExecutor(max_workers=ASYNC_MAX_URL_WORKERS, thread_name_prefix="agrigee_gee")
     _is_tty = hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
     pbar = tqdm(
         total=num_chunks,
@@ -452,13 +509,15 @@ async def download_multiple_sits_async(  # noqa: C901
 
     def _update_postfix() -> None:
         pbar.set_postfix_str(
-            f"d:{stats['done']} ok:{stats['ok']} e:{stats['err']} r:{stats['retry']} c:{stats['cache']}",
+            f"d:{stats['done']} ok:{stats['ok']} e:{stats['err']} r:{stats['retry']} c:{stats['cache']} lim:{semaphore.limit}",
             refresh=False,
         )
 
     _update_postfix()
 
-    async def fetch_chunk(session: aiohttp.ClientSession, chunk_id: int) -> pd.DataFrame:
+    _non_band_raw = {"00_indexnum", "01_timestamp", "99_validPixelsCount"}
+
+    async def fetch_chunk(session: aiohttp.ClientSession, chunk_id: int) -> pl.DataFrame:
         sub = uncached_request_rows.iloc[chunk_id * chunksize : (chunk_id + 1) * chunksize].copy()
 
         def get_url() -> str:
@@ -473,37 +532,48 @@ async def download_multiple_sits_async(  # noqa: C901
             )
             return expr.getDownloadURL(filetype="csv", selectors=selectors, filename=str(chunk_id))
 
-        url = await loop.run_in_executor(executor, get_url)
+        async with url_semaphore:
+            url = await loop.run_in_executor(executor, get_url)
 
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=AIOHTTP_TIMEOUT_SECONDS)) as resp:
             resp.raise_for_status()
             data = await resp.read()
 
-        chunk_df = pd.read_csv(io.BytesIO(data))
-        return prepare_output_df(chunk_df, satellite, original_index_column_name)
+        frame = pl.read_csv(data)
+        if "geo" in frame.columns:
+            frame = frame.drop("geo")
+        if isinstance(satellite, OpticalSatellite):
+            band_cols = [c for c in frame.columns if c not in _non_band_raw]
+            if band_cols:
+                frame = frame.filter(~pl.all_horizontal(pl.col(c) == 0 for c in band_cols))
+        return frame
 
-    async def fetch_with_retry(session: aiohttp.ClientSession, chunk_id: int) -> pd.DataFrame:
+    async def fetch_with_retry(session: aiohttp.ClientSession, chunk_id: int) -> pl.DataFrame:
         async with semaphore:
-            chunk_df: pd.DataFrame = pd.DataFrame()
+            chunk_df: pl.DataFrame = pl.DataFrame()
             try:
                 async for attempt in AsyncRetrying(
                     stop=stop_after_attempt(max_retries_per_chunk),
-                    wait=wait_exponential(multiplier=1, min=2, max=30),
+                    wait=wait_random_exponential(multiplier=2, min=4, max=60),
                 ):
                     if attempt.retry_state.attempt_number > 1:
                         stats["retry"] += 1
+                        prev_exc = attempt.retry_state.outcome.exception() if attempt.retry_state.outcome else None
+                        if prev_exc is not None and _is_429(prev_exc):
+                            await semaphore.on_rate_limit()
                         _update_postfix()
                     with attempt:
                         chunk_df = await fetch_chunk(session, chunk_id)
+                await semaphore.on_success()
                 stats["ok"] += 1
             except RetryError:
                 stats["err"] += 1
                 logger.debug("Chunk %d failed after %d attempts.", chunk_id, max_retries_per_chunk, exc_info=True)
-                return pd.DataFrame()
+                return pl.DataFrame()
             except Exception:
                 stats["err"] += 1
                 logger.debug("Chunk %d failed with unexpected error.", chunk_id, exc_info=True)
-                return pd.DataFrame()
+                return pl.DataFrame()
             else:
                 return chunk_df
             finally:
@@ -535,15 +605,15 @@ async def download_multiple_sits_async(  # noqa: C901
             loop.remove_signal_handler(signal.SIGTERM)
         pbar.close()
 
-    frames: list[pd.DataFrame] = []
+    pl_frames: list[pl.DataFrame] = []
     for cid, res in enumerate(results):
         if isinstance(res, BaseException):
             logger.debug("Chunk %d raised: %s", cid, res)
-        elif not res.empty:
-            frames.append(res)
+        elif res.height > 0:
+            pl_frames.append(res)
 
-    whole_result_df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-    whole_result_df = prepare_output_df(whole_result_df, satellite, original_index_column_name)
+    raw_df = pl.concat(pl_frames, rechunk=False).to_pandas() if pl_frames else pd.DataFrame()
+    whole_result_df = prepare_output_df(raw_df, satellite, original_index_column_name)
 
     if _engine is not None and not whole_result_df.empty:
         for orig_idx, feature_df in whole_result_df.groupby(original_index_column_name, sort=False):
