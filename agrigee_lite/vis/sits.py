@@ -45,6 +45,7 @@ def visualize_single_sits(
     ax: Any = None,
     color: str = "blue",
     alpha: float = 1,
+    crs: str | None = None,
 ) -> None:
     """
     Visualize satellite time series for a single geometry.
@@ -81,7 +82,14 @@ def visualize_single_sits(
     """
     import matplotlib.pyplot as plt
 
-    long_sits = download_single_sits(geometry, start_date, end_date, satellite, reducers={reducer}).to_pandas()
+    long_sits = download_single_sits(
+        geometry,
+        start_date,
+        end_date,
+        satellite,
+        reducers={reducer},
+        crs=crs,
+    ).to_pandas()
 
     if len(long_sits) == 0:
         return None
@@ -118,6 +126,7 @@ def visualize_multiple_sits(
     color: str = "blue",
     alpha: float = 0.5,
     force_redownload: bool = False,
+    crs: str | None = None,
 ) -> None:
     """
     Visualize satellite time series for multiple geometries with normalized temporal alignment.
@@ -161,7 +170,13 @@ def visualize_multiple_sits(
     import matplotlib.pyplot as plt
 
     long_sits = asyncio.run(
-        download_multiple_sits_async(gdf, satellite, reducers={reducer}, force_redownload=force_redownload)
+        download_multiple_sits_async(
+            gdf,
+            satellite,
+            reducers={reducer},
+            force_redownload=force_redownload,
+            crs=crs,
+        )
     ).to_pandas()
 
     if len(long_sits) == 0:

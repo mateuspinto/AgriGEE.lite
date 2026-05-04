@@ -1,13 +1,17 @@
 import asyncio
 import json
 import os
-import tempfile
+from datetime import date, datetime
 
 import ee
-import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pyproj
+from typing import cast
+from shapely.geometry import mapping
+from shapely.ops import transform
 
+from agrigee_lite._geo_compat import GeoDataFrameLike, geometry_value_to_shapely, get_crs, normalize_geodataframe
 from agrigee_lite.config import HIGH_VOLUME_ENDPOINT, USE_UVLOOP
 
 
@@ -135,21 +139,22 @@ def ee_cloud_probability_mask(img: ee.Image, threshold: float, invert: bool = Fa
 
 
 def ee_gdf_to_feature_collection(
-    gdf: gpd.GeoDataFrame,
+    gdf: GeoDataFrameLike,
     original_index_column_name: str,
     start_date_column_name: str = "start_date",
     end_date_column_name: str = "end_date",
+    crs: str | None = None,
 ) -> ee.FeatureCollection:
     """
-    Convert a GeoPandas GeoDataFrame to an Earth Engine FeatureCollection.
+    Convert a compatible geo frame to an Earth Engine FeatureCollection.
 
     Transforms a GeoDataFrame with temporal and spatial information into an Earth Engine
     FeatureCollection suitable for server-side processing. The function handles coordinate
-    system conversion, temporary file creation, and proper geodesic geometry settings.
+    system conversion and proper geodesic geometry settings.
 
     Parameters
     ----------
-    gdf : gpd.GeoDataFrame
+    gdf : geopandas.GeoDataFrame or geopolars.GeoDataFrame
         Input GeoDataFrame containing geometries and temporal information.
     original_index_column_name : str
         Name of the column containing original feature indices.
@@ -169,41 +174,71 @@ def ee_gdf_to_feature_collection(
 
     Notes
     -----
-    This function creates temporary GeoJSON files that are automatically cleaned up.
     Input CRS is converted to EPSG:4326 for Earth Engine compatibility.
     """
-    gdf = gdf.copy()
+    return ee.FeatureCollection(
+        _build_feature_collection_payload(
+            gdf,
+            original_index_column_name,
+            start_date_column_name,
+            end_date_column_name,
+            crs=crs or cast(str | None, get_crs(gdf)),
+        )
+    )
 
-    gdf = gdf[[original_index_column_name, "geometry", start_date_column_name, end_date_column_name]]
 
-    gdf[start_date_column_name] = gdf[start_date_column_name].dt.strftime("%Y-%m-%d")
-    gdf[end_date_column_name] = gdf[end_date_column_name].dt.strftime("%Y-%m-%d")
+def _format_ee_feature_property(value: object) -> object:
+    if isinstance(value, (pd.Timestamp, datetime, date)):
+        return value.strftime("%Y-%m-%d")
+    return value
 
-    gdf.rename(
-        columns={start_date_column_name: "s", end_date_column_name: "e", original_index_column_name: "0"}, inplace=True
-    )  # saving memory when uploading geojson to GEE
 
-    gdf = gdf.to_crs(4326)
-    with tempfile.NamedTemporaryFile(suffix=".geojson", delete=False) as tmp:
-        geo_json = tmp.name
+def _build_feature_collection_payload(
+    gdf: GeoDataFrameLike,
+    original_index_column_name: str,
+    start_date_column_name: str = "start_date",
+    end_date_column_name: str = "end_date",
+    crs: str | None = None,
+) -> dict[str, object]:
+    """
+    Build the GeoJSON-like payload consumed by ``ee.FeatureCollection``.
+    """
+    effective_crs = crs or cast(str | None, get_crs(gdf))
+    if effective_crs is None:
+        raise ValueError("Input geodataframe must define a CRS before conversion to Earth Engine features.")
 
-    try:
-        gdf.to_file(geo_json, driver="GeoJSON")
+    normalized = normalize_geodataframe(gdf, crs=effective_crs)
 
-        with open(geo_json, encoding="utf-8") as f:
-            json_dict = json.load(f)
+    transformer = pyproj.Transformer.from_crs(effective_crs, "EPSG:4326", always_xy=True)
+    transform_to_wgs84 = transformer.transform
 
-        if json_dict["type"] != "FeatureCollection":
-            raise ValueError(f"Expected a GeoJSON FeatureCollection, got '{json_dict['type']}'")
+    feature_frame = normalized.select([
+        "geometry",
+        original_index_column_name,
+        start_date_column_name,
+        end_date_column_name,
+    ])
+    features: list[dict[str, object]] = []
 
-        for feature in json_dict["features"]:
-            if feature["geometry"]["type"] != "Point":
-                feature["geometry"]["geodesic"] = True
-        features = ee.FeatureCollection(json_dict)
-    finally:
-        os.remove(geo_json)
+    for row in feature_frame.iter_rows(named=True):
+        geometry = geometry_value_to_shapely(row["geometry"])
+        geometry_wgs84 = transform(transform_to_wgs84, geometry)
+        geometry_geojson = json.loads(json.dumps(mapping(geometry_wgs84)))
+        if geometry_geojson["type"] != "Point":
+            geometry_geojson["geodesic"] = True
 
-    return features
+        properties = {
+            "0": _format_ee_feature_property(row[original_index_column_name]),
+            "s": _format_ee_feature_property(row[start_date_column_name]),
+            "e": _format_ee_feature_property(row[end_date_column_name]),
+        }
+        features.append({
+            "type": "Feature",
+            "geometry": geometry_geojson,
+            "properties": properties,
+        })
+
+    return {"type": "FeatureCollection", "features": features}
 
 
 def ee_img_to_numpy(ee_img: ee.Image, ee_geometry: ee.Geometry, scale: int) -> np.ndarray:

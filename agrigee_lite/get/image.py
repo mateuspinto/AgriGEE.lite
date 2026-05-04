@@ -18,6 +18,7 @@ from agrigee_lite.config import (
     ASYNC_MAX_RETRIES_PER_CHUNK,
 )
 from agrigee_lite.ee_utils import ee_img_to_numpy
+from agrigee_lite._geo_compat import transform_geometry
 from agrigee_lite.misc import create_dict_hash, log_dict_function_call_summary
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite, SingleImageSatellite
 
@@ -36,6 +37,7 @@ def download_multiple_images(
     force_redownload: bool = False,
     image_indices: list[int] | None = None,
     max_retries_per_chunk: int = ASYNC_MAX_RETRIES_PER_CHUNK,
+    crs: str | None = None,
 ) -> list[str]:
     """Download raw satellite images (as GeoTIFF ZIPs) for a geometry and date range.
 
@@ -94,6 +96,7 @@ def download_multiple_images(
                 force_redownload=force_redownload,
                 image_indices=image_indices,
                 max_retries_per_chunk=max_retries_per_chunk,
+                crs=crs,
             )
         )
 
@@ -105,6 +108,7 @@ def download_multiple_images(
 def download_single_image(
     geometry: Polygon | MultiPolygon | Point,
     satellite: SingleImageSatellite,
+    crs: str | None = None,
 ) -> np.ndarray:
     """
     Download a single satellite image for a given geometry.
@@ -121,7 +125,8 @@ def download_single_image(
     np.ndarray
         NumPy array containing the satellite image data. Returns empty array if download fails.
     """
-    ee_geometry = ee.Geometry(geometry.__geo_interface__)
+    geometry_wgs84 = transform_geometry(geometry, crs)
+    ee_geometry = ee.Geometry(geometry_wgs84.__geo_interface__)
     ee_feature = ee.Feature(ee_geometry, {"0": 1})
 
     try:
@@ -223,6 +228,7 @@ async def download_multiple_images_async(
     force_redownload: bool = False,
     image_indices: list[int] | None = None,
     max_retries_per_chunk: int = ASYNC_MAX_RETRIES_PER_CHUNK,
+    crs: str | None = None,
 ) -> list[str]:
     """Async version of :func:`download_multiple_images`.
 
@@ -260,7 +266,8 @@ async def download_multiple_images_async(
     start_date = _as_date_str(start_date)
     end_date = _as_date_str(end_date)
 
-    ee_geometry = ee.Geometry(geometry.__geo_interface__)
+    geometry_wgs84 = transform_geometry(geometry, crs)
+    ee_geometry = ee.Geometry(geometry_wgs84.__geo_interface__)
     ee_feature = ee.Feature(ee_geometry, {"s": start_date, "e": end_date, "0": 1})
     ee_expression = satellite.imageCollection(ee_feature)
 
@@ -276,8 +283,8 @@ async def download_multiple_images_async(
     metadata_dict |= satellite.log_dict()
     metadata_dict["start_date"] = start_date
     metadata_dict["end_date"] = end_date
-    metadata_dict["centroid_x"] = geometry.centroid.x
-    metadata_dict["centroid_y"] = geometry.centroid.y
+    metadata_dict["centroid_x"] = geometry_wgs84.centroid.x
+    metadata_dict["centroid_y"] = geometry_wgs84.centroid.y
 
     collection_size = await asyncio.to_thread(ee_expression.size().getInfo)
     if collection_size == 0:

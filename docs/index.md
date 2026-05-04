@@ -12,7 +12,7 @@ AgriGEE.lite is a high-performance **Google Earth Engine (GEE) wrapper** designe
 - **High Performance**: Utilizes **async aiohttp downloads** under the hood, achieving high throughput in parallel workloads
 - **Multimodal Support**: Seamlessly integrates optical satellites, radar sensors, and derived products
 - **Vegetation/Agricultural Focus**: Optimized for crop monitoring, vegetation analysis, and land use applications
-- **GeoPandas Integration**: Built to work natively with spatial geodataframes
+- **GeoPolars Core**: Uses GeoPolars internally for multi-geometry geospatial processing, while still accepting GeoPandas inputs during the transition
 
 ### Quick Start Example
 
@@ -34,7 +34,7 @@ satellite = agl.sat.Sentinel2(bands=["red", "green", "blue"])
 time_series = agl.get.sits(geometry, "2022-10-01", "2023-10-01", satellite)
 ```
 
-This example demonstrates the library's core philosophy: **spatial data analysis should be simple and fast**. The **entire library is designed to work seamlessly with [GeoPandas](https://geopandas.org/en/stable/)**, making it essential to have basic knowledge of this framework.
+This example demonstrates the library's core philosophy: **spatial data analysis should be simple and fast**. Public multi-geometry APIs still accept [GeoPandas](https://geopandas.org/en/stable/) inputs, but the internal execution path now uses **GeoPolars**. SITS downloads return **Polars DataFrames**.
 
 ### Advanced Capabilities
 

@@ -12,7 +12,7 @@ AgriGEE.lite is a high-performance **Google Earth Engine (GEE) wrapper** designe
 - **High Performance**: Utilizes **async aiohttp downloads** under the hood, achieving high throughput in parallel workloads
 - **Multimodal Support**: Seamlessly integrates optical satellites, radar sensors, and derived products
 - **Vegetation/Agricultural Focus**: Optimized for crop monitoring, vegetation analysis, and land use applications
-- **GeoPandas Integration**: Built to work natively with spatial geodataframes
+- **GeoPolars Core**: Uses GeoPolars internally for multi-geometry geospatial processing, while still accepting GeoPandas inputs during the transition
 
 ### Quick Start Example
 
@@ -34,7 +34,7 @@ satellite = agl.sat.Sentinel2(bands=["red", "green", "blue"])
 time_series = agl.get.sits(geometry, "2022-10-01", "2023-10-01", satellite)
 ```
 
-This example demonstrates the library's core philosophy: **spatial data analysis should be simple and fast**. The **entire library is designed to work seamlessly with [GeoPandas](https://geopandas.org/en/stable/)**, making it essential to have basic knowledge of this framework.
+This example demonstrates the library's core philosophy: **spatial data analysis should be simple and fast**. Public multi-geometry APIs still accept [GeoPandas](https://geopandas.org/en/stable/) inputs, but the internal execution path now uses **GeoPolars**. SITS downloads return **Polars DataFrames**.
 
 ### Advanced Capabilities
 
@@ -63,6 +63,8 @@ For more comprehensive examples, see the examples folder.
 ```bash
 pip install agrigee_lite
 ```
+
+The core package currently keeps `geopandas` as a required dependency for compatibility-oriented input paths, while `geopolars` is used as the internal geospatial engine.
 
 ### Optional extras
 
@@ -150,6 +152,52 @@ The database `agrigeelite` is created automatically if it does not exist.
 | `GET` | `/jobs/{job_id}/download` | Download result as Parquet (SITS) or ZIP (images) |
 
 ## High-Performance Async Downloads
+
+### DuckDB cache schema (visual)
+
+The default DuckDB cache uses three logical tables. The following Mermaid diagram shows the main relationships and important columns.
+
+```mermaid
+erDiagram
+	GEOMETRIES {
+		INTEGER id PK
+		TEXT geom_hash
+		BLOB geometry
+		DOUBLE repr_point_x
+		DOUBLE repr_point_y
+		TEXT geom_type
+		TEXT h3_coarse
+		TEXT h3_fine
+	}
+
+	SITS_JOBS {
+		INTEGER id PK
+		TEXT job_hash
+		INTEGER geometry_id FK
+		TEXT satellite_short_name
+		TEXT params_hash
+		TEXT reducers
+		DOUBLE subsampling_max_pixels
+		TIMESTAMP start_date
+		TIMESTAMP end_date
+		TIMESTAMP fetched_at
+	}
+
+	SATELLITE_TABLE {
+		INTEGER id PK
+		INTEGER job_id FK
+		TIMESTAMP timestamp
+		DOUBLE <band_columns...>
+	}
+
+	GEOMETRIES ||--o{ SITS_JOBS : "geometry_id"
+	SITS_JOBS ||--o{ SATELLITE_TABLE : "job_id"
+```
+
+Notes:
+- `SATELLITE_TABLE` is a placeholder pattern — each satellite has its own table (e.g., `sentinel2`, `landsat8`) whose columns include `timestamp` plus numeric columns for each band/index.
+- `geom_hash` and `params_hash` are SHA-1 identifiers used to ensure deduplication and cache identity.
+- Point geometries are optimized with a fast path using `repr_point_x`/`repr_point_y`.
 
 One of AgriGEE.lite's key features is its use of **native async downloads with aiohttp + uvloop**. This integration provides:
 

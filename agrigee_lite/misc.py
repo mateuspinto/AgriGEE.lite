@@ -1,9 +1,6 @@
-import concurrent.futures
 import hashlib
 import inspect
 import json
-import multiprocessing
-import warnings
 from pathlib import Path
 from typing import cast
 
@@ -11,91 +8,52 @@ import geopandas as gpd
 import h3
 import numpy as np
 import pandas as pd
+import polars as pl
 from shapely.geometry import MultiPolygon, Point, Polygon
-from topojson import Topology
 from tqdm.auto import tqdm
 
+from agrigee_lite._geo_compat import (
+    GeoDataFrameLike,
+    get_crs,
+    iter_shapely_geometries,
+    normalize_geodataframe,
+    restore_geodataframe_type,
+    wrap_geopolars_frame,
+)
 
-def simplify_gdf(gdf: gpd.GeoDataFrame, tol: float = 0.001) -> gpd.GeoDataFrame:
+
+def simplify_gdf(gdf: GeoDataFrameLike, tol: float = 0.001, crs: str | None = None) -> GeoDataFrameLike:
     """
-    Simplify geometries in a GeoDataFrame using TopoJSON, avoiding duplicates.
+    Simplify geometries in a compatible geo frame.
 
     Parameters
     ----------
-    gdf : geopandas.GeoDataFrame
+    gdf : geopandas.GeoDataFrame or geopolars.GeoDataFrame
         GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
     tol : float, optional
         Tolerance for simplification (default is 0.001).
 
     Returns
     -------
-    geopandas.GeoDataFrame
-        GeoDataFrame with simplified geometries.
+    geopandas.GeoDataFrame or geopolars.GeoDataFrame
+        GeoDataFrame with unchanged geometries for now.
 
     Notes
     -----
-    1. Detect duplicate geometries once, using WKB-hex as a stable key.
-    2. Run TopoJSON simplification only on the unique geometries.
-    3. Propagate the simplified result back to every original row.
+    TODO: reintroduce geometry simplification here once GeoPolars exposes a
+    stable native simplify API.
     """
-    gdf = gdf.copy()
-
-    # ------------------------------------------------------------------
-    # 1.  Build a geometry-only frame and keep just the unique geometries
-    # ------------------------------------------------------------------
-    gdf["_geom_key"] = gdf.geometry.apply(lambda g: g.wkb_hex)  # fast, deterministic
-    unique_gdf = gdf[["_geom_key", "geometry"]].drop_duplicates("_geom_key")
-
-    # ---------------------------------------------------------------
-    # 2.  Simplify the unique geometries once with Topology.toposimplify
-    # ---------------------------------------------------------------
-    topo = Topology(unique_gdf[["geometry"]], prequantize=False)
-    topo = topo.toposimplify(tol, prevent_oversimplify=True)
-    assert topo is not None
-    simplified_unique = topo.to_gdf()
-
-    # topo.to_gdf() returns rows in the same order, so align keys back
-    simplified_unique["_geom_key"] = unique_gdf["_geom_key"].values
-
-    # -------------------------------------------------------
-    # 3.  Merge the simplified geometries back to the original
-    # -------------------------------------------------------
-    out = (
-        gdf
-        .drop(columns="geometry")
-        .merge(simplified_unique[["_geom_key", "geometry"]], on="_geom_key", how="left")
-        .drop(columns="_geom_key")
-        .set_geometry("geometry")
-    )
-    out.index = gdf.index  # keep the original ordering
-    return out
-
-
-def _simplify_cluster(cluster: gpd.GeoDataFrame, cluster_id: int) -> tuple[int, gpd.GeoSeries]:
-    """
-    Simplify geometries in a cluster and return the cluster id and simplified geometries.
-
-    Parameters
-    ----------
-    cluster : geopandas.GeoDataFrame
-        GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
-    cluster_id : int
-        Identifier for the cluster.
-
-    Returns
-    -------
-    tuple of (int, geopandas.GeoSeries)
-        Cluster id and simplified geometries.
-    """
-    simplified = simplify_gdf(cluster)
-    return cluster_id, simplified.geometry
+    _ = tol
+    normalized = normalize_geodataframe(gdf, crs=crs)
+    return restore_geodataframe_type(gdf, normalized, preserve_index=True)
 
 
 def h3_clustering(
-    gdf: gpd.GeoDataFrame,
+    gdf: GeoDataFrameLike,
     coarse_resolution: int = 5,
     fine_resolution: int = 8,
-) -> gpd.GeoDataFrame:
+    crs: str | None = None,
+) -> GeoDataFrameLike:
     """
     Cluster and order geometries using H3 hierarchical spatial indexing.
 
@@ -110,7 +68,7 @@ def h3_clustering(
 
     Parameters
     ----------
-    gdf : geopandas.GeoDataFrame
+    gdf : geopandas.GeoDataFrame or geopolars.GeoDataFrame
         GeoDataFrame containing geometries (Polygon, MultiPolygon, or Point).
     coarse_resolution : int, optional
         H3 resolution for cluster boundaries (default 5, ≈14 km edge length).
@@ -119,67 +77,65 @@ def h3_clustering(
 
     Returns
     -------
-    geopandas.GeoDataFrame
+    geopandas.GeoDataFrame or geopolars.GeoDataFrame
         GeoDataFrame with ``cluster_id`` column (integer, one per coarse cell),
-        sorted by ``(coarse_cell, fine_cell)``, with geometries simplified per
-        cluster via TopoJSON.
+        sorted by ``(coarse_cell, fine_cell)``, without geometry simplification
+        for now.
     """
-    gdf = gdf.copy()
+    normalized = normalize_geodataframe(gdf, crs=crs)
+    geometries = iter_shapely_geometries(normalized)
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=UserWarning)
-        centroids = gdf.geometry.centroid
+    fine_cells: list[str] = []
+    coarse_cells: list[str] = []
 
-    gdf["_h3_fine"] = [
-        h3.latlng_to_cell(cast(Point, pt).y, cast(Point, pt).x, fine_resolution)
-        for pt in tqdm(centroids, desc="H3 cells", leave=True)
-    ]
-    gdf["_h3_coarse"] = gdf["_h3_fine"].apply(lambda cell: h3.cell_to_parent(cell, coarse_resolution))
+    for geometry in tqdm(geometries, desc="H3 cells", leave=True):
+        centroid = cast(Point, geometry if geometry.geom_type == "Point" else geometry.centroid)
+        fine_cell = h3.latlng_to_cell(centroid.y, centroid.x, fine_resolution)
+        fine_cells.append(fine_cell)
+        coarse_cells.append(h3.cell_to_parent(fine_cell, coarse_resolution))
 
-    gdf = gdf.sort_values(by=["_h3_coarse", "_h3_fine"]).reset_index(drop=True)
+    frame = normalized.with_row_index("_row_idx")
+    frame = frame.with_columns(
+        pl.Series("_h3_fine", fine_cells),
+        pl.Series("_h3_coarse", coarse_cells),
+    )
+    frame = frame.sort(["_h3_coarse", "_h3_fine", "_row_idx"])
 
-    gdf["cluster_id"] = pd.factorize(gdf["_h3_coarse"])[0]
-    gdf = gdf.rename(columns={"_h3_coarse": "h3_coarse", "_h3_fine": "h3_fine"})
+    cluster_ids: list[int] = []
+    cluster_by_cell: dict[str, int] = {}
+    for coarse_cell in frame.get_column("_h3_coarse").to_list():
+        cluster_ids.append(cluster_by_cell.setdefault(str(coarse_cell), len(cluster_by_cell)))
 
-    all_points = gdf.geometry.geom_type.eq("Point").all()
-    if all_points:
-        return gdf
+    frame = frame.with_columns(pl.Series("cluster_id", cluster_ids))
+    frame = frame.rename({"_h3_coarse": "h3_coarse", "_h3_fine": "h3_fine"}).drop("_row_idx")
 
-    unique_cluster_ids = gdf["cluster_id"].unique()
-
-    new_geoms: dict = {}
-    with concurrent.futures.ProcessPoolExecutor(mp_context=multiprocessing.get_context("fork")) as executor:
-        futures = {
-            executor.submit(_simplify_cluster, gdf[gdf.cluster_id == cluster_id][["geometry"]], cluster_id): cluster_id
-            for cluster_id in unique_cluster_ids
-        }
-
-        for future in tqdm(
-            concurrent.futures.as_completed(futures),
-            total=len(futures),
-            desc="Simplifying clusters",
-            smoothing=0.5,
-        ):
-            _cluster_id, simplified_geom = future.result()
-            new_geoms.update(simplified_geom.to_dict())
-
-    crs = gdf.crs
-    gdf = gdf.set_geometry(gpd.GeoSeries(new_geoms, crs=crs).reindex(gdf.index))
-
-    return gdf
+    # TODO: reintroduce geometry simplification here once GeoPolars exposes a
+    # stable native simplify API.
+    clustered = wrap_geopolars_frame(frame, crs=get_crs(normalized))
+    return restore_geodataframe_type(gdf, clustered)
 
 
-def create_gdf_hash(gdf: gpd.GeoDataFrame, start_date_column_name: str, end_date_column_name: str) -> str:
-    gdf_copy = gdf[["geometry", start_date_column_name, end_date_column_name]].copy()
+def create_gdf_hash(
+    gdf: GeoDataFrameLike,
+    start_date_column_name: str,
+    end_date_column_name: str,
+    crs: str | None = None,
+) -> str:
+    normalized = normalize_geodataframe(gdf, crs=crs)
+    geometries = iter_shapely_geometries(normalized)
+    date_rows = normalized.select([start_date_column_name, end_date_column_name]).iter_rows(named=True)
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        gdf_copy["centroid_x"] = gdf_copy.geometry.centroid.x
-        gdf_copy["centroid_y"] = gdf_copy.geometry.centroid.y
+    hash_rows = []
+    for geometry, row in zip(geometries, date_rows):
+        centroid = geometry.centroid
+        hash_rows.append({
+            start_date_column_name: row[start_date_column_name],
+            end_date_column_name: row[end_date_column_name],
+            "centroid_x": centroid.x,
+            "centroid_y": centroid.y,
+        })
 
-    gdf_copy = gdf_copy.drop(columns=["geometry"])
-
-    hash_values = pd.util.hash_pandas_object(gdf_copy).values
+    hash_values = pd.util.hash_pandas_object(pd.DataFrame(hash_rows)).values
     return hashlib.sha1(hash_values).hexdigest()  # type: ignore  # noqa: PGH003, S324
 
 
@@ -335,7 +291,7 @@ def random_points_from_gdf(
     """
     if buffer != 0:
         gdf = gdf.copy()
-        gdf = h3_clustering(gdf)
+        gdf = cast(gpd.GeoDataFrame, h3_clustering(gdf, crs=str(gdf.crs) if gdf.crs is not None else None))
         gdf["geometry"] = gdf.to_crs(gdf.estimate_utm_crs()).buffer(buffer).to_crs("EPSG:4326")
 
     gdf["geometry_id"] = pd.factorize(gdf["geometry"])[0]

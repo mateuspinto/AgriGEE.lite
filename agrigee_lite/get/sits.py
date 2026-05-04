@@ -18,6 +18,16 @@ from shapely import MultiPolygon, Point, Polygon
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_random_exponential
 from tqdm.auto import tqdm
 
+from agrigee_lite._geo_compat import (
+    GeoDataFrameLike,
+    NormalizedGeoDataFrame,
+    geometry_value_to_shapely,
+    get_crs,
+    normalize_geodataframe,
+    transform_geometry,
+    wrap_geopolars_frame,
+    to_geopandas_geodataframe,
+)
 from agrigee_lite.cache.backend import (
     CacheEngine,
     fetch_sits_batch_coverage,
@@ -57,12 +67,34 @@ def _as_date_str(value: pd.Timestamp | str) -> str:
     return str(value)[:10]
 
 
+def _wrap_normalized_geo_frame(df: pl.DataFrame, reference: NormalizedGeoDataFrame) -> NormalizedGeoDataFrame:
+    return wrap_geopolars_frame(df, crs=get_crs(reference))
+
+
+def _filter_normalized_geo_frame(gdf: NormalizedGeoDataFrame, predicate: pl.Expr) -> NormalizedGeoDataFrame:
+    return _wrap_normalized_geo_frame(gdf.filter(predicate), gdf)
+
+
+def _take_normalized_geo_rows(gdf: NormalizedGeoDataFrame, positions: list[int]) -> NormalizedGeoDataFrame:
+    if not positions:
+        return _wrap_normalized_geo_frame(gdf.slice(0, 0), gdf)
+
+    with_index = gdf.with_row_index("_row_nr")
+    filtered = with_index.filter(pl.col("_row_nr").is_in(positions)).sort("_row_nr").drop("_row_nr")
+    return _wrap_normalized_geo_frame(filtered, gdf)
+
+
+def _unique_ints(series: pl.Series) -> list[int]:
+    return [int(value) for value in series.unique().drop_nulls().to_list()]
+
+
 def build_ee_expression(
-    gdf: gpd.GeoDataFrame,
+    gdf: GeoDataFrameLike,
     satellite: AbstractSatellite,
     reducers: set[str] | None,
     subsampling_max_pixels: float,
     original_index_column_name: str,
+    crs: str | None = None,
     start_date_column_name: str = "start_date",
     end_date_column_name: str = "end_date",
 ) -> ee.FeatureCollection:
@@ -71,7 +103,7 @@ def build_ee_expression(
 
     Parameters
     ----------
-    gdf : gpd.GeoDataFrame
+    gdf : geopandas.GeoDataFrame or geopolars.GeoDataFrame
         Input GeoDataFrame containing geometries and date information.
     satellite : AbstractSatellite
         Satellite configuration object.
@@ -91,7 +123,14 @@ def build_ee_expression(
     ee.FeatureCollection
         Earth Engine FeatureCollection with computed satellite time series.
     """
-    fc = ee_gdf_to_feature_collection(gdf, original_index_column_name, start_date_column_name, end_date_column_name)
+    effective_crs = crs or get_crs(gdf)
+    fc = ee_gdf_to_feature_collection(
+        gdf,
+        original_index_column_name,
+        start_date_column_name,
+        end_date_column_name,
+        crs=effective_crs,
+    )
     return ee.FeatureCollection(
         fc.map(
             partial(
@@ -174,10 +213,7 @@ def prepare_output_df(
     if "geo" in out.columns:
         out = out.drop("geo")
 
-    rename_map = {
-        column: column.split("_", 1)[1] if "_" in column else column
-        for column in out.columns
-    }
+    rename_map = {column: column.split("_", 1)[1] if "_" in column else column for column in out.columns}
     out = out.rename(rename_map)
 
     if isinstance(satellite, OpticalSatellite):  # Zero values in optical bands are invalid
@@ -212,20 +248,21 @@ def prepare_output_df(
 
 
 def sanitize_and_prepare_input_gdf(
-    gdf: gpd.GeoDataFrame,
+    gdf: GeoDataFrameLike,
     satellite: AbstractSatellite,
     original_index_column_name: str,
+    crs: str | None = None,
     coarse_resolution: int = 5,
     fine_resolution: int = 8,
     start_date_column_name: str = "start_date",
     end_date_column_name: str = "end_date",
-) -> gpd.GeoDataFrame:
+) -> NormalizedGeoDataFrame:
     """
     Sanitize and prepare input GeoDataFrame for satellite time series processing.
 
     Parameters
     ----------
-    gdf : gpd.GeoDataFrame
+    gdf : geopandas.GeoDataFrame or geopolars.GeoDataFrame
         Input GeoDataFrame with geometries and temporal information.
     satellite : AbstractSatellite
         Satellite configuration object.
@@ -242,13 +279,13 @@ def sanitize_and_prepare_input_gdf(
 
     Returns
     -------
-    gpd.GeoDataFrame
+    geopolars.GeoDataFrame
         Sanitized GeoDataFrame with clustering applied and invalid data filtered.
     """
-    gdf = gdf.copy()
+    boundary_gdf = normalize_geodataframe(gdf, crs=crs).to_geopandas()
 
     if original_index_column_name == "original_index":
-        gdf = gdf.reset_index().rename(columns={"index": original_index_column_name})
+        boundary_gdf = boundary_gdf.reset_index().rename(columns={"index": original_index_column_name})
         logger.debug("Column '%s' created to store original index.", original_index_column_name)
 
     schema = pa.DataFrameSchema(
@@ -256,41 +293,66 @@ def sanitize_and_prepare_input_gdf(
             "geometry": pa.Column("geometry", nullable=False),
             start_date_column_name: pa.Column(pa.DateTime, nullable=False),
             end_date_column_name: pa.Column(pa.DateTime, nullable=False),
-            original_index_column_name: pa.Column(gdf[original_index_column_name].dtype),
+            original_index_column_name: pa.Column(boundary_gdf[original_index_column_name].dtype),
         },
         unique=[original_index_column_name],
     )
-    schema.validate(gdf, lazy=True)
+    schema.validate(boundary_gdf, lazy=True)
 
-    gdf = gdf[["geometry", start_date_column_name, end_date_column_name, original_index_column_name]]
-
-    mask_no_intersection = (gdf[end_date_column_name] < satellite.startDate) | (
-        gdf[start_date_column_name] > satellite.endDate
+    boundary_gdf = boundary_gdf[
+        ["geometry", start_date_column_name, end_date_column_name, original_index_column_name]
+    ].copy()
+    normalized = normalize_geodataframe(boundary_gdf, crs=crs)
+    normalized = _wrap_normalized_geo_frame(
+        normalized.with_columns(
+            pl.col(start_date_column_name).cast(pl.Datetime, strict=False),
+            pl.col(end_date_column_name).cast(pl.Datetime, strict=False),
+        ),
+        normalized,
     )
-    mask_total_intersection = (gdf[start_date_column_name] >= satellite.startDate) & (
-        gdf[end_date_column_name] <= satellite.endDate
+
+    sat_start = pd.Timestamp(satellite.startDate)
+    sat_end = pd.Timestamp(satellite.endDate)
+    prepared = _wrap_normalized_geo_frame(
+        normalized.with_columns(
+            (
+                (pl.col(end_date_column_name) < pl.lit(sat_start)) | (pl.col(start_date_column_name) > pl.lit(sat_end))
+            ).alias("_mask_no_intersection"),
+            (
+                (pl.col(start_date_column_name) >= pl.lit(sat_start))
+                & (pl.col(end_date_column_name) <= pl.lit(sat_end))
+            ).alias("_mask_total_intersection"),
+        ),
+        normalized,
     )
-    mask_partial_intersection = ~(mask_no_intersection | mask_total_intersection)
 
-    count_none = mask_no_intersection.sum()
-    count_partial = mask_partial_intersection.sum()
+    count_none = int(prepared.get_column("_mask_no_intersection").sum())
+    count_total = int(prepared.get_column("_mask_total_intersection").sum())
+    count_partial = prepared.height - count_none - count_total
 
-    pct_none = 100 * count_none / len(gdf)
+    pct_none = 100 * count_none / prepared.height
     if pct_none > 0:
         logger.debug("%.2f%% of the data do not intersect the satellite period.", pct_none)
 
-    pct_partial = 100 * count_partial / len(gdf)
+    pct_partial = 100 * count_partial / prepared.height
     if pct_partial > 0:
         logger.debug("%.2f%% of the data partially intersect the satellite period.", pct_partial)
 
-    if pct_none == 100:
-        return gpd.GeoDataFrame()
+    filtered = _wrap_normalized_geo_frame(
+        _filter_normalized_geo_frame(prepared, ~pl.col("_mask_no_intersection")).drop(
+            "_mask_no_intersection", "_mask_total_intersection"
+        ),
+        prepared,
+    )
 
-    gdf = gdf[~mask_no_intersection].reset_index(drop=True)
+    if filtered.height == 0:
+        return _wrap_normalized_geo_frame(filtered, filtered)
 
-    gdf = h3_clustering(gdf, coarse_resolution=coarse_resolution, fine_resolution=fine_resolution)
-
-    return gdf
+    clustered = cast(
+        NormalizedGeoDataFrame,
+        h3_clustering(filtered, coarse_resolution=coarse_resolution, fine_resolution=fine_resolution, crs=crs),
+    )
+    return clustered
 
 
 def download_single_sits(
@@ -300,6 +362,7 @@ def download_single_sits(
     satellite: AbstractSatellite,
     reducers: set[str] | None = None,
     subsampling_max_pixels: float = 1_000,
+    crs: str | None = None,
 ) -> pl.DataFrame:
     """
     Download satellite time series for a single geometry.
@@ -338,12 +401,16 @@ def download_single_sits(
             f"({satellite.startDate} to {satellite.endDate})"
         )
 
+    geometry_wgs84 = transform_geometry(geometry, crs)
+
     _engine = get_engine()
     cached_df = pl.DataFrame()
     gaps: list[tuple[str, str]] = [(start_date, end_date)]
 
     if _engine is not None:
-        cached_df, gaps = fetch_sits_with_gaps(_engine, geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels)
+        cached_df, gaps = fetch_sits_with_gaps(
+            _engine, geometry_wgs84, start_date, end_date, satellite, reducers, subsampling_max_pixels
+        )
         if not gaps:
             logger.debug("Cache hit: %s %s→%s", satellite.shortName, start_date, end_date)
             return cached_df
@@ -351,14 +418,16 @@ def download_single_sits(
     gap_dfs: list[pl.DataFrame] = []
     for gap_start, gap_end in gaps:
         ee_feature = ee.Feature(
-            geometry.__geo_interface__,
+            geometry_wgs84.__geo_interface__,
             {"s": gap_start, "e": gap_end, "0": 0},
         )
         ee_expression = satellite.compute(ee_feature, reducers=reducers, subsampling_max_pixels=subsampling_max_pixels)
         gap_raw = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"})
         gap_df = prepare_output_df(gap_raw, satellite, "IGNORED")
         if _engine is not None:
-            store_sits_polars(_engine, gap_df, geometry, gap_start, gap_end, satellite, reducers, subsampling_max_pixels)
+            store_sits_polars(
+                _engine, gap_df, geometry_wgs84, gap_start, gap_end, satellite, reducers, subsampling_max_pixels
+            )
         if not gap_df.is_empty():
             gap_dfs.append(gap_df)
 
@@ -427,7 +496,7 @@ def _is_429(exc: BaseException) -> bool:
 def _store_chunk(
     engine: CacheEngine,
     chunk_pl: pl.DataFrame,
-    sub_gdf: gpd.GeoDataFrame,
+    sub_gdf: NormalizedGeoDataFrame,
     satellite: AbstractSatellite,
     reducers: set[str] | None,
     subsampling_max_pixels: float,
@@ -456,14 +525,14 @@ def _store_chunk(
 
     for original_index in prepared_pl.get_column(original_index_col).unique(maintain_order=True).to_list():
         feat_pl = prepared_pl.filter(pl.col(original_index_col) == original_index)
-        matches = sub_gdf.loc[sub_gdf[original_index_col] == original_index]
-        if matches.empty:
+        matches = _filter_normalized_geo_frame(sub_gdf, pl.col(original_index_col) == pl.lit(original_index))
+        if matches.height == 0:
             raise KeyError(f"Could not match chunk row for {original_index_col}={original_index!r}.")
-        row = matches.iloc[0]
+        row = matches.row(0, named=True)
         store_sits_polars(
             engine,
             feat_pl,
-            row["geometry"],
+            geometry_value_to_shapely(cast(bytes | bytearray | memoryview, row["geometry"])),
             _as_date_str(row[start_date_col]),
             _as_date_str(row[end_date_col]),
             satellite,
@@ -473,10 +542,11 @@ def _store_chunk(
 
 
 async def download_multiple_sits_async(  # noqa: C901
-    gdf: gpd.GeoDataFrame,
+    gdf: GeoDataFrameLike,
     satellite: AbstractSatellite,
     reducers: set[str] | None = None,
     original_index_column_name: str = "original_index",
+    crs: str | None = None,
     start_date_column_name: str = "start_date",
     end_date_column_name: str = "end_date",
     subsampling_max_pixels: float = 1_000,
@@ -488,15 +558,16 @@ async def download_multiple_sits_async(  # noqa: C901
     if len(gdf) == 0:
         return pl.DataFrame()
 
-    gdf = sanitize_and_prepare_input_gdf(
+    prepared_gdf = sanitize_and_prepare_input_gdf(
         gdf,
         satellite,
         original_index_column_name,
+        crs=crs,
         start_date_column_name=start_date_column_name,
         end_date_column_name=end_date_column_name,
     )
 
-    if len(gdf) == 0:
+    if prepared_gdf.height == 0:
         return pl.DataFrame()
 
     _engine = get_engine()
@@ -508,15 +579,21 @@ async def download_multiple_sits_async(  # noqa: C901
 
     if not force_redownload:
         batch_coverage = fetch_sits_batch_coverage(
-            _engine, gdf, satellite, reducers, subsampling_max_pixels,
-            start_date_column_name, end_date_column_name,
+            _engine,
+            prepared_gdf,
+            satellite,
+            reducers,
+            subsampling_max_pixels,
+            start_date_column_name,
+            end_date_column_name,
+            crs,
         )
-        for pos in gdf.index:
-            coverage = batch_coverage.get(int(pos))
+        for pos in range(prepared_gdf.height):
+            coverage = batch_coverage.get(pos)
             if coverage is not None:
                 job_ids, gaps = coverage
                 if not gaps:
-                    row = gdf.loc[pos]
+                    row = prepared_gdf.row(pos, named=True)
                     cached_items.append((
                         job_ids,
                         row[original_index_column_name],
@@ -524,11 +601,11 @@ async def download_multiple_sits_async(  # noqa: C901
                         str(row[end_date_column_name])[:10],
                     ))
                     continue
-            uncached_positions.append(int(pos))
+            uncached_positions.append(pos)
     else:
-        uncached_positions = list(cast(list[int], gdf.index.tolist()))
+        uncached_positions = list(range(prepared_gdf.height))
 
-    uncached_request_rows = gdf.loc[uncached_positions].reset_index(drop=True)
+    uncached_request_rows = _take_normalized_geo_rows(prepared_gdf, uncached_positions)
 
     def _finalize_from_cache() -> pl.DataFrame:
         if not cached_items:
@@ -546,23 +623,20 @@ async def download_multiple_sits_async(  # noqa: C901
             ts_start = pd.Timestamp(q_start).to_pydatetime()
             ts_end = (pd.Timestamp(q_end) + pd.Timedelta(days=1)).to_pydatetime()
             filtered = combined.filter(
-                (pl.col("timestamp") >= pl.lit(ts_start))
-                & (pl.col("timestamp") < pl.lit(ts_end))
+                (pl.col("timestamp") >= pl.lit(ts_start)) & (pl.col("timestamp") < pl.lit(ts_end))
             )
             if not filtered.is_empty():
-                pl_frames.append(
-                    filtered.with_columns(pl.lit(orig_idx).alias(original_index_column_name))
-                )
+                pl_frames.append(filtered.with_columns(pl.lit(orig_idx).alias(original_index_column_name)))
 
         if not pl_frames:
             return pl.DataFrame()
 
         return pl.concat(pl_frames, rechunk=False).sort([original_index_column_name, "timestamp"])
 
-    if uncached_request_rows.empty:
+    if uncached_request_rows.height == 0:
         return _finalize_from_cache()
 
-    num_chunks = (len(uncached_request_rows) + chunksize - 1) // chunksize
+    num_chunks = (uncached_request_rows.height + chunksize - 1) // chunksize
 
     selectors = build_selectors(satellite, reducers)
     semaphore = _AdaptiveSemaphore(
@@ -601,7 +675,7 @@ async def download_multiple_sits_async(  # noqa: C901
     _update_postfix()
 
     _non_band_raw = {"00_indexnum", "01_timestamp", "99_validPixelsCount"}
-    store_queue: asyncio.Queue[tuple[pl.DataFrame, gpd.GeoDataFrame] | None] = asyncio.Queue()
+    store_queue: asyncio.Queue[tuple[pl.DataFrame, NormalizedGeoDataFrame] | None] = asyncio.Queue()
 
     async def store_consumer() -> None:
         loop_ = asyncio.get_running_loop()
@@ -627,7 +701,7 @@ async def download_multiple_sits_async(  # noqa: C901
     async def fetch_chunk(
         session: aiohttp.ClientSession,
         chunk_id: int,
-        sub: gpd.GeoDataFrame,
+        sub: NormalizedGeoDataFrame,
     ) -> pl.DataFrame:
         def get_url() -> str:
             expr = build_ee_expression(
@@ -636,6 +710,7 @@ async def download_multiple_sits_async(  # noqa: C901
                 reducers,
                 subsampling_max_pixels,
                 original_index_column_name,
+                crs,
                 start_date_column_name,
                 end_date_column_name,
             )
@@ -659,7 +734,9 @@ async def download_multiple_sits_async(  # noqa: C901
 
     async def fetch_with_retry(session: aiohttp.ClientSession, chunk_id: int) -> pl.DataFrame:
         async with semaphore:
-            sub = uncached_request_rows.iloc[chunk_id * chunksize : (chunk_id + 1) * chunksize].copy()
+            start = chunk_id * chunksize
+            positions = list(range(start, min(start + chunksize, uncached_request_rows.height)))
+            sub = _take_normalized_geo_rows(uncached_request_rows, positions)
             chunk_df: pl.DataFrame = pl.DataFrame()
             try:
                 async for attempt in AsyncRetrying(
@@ -744,10 +821,11 @@ async def download_multiple_sits_async(  # noqa: C901
 
 
 def download_multiple_sits_chunks_gdrive(
-    gdf: gpd.GeoDataFrame,
+    gdf: GeoDataFrameLike,
     satellite: AbstractSatellite,
     reducers: set[str] | None = None,
     original_index_column_name: str = "original_index",
+    crs: str | None = None,
     start_date_column_name: str = "start_date",
     end_date_column_name: str = "end_date",
     subsampling_max_pixels: float = 1_000,
@@ -788,7 +866,7 @@ def download_multiple_sits_chunks_gdrive(
         return None
 
     def download_multiple_sits_task_gdrive(
-        gdf: gpd.GeoDataFrame,
+        gdf: GeoDataFrameLike,
         satellite: AbstractSatellite,
         file_stem: str,
         reducers: set[str] | None = None,
@@ -839,8 +917,9 @@ def download_multiple_sits_chunks_gdrive(
             reducers,
             subsampling_max_pixels,
             original_index_column_name,
-            start_date_column_name,
-            end_date_column_name,
+            crs=crs,
+            start_date_column_name=start_date_column_name,
+            end_date_column_name=end_date_column_name,
         )
 
         task = ee.batch.Export.table.toDrive(
@@ -854,10 +933,11 @@ def download_multiple_sits_chunks_gdrive(
 
         return task
 
-    gdf = sanitize_and_prepare_input_gdf(
+    prepared_gdf = sanitize_and_prepare_input_gdf(
         gdf,
         satellite,
         original_index_column_name,
+        crs=crs,
         coarse_resolution=coarse_resolution,
         fine_resolution=fine_resolution,
         start_date_column_name=start_date_column_name,
@@ -873,17 +953,16 @@ def download_multiple_sits_chunks_gdrive(
     )  # The task is the same, no matter who started it
 
     username = getpass.getuser().replace("_", "")
-    hashname = create_gdf_hash(gdf, start_date_column_name, end_date_column_name)
+    hashname = create_gdf_hash(prepared_gdf, start_date_column_name, end_date_column_name)
+    cluster_ids = sorted(_unique_ints(prepared_gdf.get_column("cluster_id")))
 
     for cluster_id in tqdm(
-        sorted(gdf.cluster_id.unique()),
-        desc=f"Creating GEE tasks ({satellite.shortName}_{hashname}_r{coarse_resolution})",
+        cluster_ids, desc=f"Creating GEE tasks ({satellite.shortName}_{hashname}_r{coarse_resolution})"
     ):
-        cluster_id = int(cluster_id)
-
         if f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks:
+            cluster_gdf = _filter_normalized_geo_frame(prepared_gdf, pl.col("cluster_id") == pl.lit(cluster_id))
             task = download_multiple_sits_task_gdrive(
-                gdf[gdf.cluster_id == cluster_id],
+                cluster_gdf,
                 satellite,
                 f"{satellite.shortName}_{hashname}_{cluster_id}",
                 reducers=reducers,
@@ -904,11 +983,12 @@ def download_multiple_sits_chunks_gdrive(
 
 
 def download_multiple_sits_chunks_gcs(
-    gdf: gpd.GeoDataFrame,
+    gdf: GeoDataFrameLike,
     satellite: AbstractSatellite,
     bucket_name: str,
     reducers: set[str] | None = None,
     original_index_column_name: str = "original_index",
+    crs: str | None = None,
     start_date_column_name: str = "start_date",
     end_date_column_name: str = "end_date",
     subsampling_max_pixels: float = 1_000,
@@ -957,7 +1037,7 @@ def download_multiple_sits_chunks_gcs(
         return None
 
     def download_multiple_sits_task_gcs(
-        gdf: gpd.GeoDataFrame,
+        gdf: GeoDataFrameLike,
         satellite: AbstractSatellite,
         bucket_name: str,
         file_path: str,
@@ -1008,8 +1088,9 @@ def download_multiple_sits_chunks_gcs(
             reducers,
             subsampling_max_pixels,
             original_index_column_name,
-            start_date_column_name,
-            end_date_column_name,
+            crs=crs,
+            start_date_column_name=start_date_column_name,
+            end_date_column_name=end_date_column_name,
         )
 
         task = ee.batch.Export.table.toCloudStorage(
@@ -1023,10 +1104,11 @@ def download_multiple_sits_chunks_gcs(
 
         return task
 
-    gdf = sanitize_and_prepare_input_gdf(
+    prepared_gdf = sanitize_and_prepare_input_gdf(
         gdf,
         satellite,
         original_index_column_name,
+        crs=crs,
         coarse_resolution=coarse_resolution,
         fine_resolution=fine_resolution,
         start_date_column_name=start_date_column_name,
@@ -1041,7 +1123,7 @@ def download_multiple_sits_chunks_gcs(
     )  # The task is the same, no matter who started it
 
     username = getpass.getuser().replace("_", "")
-    hashname = create_gdf_hash(gdf, start_date_column_name, end_date_column_name)
+    hashname = create_gdf_hash(prepared_gdf, start_date_column_name, end_date_column_name)
 
     gcs_save_folder = f"agl/{satellite.shortName}_{hashname}"
     metadata_dict: dict[str, Any] = {}
@@ -1054,17 +1136,17 @@ def download_multiple_sits_chunks_gcs(
         json.dump(metadata_dict, f, indent=4)
 
     with smart_open(f"gs://{bucket_name}/{gcs_save_folder}/geodataframe.parquet", "wb") as f:
-        gdf.to_parquet(f, compression="brotli")
+        to_geopandas_geodataframe(prepared_gdf).to_parquet(f, compression="brotli")
 
     file_uris = []
+    cluster_ids = sorted(_unique_ints(prepared_gdf.get_column("cluster_id")))
 
-    for cluster_id in tqdm(sorted(gdf.cluster_id.unique())):
-        cluster_id = int(cluster_id)
-
+    for cluster_id in tqdm(cluster_ids):
         if f"agl_multiple_sits_{satellite.shortName}_{hashname}_{cluster_id}" not in completed_or_running_tasks:
             # TODO: Also skip if the file already exists in GCS
+            cluster_gdf = _filter_normalized_geo_frame(prepared_gdf, pl.col("cluster_id") == pl.lit(cluster_id))
             task = download_multiple_sits_task_gcs(
-                gdf[gdf.cluster_id == cluster_id],
+                cluster_gdf,
                 satellite,
                 bucket_name=bucket_name,
                 file_path=f"{gcs_save_folder}/{cluster_id}",

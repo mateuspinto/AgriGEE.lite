@@ -6,17 +6,24 @@ import json
 import logging
 import os
 import pathlib
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
 import duckdb
-import geopandas as gpd
 import h3
 import pandas as pd
 import polars as pl
 import sqlalchemy as sa
+from shapely.geometry import Point
 from sqlalchemy.pool import NullPool
 
+from agrigee_lite._geo_compat import (
+    GeoDataFrameLike,
+    NormalizedGeoDataFrame,
+    geometry_value_to_shapely,
+    normalize_geodataframe,
+)
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
 
 logger = logging.getLogger(__name__)
@@ -152,6 +159,97 @@ def _normalize_timestamp_pl(df: pl.DataFrame) -> pl.DataFrame:
     return df.with_columns(pl.col("timestamp").cast(pl.Datetime, strict=False))
 
 
+def _prepare_batch_lookup_rows(
+    gdf: GeoDataFrameLike,
+    start_date_col: str,
+    end_date_col: str,
+    crs: str | None = None,
+) -> tuple[NormalizedGeoDataFrame, list[str], list[str], list[tuple[int, Any, str, str]]]:
+    normalized = normalize_geodataframe(gdf, crs=crs)
+    row_frame = normalized.select(["geometry", "h3_coarse", "h3_fine", start_date_col, end_date_col])
+
+    rows: list[tuple[int, Any, str, str]] = []
+    h3_coarse_vals: list[str] = []
+    h3_fine_vals: list[str] = []
+
+    for pos, row in enumerate(row_frame.iter_rows(named=True)):
+        h3_coarse = str(row["h3_coarse"])
+        h3_fine = str(row["h3_fine"])
+        rows.append((pos, row["geometry"], h3_fine, h3_coarse))
+        h3_coarse_vals.append(h3_coarse)
+        h3_fine_vals.append(h3_fine)
+
+    return normalized, list(dict.fromkeys(h3_coarse_vals)), list(dict.fromkeys(h3_fine_vals)), rows
+
+
+def _resolve_geometry_ids(
+    normalized: NormalizedGeoDataFrame,
+    rows: list[tuple[int, Any, str, str]],
+    candidate_rows: Sequence[Any],
+    start_date_col: str,
+    end_date_col: str,
+) -> list[tuple[int, int, str, str]]:
+    h3_fine_to_geoms: dict[str, dict[str, int]] = {}
+    point_to_geom: dict[tuple[float, float], int] = {}
+    for crow in candidate_rows:
+        geom_id, geom_hash, h3_fine, geom_type, rx, ry = crow
+        assert geom_id is not None
+        h3_fine_to_geoms.setdefault(str(h3_fine), {})[str(geom_hash)] = int(geom_id)
+        if geom_type == "point":
+            assert rx is not None
+            assert ry is not None
+            point_to_geom[(float(rx), float(ry))] = int(geom_id)
+
+    candidate_h3_fines = set(h3_fine_to_geoms)
+    resolved: list[tuple[int, int, str, str]] = []
+
+    for pos, geometry_value, h3_fine, _h3_coarse in rows:
+        if h3_fine not in candidate_h3_fines:
+            continue
+
+        geometry = geometry_value_to_shapely(cast(bytes | bytearray | memoryview, geometry_value))
+        geom_id: int | None
+        if geometry.geom_type == "Point":
+            point_geometry = cast(Point, geometry)
+            geom_id = point_to_geom.get((float(point_geometry.x), float(point_geometry.y)))
+        else:
+            geom_id = h3_fine_to_geoms.get(h3_fine, {}).get(_compute_geom_hash(geometry))
+
+        if geom_id is None:
+            continue
+
+        row = normalized.select([start_date_col, end_date_col]).row(pos, named=True)
+        resolved.append((pos, geom_id, str(row[start_date_col])[:10], str(row[end_date_col])[:10]))
+
+    return resolved
+
+
+def _build_jobs_by_geom(job_rows: Sequence[Any]) -> dict[int, list[tuple[int, str, str]]]:
+    jobs_by_geom: dict[int, list[tuple[int, str, str]]] = {}
+    for jrow in job_rows:
+        gid = int(jrow[0])
+        jobs_by_geom.setdefault(gid, []).append((int(jrow[1]), str(jrow[2]), str(jrow[3])))
+    return jobs_by_geom
+
+
+def _finalize_batch_coverage(
+    resolved_rows: list[tuple[int, int, str, str]],
+    jobs_by_geom: dict[int, list[tuple[int, str, str]]],
+) -> dict[int, tuple[list[int], list[tuple[str, str]]]]:
+    result: dict[int, tuple[list[int], list[tuple[str, str]]]] = {}
+    for pos, geom_id, q_start, q_end in resolved_rows:
+        geom_jobs = jobs_by_geom.get(geom_id)
+        if not geom_jobs:
+            continue
+        overlapping = [(jid, js, je) for jid, js, je in geom_jobs if js <= q_end and je >= q_start]
+        if not overlapping:
+            continue
+        job_ids = [jid for jid, _, _ in overlapping]
+        covered = [(js, je) for _, js, je in overlapping]
+        result[pos] = (job_ids, _compute_gaps(q_start, q_end, covered))
+    return result
+
+
 # ---------------------------------------------------------------------------
 # DuckDB — schema
 # ---------------------------------------------------------------------------
@@ -198,7 +296,9 @@ def _ensure_schema_duck(conn: duckdb.DuckDBPyConnection) -> None:
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_hash ON sits_jobs(job_hash)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_geom ON sits_jobs(geometry_id, satellite_short_name, params_hash)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_jobs_geom ON sits_jobs(geometry_id, satellite_short_name, params_hash)"
+    )
 
 
 def _ensure_sat_table_duck(conn: duckdb.DuckDBPyConnection, table_name: str, band_cols: list[str]) -> None:
@@ -311,17 +411,16 @@ def _fetch_sits_by_jids_duck(
 
 def _fetch_sits_batch_coverage_duck(
     conn: duckdb.DuckDBPyConnection,
-    gdf: gpd.GeoDataFrame,
+    gdf: GeoDataFrameLike,
     satellite: AbstractSatellite,
     reducers: set[str] | None,
     subsampling_max_pixels: float,
     start_date_col: str,
     end_date_col: str,
+    crs: str | None = None,
 ) -> dict[int, tuple[list[int], list[tuple[str, str]]]]:
     params_hash = _compute_params_hash(satellite, reducers, subsampling_max_pixels)
-
-    h3_coarse_vals = list(gdf["h3_coarse"].astype(str).unique())
-    h3_fine_vals = list(gdf["h3_fine"].astype(str).unique())
+    normalized, h3_coarse_vals, h3_fine_vals, rows = _prepare_batch_lookup_rows(gdf, start_date_col, end_date_col, crs)
     if not h3_coarse_vals:
         return {}
 
@@ -339,48 +438,11 @@ def _fetch_sits_batch_coverage_duck(
     if not candidate_rows:
         return {}
 
-    h3_fine_to_geoms: dict[str, dict[str, int]] = {}
-    point_to_geom: dict[tuple[float, float], int] = {}
-    for crow in candidate_rows:
-        geom_id, geom_hash, h3_fine, geom_type, rx, ry = crow
-        h3_fine_to_geoms.setdefault(str(h3_fine), {})[str(geom_hash)] = int(geom_id)
-        if geom_type == "point":
-            point_to_geom[(float(rx), float(ry))] = int(geom_id)
-
-    candidate_h3_fines = set(h3_fine_to_geoms.keys())
-    gdf_h3_fine = gdf["h3_fine"].astype(str)
-    mask_h3 = gdf_h3_fine.isin(candidate_h3_fines)
-    if not mask_h3.any():
+    resolved_rows = _resolve_geometry_ids(normalized, rows, candidate_rows, start_date_col, end_date_col)
+    if not resolved_rows:
         return {}
 
-    is_point = gdf.geometry.geom_type == "Point"
-    hash_mask = mask_h3 & ~is_point
-    point_mask = mask_h3 & is_point
-
-    geom_hash_series: pd.Series[Any] = pd.Series(index=gdf.index, dtype=object)
-    if hash_mask.any():
-        geom_hash_series[hash_mask] = gdf.loc[hash_mask, "geometry"].apply(_compute_geom_hash)
-
-    geom_id_series: pd.Series[Any] = pd.Series(index=gdf.index, dtype=object)
-
-    for pos in gdf.index[hash_mask]:
-        gh = geom_hash_series.at[pos]
-        h3f = str(gdf_h3_fine.at[pos])
-        gid = h3_fine_to_geoms.get(h3f, {}).get(str(gh))
-        if gid is not None:
-            geom_id_series.at[pos] = gid
-
-    for pos in gdf.index[point_mask]:
-        geom: Any = gdf.at[pos, "geometry"]
-        gid = point_to_geom.get((float(geom.x), float(geom.y)))
-        if gid is not None:
-            geom_id_series.at[pos] = gid
-
-    valid_mask = geom_id_series.notna()
-    if not valid_mask.any():
-        return {}
-
-    unique_geom_ids = [int(gid) for gid in geom_id_series[valid_mask].astype(int).unique().tolist()]
+    unique_geom_ids = list(dict.fromkeys(geom_id for _, geom_id, _, _ in resolved_rows))
     gid_ph = ", ".join("?" * len(unique_geom_ids))
     job_rows = conn.execute(
         f"""
@@ -391,29 +453,7 @@ def _fetch_sits_batch_coverage_duck(
         """,
         [*unique_geom_ids, satellite.shortName, params_hash],
     ).fetchall()
-
-    jobs_by_geom: dict[int, list[tuple[int, str, str]]] = {}
-    for jrow in job_rows:
-        gid_ = int(jrow[0])
-        jobs_by_geom.setdefault(gid_, []).append((int(jrow[1]), str(jrow[2]), str(jrow[3])))
-
-    result: dict[int, tuple[list[int], list[tuple[str, str]]]] = {}
-    for pos in gdf.index[valid_mask]:
-        gid = int(cast(int, geom_id_series.at[pos]))
-        geom_jobs = jobs_by_geom.get(gid)
-        if not geom_jobs:
-            continue
-        q_start = str(gdf.at[pos, start_date_col])[:10]
-        q_end = str(gdf.at[pos, end_date_col])[:10]
-        overlapping = [(jid, js, je) for jid, js, je in geom_jobs if js <= q_end and je >= q_start]
-        if not overlapping:
-            continue
-        job_ids = [jid for jid, _, _ in overlapping]
-        covered = [(js, je) for _, js, je in overlapping]
-        gaps = _compute_gaps(q_start, q_end, covered)
-        result[int(pos)] = (job_ids, gaps)
-
-    return result
+    return _finalize_batch_coverage(resolved_rows, _build_jobs_by_geom(job_rows))
 
 
 # ---------------------------------------------------------------------------
@@ -467,9 +507,14 @@ def _store_sits_duck(
             ON CONFLICT (geometry_id, satellite_short_name, params_hash, start_date, end_date) DO NOTHING
             """,
             [
-                job_hash, geom_id, satellite.shortName, params_hash,
+                job_hash,
+                geom_id,
+                satellite.shortName,
+                params_hash,
                 json.dumps(sorted(reducers)) if reducers else None,
-                subsampling_max_pixels, start_date, end_date,
+                subsampling_max_pixels,
+                start_date,
+                end_date,
                 datetime.now(UTC).isoformat(),
             ],
         )
@@ -481,9 +526,7 @@ def _store_sits_duck(
         assert job_id_row is not None
         job_id: int = int(job_id_row[0])
 
-        already = conn.execute(
-            f'SELECT 1 FROM "{table_name}" WHERE job_id = ? LIMIT 1', [job_id]
-        ).fetchone()
+        already = conn.execute(f'SELECT 1 FROM "{table_name}" WHERE job_id = ? LIMIT 1', [job_id]).fetchone()
         if already:
             conn.commit()
             return job_id
@@ -555,9 +598,14 @@ def _store_sits_duck_polars(
             ON CONFLICT (geometry_id, satellite_short_name, params_hash, start_date, end_date) DO NOTHING
             """,
             [
-                job_hash, geom_id, satellite.shortName, params_hash,
+                job_hash,
+                geom_id,
+                satellite.shortName,
+                params_hash,
                 json.dumps(sorted(reducers)) if reducers else None,
-                subsampling_max_pixels, start_date, end_date,
+                subsampling_max_pixels,
+                start_date,
+                end_date,
                 datetime.now(UTC).isoformat(),
             ],
         )
@@ -569,16 +617,15 @@ def _store_sits_duck_polars(
         assert job_id_row is not None
         job_id: int = int(job_id_row[0])
 
-        already = conn.execute(
-            f'SELECT 1 FROM "{table_name}" WHERE job_id = ? LIMIT 1', [job_id]
-        ).fetchone()
+        already = conn.execute(f'SELECT 1 FROM "{table_name}" WHERE job_id = ? LIMIT 1', [job_id]).fetchone()
         if already:
             conn.commit()
             return job_id
 
         present_band_cols = [c for c in band_cols if c in df.columns]
         obs_pl = (
-            df.select(["timestamp", *present_band_cols])
+            df
+            .select(["timestamp", *present_band_cols])
             .with_columns(pl.lit(job_id).alias("job_id"))
             .cast({"timestamp": pl.Utf8})
         )
@@ -588,10 +635,7 @@ def _store_sits_duck_polars(
 
         conn.register("_obs_tmp", obs_pl.to_arrow())
         try:
-            conn.execute(
-                f'INSERT INTO "{table_name}" ({col_sql}) '
-                f"SELECT {col_sql} FROM _obs_tmp"
-            )
+            conn.execute(f'INSERT INTO "{table_name}" ({col_sql}) SELECT {col_sql} FROM _obs_tmp')
         finally:
             conn.unregister("_obs_tmp")
 
@@ -635,7 +679,8 @@ def _ensure_postgis_extension(conn: sa.Connection) -> None:
 
 
 def _ensure_geometries_table_pg(conn: sa.Connection) -> None:
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
         CREATE TABLE IF NOT EXISTS geometries (
             id           SERIAL PRIMARY KEY,
             geom_hash    TEXT   NOT NULL UNIQUE,
@@ -646,7 +691,8 @@ def _ensure_geometries_table_pg(conn: sa.Connection) -> None:
             h3_coarse    TEXT   NOT NULL DEFAULT '',
             h3_fine      TEXT   NOT NULL DEFAULT ''
         )
-    """))
+    """)
+    )
     conn.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_geom_hash  ON geometries (geom_hash)"))
     conn.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_geom_h3c   ON geometries (h3_coarse)"))
     conn.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_geom_h3f   ON geometries (h3_fine)"))
@@ -655,7 +701,8 @@ def _ensure_geometries_table_pg(conn: sa.Connection) -> None:
 
 
 def _ensure_sits_jobs_table_pg(conn: sa.Connection) -> None:
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
         CREATE TABLE IF NOT EXISTS sits_jobs (
             id                     SERIAL PRIMARY KEY,
             job_hash               TEXT   NOT NULL UNIQUE,
@@ -669,26 +716,30 @@ def _ensure_sits_jobs_table_pg(conn: sa.Connection) -> None:
             fetched_at             TIMESTAMPTZ NOT NULL,
             UNIQUE (geometry_id, satellite_short_name, params_hash, start_date, end_date)
         )
-    """))
+    """)
+    )
     conn.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_jobs_hash ON sits_jobs (job_hash)"))
-    conn.execute(sa.text(
-        "CREATE INDEX IF NOT EXISTS idx_jobs_geom "
-        "ON sits_jobs (geometry_id, satellite_short_name, params_hash)"
-    ))
+    conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_jobs_geom ON sits_jobs (geometry_id, satellite_short_name, params_hash)"
+        )
+    )
 
 
 def _ensure_satellite_table_pg(conn: sa.Connection, table_name: str, band_columns: list[str]) -> None:
     if not band_columns:
         return
     band_cols_sql = ",\n    ".join(f'"{col}" REAL' for col in band_columns)
-    conn.execute(sa.text(f"""
+    conn.execute(
+        sa.text(f"""
         CREATE TABLE IF NOT EXISTS "{table_name}" (
             id        SERIAL PRIMARY KEY,
             job_id    INTEGER NOT NULL REFERENCES sits_jobs(id),
             timestamp TIMESTAMPTZ,
             {band_cols_sql}
         )
-    """))
+    """)
+    )
     conn.execute(sa.text(f'CREATE INDEX IF NOT EXISTS "idx_{table_name}_jid" ON "{table_name}" (job_id)'))
     conn.execute(sa.text(f'CREATE INDEX IF NOT EXISTS "idx_{table_name}_ts"  ON "{table_name}" (timestamp)'))
 
@@ -814,17 +865,16 @@ def _fetch_sits_by_jids_pg(
 
 def _fetch_sits_batch_coverage_pg(
     engine: sa.Engine,
-    gdf: gpd.GeoDataFrame,
+    gdf: GeoDataFrameLike,
     satellite: AbstractSatellite,
     reducers: set[str] | None,
     subsampling_max_pixels: float,
     start_date_col: str,
     end_date_col: str,
+    crs: str | None = None,
 ) -> dict[int, tuple[list[int], list[tuple[str, str]]]]:
     params_hash = _compute_params_hash(satellite, reducers, subsampling_max_pixels)
-
-    h3_coarse_vals = list(gdf["h3_coarse"].astype(str).unique())
-    h3_fine_vals = list(gdf["h3_fine"].astype(str).unique())
+    normalized, h3_coarse_vals, h3_fine_vals, rows = _prepare_batch_lookup_rows(gdf, start_date_col, end_date_col, crs)
     if not h3_coarse_vals:
         return {}
 
@@ -841,48 +891,11 @@ def _fetch_sits_batch_coverage_pg(
         if not candidate_rows:
             return {}
 
-        h3_fine_to_geoms: dict[str, dict[str, int]] = {}
-        point_to_geom: dict[tuple[float, float], int] = {}
-        for crow in candidate_rows:
-            geom_id, geom_hash, h3_fine, geom_type, rx, ry = crow
-            h3_fine_to_geoms.setdefault(str(h3_fine), {})[str(geom_hash)] = int(geom_id)
-            if geom_type == "point":
-                point_to_geom[(float(rx), float(ry))] = int(geom_id)
-
-        candidate_h3_fines = set(h3_fine_to_geoms.keys())
-        gdf_h3_fine = gdf["h3_fine"].astype(str)
-        mask_h3 = gdf_h3_fine.isin(candidate_h3_fines)
-        if not mask_h3.any():
+        resolved_rows = _resolve_geometry_ids(normalized, rows, candidate_rows, start_date_col, end_date_col)
+        if not resolved_rows:
             return {}
 
-        is_point = gdf.geometry.geom_type == "Point"
-        hash_mask = mask_h3 & ~is_point
-        point_mask = mask_h3 & is_point
-
-        geom_hash_series: pd.Series[Any] = pd.Series(index=gdf.index, dtype=object)
-        if hash_mask.any():
-            geom_hash_series[hash_mask] = gdf.loc[hash_mask, "geometry"].apply(_compute_geom_hash)
-
-        geom_id_series: pd.Series[Any] = pd.Series(index=gdf.index, dtype=object)
-
-        for pos in gdf.index[hash_mask]:
-            gh = geom_hash_series.at[pos]
-            h3f = str(gdf_h3_fine.at[pos])
-            gid = h3_fine_to_geoms.get(h3f, {}).get(str(gh))
-            if gid is not None:
-                geom_id_series.at[pos] = gid
-
-        for pos in gdf.index[point_mask]:
-            geom: Any = gdf.at[pos, "geometry"]
-            gid = point_to_geom.get((float(geom.x), float(geom.y)))
-            if gid is not None:
-                geom_id_series.at[pos] = gid
-
-        valid_mask = geom_id_series.notna()
-        if not valid_mask.any():
-            return {}
-
-        unique_geom_ids = [int(gid) for gid in geom_id_series[valid_mask].astype(int).unique().tolist()]
+        unique_geom_ids = list(dict.fromkeys(geom_id for _, geom_id, _, _ in resolved_rows))
         job_rows = conn.execute(
             sa.text("""
                 SELECT geometry_id, id, start_date, end_date FROM sits_jobs
@@ -891,29 +904,7 @@ def _fetch_sits_batch_coverage_pg(
             """),
             {"gids": unique_geom_ids, "sat": satellite.shortName, "ph": params_hash},
         ).fetchall()
-
-    jobs_by_geom: dict[int, list[tuple[int, str, str]]] = {}
-    for jrow in job_rows:
-        gid_ = int(jrow[0])
-        jobs_by_geom.setdefault(gid_, []).append((int(jrow[1]), str(jrow[2]), str(jrow[3])))
-
-    result: dict[int, tuple[list[int], list[tuple[str, str]]]] = {}
-    for pos in gdf.index[valid_mask]:
-        gid = int(cast(int, geom_id_series.at[pos]))
-        geom_jobs = jobs_by_geom.get(gid)
-        if not geom_jobs:
-            continue
-        q_start = str(gdf.at[pos, start_date_col])[:10]
-        q_end = str(gdf.at[pos, end_date_col])[:10]
-        overlapping = [(jid, js, je) for jid, js, je in geom_jobs if js <= q_end and je >= q_start]
-        if not overlapping:
-            continue
-        job_ids = [jid for jid, _, _ in overlapping]
-        covered = [(js, je) for _, js, je in overlapping]
-        gaps = _compute_gaps(q_start, q_end, covered)
-        result[int(pos)] = (job_ids, gaps)
-
-    return result
+    return _finalize_batch_coverage(resolved_rows, _build_jobs_by_geom(job_rows))
 
 
 # ---------------------------------------------------------------------------
@@ -945,37 +936,49 @@ def _store_sits_pg(
     h3_coarse, h3_fine = _compute_h3_for_point(rx, ry)
 
     with engine.begin() as conn:
-        conn.execute(sa.text(
-            "INSERT INTO geometries "
-            "(geom_hash, geometry, repr_point_x, repr_point_y, geom_type, h3_coarse, h3_fine) "
-            "VALUES (:h, ST_GeomFromWKB(:wkb, 4326), :rx, :ry, :gt, :hc, :hf) "
-            "ON CONFLICT (geom_hash) DO NOTHING"
-        ), {"h": geom_hash, "wkb": geometry.wkb, "rx": rx, "ry": ry, "gt": gtype, "hc": h3_coarse, "hf": h3_fine})
+        conn.execute(
+            sa.text(
+                "INSERT INTO geometries "
+                "(geom_hash, geometry, repr_point_x, repr_point_y, geom_type, h3_coarse, h3_fine) "
+                "VALUES (:h, ST_GeomFromWKB(:wkb, 4326), :rx, :ry, :gt, :hc, :hf) "
+                "ON CONFLICT (geom_hash) DO NOTHING"
+            ),
+            {"h": geom_hash, "wkb": geometry.wkb, "rx": rx, "ry": ry, "gt": gtype, "hc": h3_coarse, "hf": h3_fine},
+        )
 
-        _geom_row = conn.execute(
-            sa.text("SELECT id FROM geometries WHERE geom_hash = :h"), {"h": geom_hash}
-        ).fetchone()
+        _geom_row = conn.execute(sa.text("SELECT id FROM geometries WHERE geom_hash = :h"), {"h": geom_hash}).fetchone()
         assert _geom_row is not None
         geom_id: int = _geom_row[0]
 
-        conn.execute(sa.text("""
+        conn.execute(
+            sa.text("""
             INSERT INTO sits_jobs
               (job_hash, geometry_id, satellite_short_name, params_hash, reducers,
                subsampling_max_pixels, start_date, end_date, fetched_at)
             VALUES (:jh, :gid, :sat, :ph, :red, :sub, :sd, :ed, :now)
             ON CONFLICT (geometry_id, satellite_short_name, params_hash, start_date, end_date) DO NOTHING
-        """), {
-            "jh": job_hash, "gid": geom_id, "sat": satellite.shortName, "ph": params_hash,
-            "red": json.dumps(sorted(reducers)) if reducers else None,
-            "sub": subsampling_max_pixels, "sd": start_date, "ed": end_date,
-            "now": datetime.now(UTC).isoformat(),
-        })
+        """),
+            {
+                "jh": job_hash,
+                "gid": geom_id,
+                "sat": satellite.shortName,
+                "ph": params_hash,
+                "red": json.dumps(sorted(reducers)) if reducers else None,
+                "sub": subsampling_max_pixels,
+                "sd": start_date,
+                "ed": end_date,
+                "now": datetime.now(UTC).isoformat(),
+            },
+        )
 
-        _job_row = conn.execute(sa.text("""
+        _job_row = conn.execute(
+            sa.text("""
             SELECT id FROM sits_jobs
             WHERE geometry_id = :gid AND satellite_short_name = :sat
               AND params_hash = :ph AND start_date = :sd AND end_date = :ed
-        """), {"gid": geom_id, "sat": satellite.shortName, "ph": params_hash, "sd": start_date, "ed": end_date}).fetchone()
+        """),
+            {"gid": geom_id, "sat": satellite.shortName, "ph": params_hash, "sd": start_date, "ed": end_date},
+        ).fetchone()
         assert _job_row is not None
         job_id: int = _job_row[0]
 
@@ -1025,7 +1028,9 @@ def fetch_sits_with_gaps(
     subsampling_max_pixels: float,
 ) -> tuple[pl.DataFrame, list[tuple[str, str]]]:
     if isinstance(engine, duckdb.DuckDBPyConnection):
-        return _fetch_sits_with_gaps_duck(engine, geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels)
+        return _fetch_sits_with_gaps_duck(
+            engine, geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels
+        )
     return _fetch_sits_with_gaps_pg(engine, geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels)
 
 
@@ -1056,16 +1061,35 @@ def fetch_sits_by_job_ids(
 
 def fetch_sits_batch_coverage(
     engine: CacheEngine,
-    gdf: gpd.GeoDataFrame,
+    gdf: GeoDataFrameLike,
     satellite: AbstractSatellite,
     reducers: set[str] | None,
     subsampling_max_pixels: float,
     start_date_col: str,
     end_date_col: str,
+    crs: str | None = None,
 ) -> dict[int, tuple[list[int], list[tuple[str, str]]]]:
     if isinstance(engine, duckdb.DuckDBPyConnection):
-        return _fetch_sits_batch_coverage_duck(engine, gdf, satellite, reducers, subsampling_max_pixels, start_date_col, end_date_col)
-    return _fetch_sits_batch_coverage_pg(engine, gdf, satellite, reducers, subsampling_max_pixels, start_date_col, end_date_col)
+        return _fetch_sits_batch_coverage_duck(
+            engine,
+            gdf,
+            satellite,
+            reducers,
+            subsampling_max_pixels,
+            start_date_col,
+            end_date_col,
+            crs,
+        )
+    return _fetch_sits_batch_coverage_pg(
+        engine,
+        gdf,
+        satellite,
+        reducers,
+        subsampling_max_pixels,
+        start_date_col,
+        end_date_col,
+        crs,
+    )
 
 
 def store_sits(
@@ -1098,8 +1122,12 @@ def store_sits_polars(
     if df.is_empty():
         return None
     if isinstance(engine, duckdb.DuckDBPyConnection):
-        return _store_sits_duck_polars(engine, df, geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels)
-    return _store_sits_pg(engine, df.to_pandas(), geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels)
+        return _store_sits_duck_polars(
+            engine, df, geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels
+        )
+    return _store_sits_pg(
+        engine, df.to_pandas(), geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1136,10 +1164,12 @@ def print_cache_status(engine: CacheEngine | None = None) -> None:
             _count_row = conn.execute(sa.text("SELECT COUNT(*) FROM sits_jobs")).fetchone()
             assert _count_row is not None
             total_sits = _count_row[0]
-            rows = conn.execute(sa.text(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
-            )).fetchall()
+            rows = conn.execute(
+                sa.text(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+                )
+            ).fetchall()
             sat_tables = sorted(r[0] for r in rows if r[0] not in _PG_SYSTEM)
             images_by_sensor = {}
             for tbl in sat_tables:
@@ -1183,13 +1213,25 @@ def init_cache(db_path: pathlib.Path = DEFAULT_DB_PATH) -> CacheEngine:
     )
 
     satellites: list[AbstractSatellite] = [
-        Sentinel2(), Sentinel2(use_sr=False),
-        Sentinel1GRD(), Sentinel1GRD(ascending=False),
-        Landsat5(), Landsat7(), Landsat8(), Landsat9(),
-        ModisDaily(), Modis8Days(),
-        NAIP(), HLSSentinel2(), HLSLandsat(),
-        PALSAR2ScanSAR(), CopernicusDEM(), ANADEM(),
-        WRBSoilClasses(), MapBiomas(), SatelliteEmbedding(),
+        Sentinel2(),
+        Sentinel2(use_sr=False),
+        Sentinel1GRD(),
+        Sentinel1GRD(ascending=False),
+        Landsat5(),
+        Landsat7(),
+        Landsat8(),
+        Landsat9(),
+        ModisDaily(),
+        Modis8Days(),
+        NAIP(),
+        HLSSentinel2(),
+        HLSLandsat(),
+        PALSAR2ScanSAR(),
+        CopernicusDEM(),
+        ANADEM(),
+        WRBSoilClasses(),
+        MapBiomas(),
+        SatelliteEmbedding(),
     ]
 
     if _pg_env_set():
