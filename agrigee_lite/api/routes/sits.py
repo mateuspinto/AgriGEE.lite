@@ -38,7 +38,7 @@ async def get_single_sits(request: SitsRequest) -> list[dict]:
         set(request.reducers) if request.reducers else None,
         request.subsampling_max_pixels,
     )
-    return df.to_dict(orient="records")
+    return df.to_dicts()
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +68,7 @@ async def _run_multiple_sits_job(job_id: str, request: MultipleSitsRequest) -> N
             max_retries_per_chunk=request.max_retries_per_chunk,
             force_redownload=request.force_redownload,
         )
-        job.result = df.to_dict(orient="records")
+        job.result = df.to_dicts()
         job.status = JobStatus.COMPLETED
     except Exception as exc:
         job.error = str(exc)

@@ -1,5 +1,6 @@
 import numpy as np
-import pandas as pd
+import polars as pl
+import polars.selectors as cs
 
 import agrigee_lite as agl
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
@@ -15,18 +16,19 @@ MAX_NAN_BY_DATE_TYPE: dict[str, float] = {
 
 
 def assert_sits_quality(
-    df: pd.DataFrame,
+    df: pl.DataFrame,
     satellite: AbstractSatellite,
     max_nan: float | None = None,
 ) -> None:
     """Assert that a sits DataFrame is non-empty and has an acceptable NaN fraction."""
-    assert not df.empty, f"[{satellite.shortName}] Result is empty"
+    assert isinstance(df, pl.DataFrame), f"[{satellite.shortName}] Expected a Polars DataFrame"
+    assert not df.is_empty(), f"[{satellite.shortName}] Result is empty"
 
-    numeric = df.select_dtypes(include="number")
-    if numeric.empty:
+    numeric = df.select(cs.numeric())
+    if numeric.width == 0:
         return
 
-    nan_fraction = numeric.isna().to_numpy().mean()
+    nan_fraction = np.isnan(numeric.cast(pl.Float64).to_numpy()).mean()
     threshold = max_nan if max_nan is not None else MAX_NAN_BY_DATE_TYPE.get(satellite.dateType, 0.30)
     assert nan_fraction <= threshold, (
         f"[{satellite.shortName}] NaN fraction {nan_fraction:.1%} exceeds threshold {threshold:.1%} "

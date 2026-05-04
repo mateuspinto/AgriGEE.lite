@@ -6,6 +6,8 @@ all date encodings, and multi-geometry parallel download.
 """
 
 import pytest
+import polars as pl
+import polars.selectors as cs
 
 import agrigee_lite as agl
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite
@@ -30,6 +32,7 @@ def sample_gdf():
 def test_default_sits(satellite: AbstractSatellite, sample_gdf) -> None:
     row = sample_gdf.iloc[0]
     result = agl.get.sits(row.geometry, row.start_date, row.end_date, satellite)
+    assert isinstance(result, pl.DataFrame)
     assert_sits_quality(result, satellite)
 
 
@@ -43,6 +46,7 @@ def test_default_sits(satellite: AbstractSatellite, sample_gdf) -> None:
 def test_single_reducer(satellite: AbstractSatellite, reducer: str, sample_gdf) -> None:
     row = sample_gdf.iloc[0]
     result = agl.get.sits(row.geometry, row.start_date, row.end_date, satellite, reducers=[reducer])
+    assert isinstance(result, pl.DataFrame)
     assert_sits_quality(result, satellite)
 
 
@@ -77,8 +81,8 @@ def test_date_encoding(date_type: str, sample_gdf) -> None:
     result = agl.get.sits(row.geometry, row.start_date, row.end_date, satellite, ["median"], [date_type], 100)
 
     assert_sits_quality(result, satellite)
-    numeric = result.select_dtypes(include="number")
-    assert not numeric.empty, f"Expected numeric columns for date_type={date_type!r}"
+    numeric = result.select(cs.numeric())
+    assert numeric.width > 0, f"Expected numeric columns for date_type={date_type!r}"
 
 
 def test_all_date_types_combined(sample_gdf) -> None:
@@ -105,4 +109,5 @@ def test_multiple_geometries(sample_gdf) -> None:
 
     result = agl.get.multiple_sits(gdf, satellite, ["skew", "p13"], ["doy"], 0.3)
 
+    assert isinstance(result, pl.DataFrame)
     assert_sits_quality(result, satellite)

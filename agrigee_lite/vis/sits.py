@@ -81,7 +81,7 @@ def visualize_single_sits(
     """
     import matplotlib.pyplot as plt
 
-    long_sits = download_single_sits(geometry, start_date, end_date, satellite, reducers={reducer})
+    long_sits = download_single_sits(geometry, start_date, end_date, satellite, reducers={reducer}).to_pandas()
 
     if len(long_sits) == 0:
         return None
@@ -160,7 +160,9 @@ def visualize_multiple_sits(
     """
     import matplotlib.pyplot as plt
 
-    long_sits = asyncio.run(download_multiple_sits_async(gdf, satellite, reducers={reducer}, force_redownload=force_redownload))
+    long_sits = asyncio.run(
+        download_multiple_sits_async(gdf, satellite, reducers={reducer}, force_redownload=force_redownload)
+    ).to_pandas()
 
     if len(long_sits) == 0:
         return None

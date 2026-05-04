@@ -146,6 +146,12 @@ def _chunked(values: list[Any], size: int) -> list[list[Any]]:
     return [values[i : i + size] for i in range(0, len(values), size)]
 
 
+def _normalize_timestamp_pl(df: pl.DataFrame) -> pl.DataFrame:
+    if "timestamp" not in df.columns:
+        return df
+    return df.with_columns(pl.col("timestamp").cast(pl.Datetime, strict=False))
+
+
 # ---------------------------------------------------------------------------
 # DuckDB — schema
 # ---------------------------------------------------------------------------
@@ -225,7 +231,7 @@ def _fetch_sits_with_gaps_duck(
     satellite: AbstractSatellite,
     reducers: set[str] | None,
     subsampling_max_pixels: float,
-) -> tuple[pd.DataFrame, list[tuple[str, str]]]:
+) -> tuple[pl.DataFrame, list[tuple[str, str]]]:
     params_hash = _compute_params_hash(satellite, reducers, subsampling_max_pixels)
     band_cols = _get_band_columns(satellite)
     table_name = satellite.shortName
@@ -240,7 +246,7 @@ def _fetch_sits_with_gaps_duck(
         geom_row = conn.execute("SELECT id FROM geometries WHERE geom_hash = ?", [geom_hash]).fetchone()
 
     if geom_row is None:
-        return pd.DataFrame(), [(start_date, end_date)]
+        return pl.DataFrame(), [(start_date, end_date)]
 
     geom_id = int(geom_row[0])
 
@@ -254,7 +260,7 @@ def _fetch_sits_with_gaps_duck(
     ).fetchall()
 
     if not job_rows:
-        return pd.DataFrame(), [(start_date, end_date)]
+        return pl.DataFrame(), [(start_date, end_date)]
 
     covered = [(str(r[1]), str(r[2])) for r in job_rows]
     job_ids = [int(r[0]) for r in job_rows]
@@ -270,25 +276,23 @@ def _fetch_sits_with_gaps_duck(
     ).pl()
 
     if pl_df.is_empty():
-        return pd.DataFrame(), gaps
+        return pl.DataFrame(), gaps
 
-    df = pl_df.to_pandas()
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    return df, gaps
+    return _normalize_timestamp_pl(pl_df), gaps
 
 
 def _fetch_sits_by_jids_duck(
     conn: duckdb.DuckDBPyConnection,
     satellite: AbstractSatellite,
     job_ids: list[int],
-) -> dict[int, pd.DataFrame]:
+) -> dict[int, pl.DataFrame]:
     if not job_ids:
         return {}
 
     table_name = satellite.shortName
     band_cols = _get_band_columns(satellite)
     cols_sql = ", ".join(f'"{c}"' for c in band_cols)
-    result: dict[int, pd.DataFrame] = {}
+    result: dict[int, pl.DataFrame] = {}
 
     for chunk in _chunked(list(dict.fromkeys(job_ids)), 400):
         ph = ", ".join("?" * len(chunk))
@@ -300,9 +304,7 @@ def _fetch_sits_by_jids_duck(
 
         for sub in pl_df.partition_by("job_id", maintain_order=True):
             jid = int(sub["job_id"][0])
-            pd_sub = sub.drop("job_id").to_pandas()
-            pd_sub["timestamp"] = pd.to_datetime(pd_sub["timestamp"])
-            result[jid] = pd_sub
+            result[jid] = _normalize_timestamp_pl(sub.drop("job_id"))
 
     return result
 
@@ -378,7 +380,7 @@ def _fetch_sits_batch_coverage_duck(
     if not valid_mask.any():
         return {}
 
-    unique_geom_ids = list(geom_id_series[valid_mask].astype(int).unique())
+    unique_geom_ids = [int(gid) for gid in geom_id_series[valid_mask].astype(int).unique().tolist()]
     gid_ph = ", ".join("?" * len(unique_geom_ids))
     job_rows = conn.execute(
         f"""
@@ -704,7 +706,7 @@ def _fetch_sits_with_gaps_pg(
     satellite: AbstractSatellite,
     reducers: set[str] | None,
     subsampling_max_pixels: float,
-) -> tuple[pd.DataFrame, list[tuple[str, str]]]:
+) -> tuple[pl.DataFrame, list[tuple[str, str]]]:
     params_hash = _compute_params_hash(satellite, reducers, subsampling_max_pixels)
     band_cols = _get_band_columns(satellite)
     table_name = satellite.shortName
@@ -723,7 +725,7 @@ def _fetch_sits_with_gaps_pg(
             ).fetchone()
 
         if geom_row is None:
-            return pd.DataFrame(), [(start_date, end_date)]
+            return pl.DataFrame(), [(start_date, end_date)]
 
         geom_id = int(geom_row[0])
 
@@ -737,7 +739,7 @@ def _fetch_sits_with_gaps_pg(
         ).fetchall()
 
         if not job_rows:
-            return pd.DataFrame(), [(start_date, end_date)]
+            return pl.DataFrame(), [(start_date, end_date)]
 
         covered = [(str(r[1]), str(r[2])) for r in job_rows]
         job_ids = [int(r[0]) for r in job_rows]
@@ -759,25 +761,24 @@ def _fetch_sits_with_gaps_pg(
         ).fetchall()
 
     if not rows:
-        return pd.DataFrame(), gaps
+        return pl.DataFrame(), gaps
 
-    df = pd.DataFrame(rows, columns=["timestamp", *band_cols])
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    return df, gaps
+    df = pl.DataFrame(rows, schema=["timestamp", *band_cols], orient="row")
+    return _normalize_timestamp_pl(df), gaps
 
 
 def _fetch_sits_by_jids_pg(
     engine: sa.Engine,
     satellite: AbstractSatellite,
     job_ids: list[int],
-) -> dict[int, pd.DataFrame]:
+) -> dict[int, pl.DataFrame]:
     if not job_ids:
         return {}
 
     table_name = satellite.shortName
     band_cols = _get_band_columns(satellite)
     cols_sql = ", ".join(f'"{c}"' for c in band_cols)
-    result: dict[int, pd.DataFrame] = {}
+    result: dict[int, pl.DataFrame] = {}
     unique_job_ids = list(dict.fromkeys(job_ids))
 
     with engine.connect() as conn:
@@ -799,16 +800,14 @@ def _fetch_sits_by_jids_pg(
                 jid = int(row[0])
                 if jid != current_id:
                     if current_id is not None and current_rows:
-                        df = pd.DataFrame(current_rows, columns=["timestamp", *band_cols])
-                        df["timestamp"] = pd.to_datetime(df["timestamp"])
-                        result[current_id] = df
+                        df = pl.DataFrame(current_rows, schema=["timestamp", *band_cols], orient="row")
+                        result[current_id] = _normalize_timestamp_pl(df)
                     current_id = jid
                     current_rows = []
                 current_rows.append(row[1:])
             if current_id is not None and current_rows:
-                df = pd.DataFrame(current_rows, columns=["timestamp", *band_cols])
-                df["timestamp"] = pd.to_datetime(df["timestamp"])
-                result[current_id] = df
+                df = pl.DataFrame(current_rows, schema=["timestamp", *band_cols], orient="row")
+                result[current_id] = _normalize_timestamp_pl(df)
 
     return result
 
@@ -883,7 +882,7 @@ def _fetch_sits_batch_coverage_pg(
         if not valid_mask.any():
             return {}
 
-        unique_geom_ids = list(geom_id_series[valid_mask].astype(int).unique())
+        unique_geom_ids = [int(gid) for gid in geom_id_series[valid_mask].astype(int).unique().tolist()]
         job_rows = conn.execute(
             sa.text("""
                 SELECT geometry_id, id, start_date, end_date FROM sits_jobs
@@ -1024,7 +1023,7 @@ def fetch_sits_with_gaps(
     satellite: AbstractSatellite,
     reducers: set[str] | None,
     subsampling_max_pixels: float,
-) -> tuple[pd.DataFrame, list[tuple[str, str]]]:
+) -> tuple[pl.DataFrame, list[tuple[str, str]]]:
     if isinstance(engine, duckdb.DuckDBPyConnection):
         return _fetch_sits_with_gaps_duck(engine, geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels)
     return _fetch_sits_with_gaps_pg(engine, geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels)
@@ -1038,18 +1037,18 @@ def fetch_sits(
     satellite: AbstractSatellite,
     reducers: set[str] | None,
     subsampling_max_pixels: float,
-) -> pd.DataFrame | None:
+) -> pl.DataFrame | None:
     df, gaps = fetch_sits_with_gaps(engine, geometry, start_date, end_date, satellite, reducers, subsampling_max_pixels)
     if gaps:
         return None
-    return df if not df.empty else pd.DataFrame()
+    return df if not df.is_empty() else pl.DataFrame()
 
 
 def fetch_sits_by_job_ids(
     engine: CacheEngine,
     satellite: AbstractSatellite,
     job_ids: list[int],
-) -> dict[int, pd.DataFrame]:
+) -> dict[int, pl.DataFrame]:
     if isinstance(engine, duckdb.DuckDBPyConnection):
         return _fetch_sits_by_jids_duck(engine, satellite, job_ids)
     return _fetch_sits_by_jids_pg(engine, satellite, job_ids)

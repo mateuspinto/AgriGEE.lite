@@ -24,7 +24,6 @@ from agrigee_lite.cache.backend import (
     fetch_sits_by_job_ids,
     fetch_sits_with_gaps,
     get_engine,
-    store_sits,
     store_sits_polars,
 )
 from agrigee_lite.config import (
@@ -51,6 +50,7 @@ from agrigee_lite.sat.abstract_satellite import AbstractSatellite, OpticalSatell
 from agrigee_lite.task_manager import GEETaskManager
 
 logger = logging.getLogger(__name__)
+TabularFrame = pd.DataFrame | pl.DataFrame
 
 
 def _as_date_str(value: pd.Timestamp | str) -> str:
@@ -147,13 +147,17 @@ def build_selectors(satellite: AbstractSatellite, reducers: set[str] | None) -> 
         ]
 
 
-def prepare_output_df(df: pd.DataFrame, satellite: AbstractSatellite, original_index_column_name: str) -> pd.DataFrame:
+def prepare_output_df(
+    df: TabularFrame,
+    satellite: AbstractSatellite,
+    original_index_column_name: str,
+) -> pl.DataFrame:
     """
     Prepare and clean output DataFrame from satellite time series data.
 
     Parameters
     ----------
-    df : pd.DataFrame
+    df : pandas.DataFrame or polars.DataFrame
         Raw DataFrame from satellite time series computation.
     satellite : AbstractSatellite
         Satellite configuration object used for data processing.
@@ -162,32 +166,49 @@ def prepare_output_df(df: pd.DataFrame, satellite: AbstractSatellite, original_i
 
     Returns
     -------
-    pd.DataFrame
+    polars.DataFrame
         Cleaned and processed DataFrame with proper column names and data types.
     """
-    df = df.drop(columns=["geo"], errors="ignore")
-    df.columns = [column.split("_", 1)[1] if "_" in column else column for column in df.columns.tolist()]
+    out = pl.from_pandas(df) if isinstance(df, pd.DataFrame) else df.clone()
+
+    if "geo" in out.columns:
+        out = out.drop("geo")
+
+    rename_map = {
+        column: column.split("_", 1)[1] if "_" in column else column
+        for column in out.columns
+    }
+    out = out.rename(rename_map)
 
     if isinstance(satellite, OpticalSatellite):  # Zero values in optical bands are invalid
-        band_columns = sorted(set(df.columns) - {"timestamp", "validPixelsCount", "indexnum"})
-        df = df[~(df[band_columns] == 0).all(axis=1)]
+        band_columns = sorted(set(out.columns) - {"timestamp", "validPixelsCount", "indexnum"})
+        if band_columns:
+            out = out.filter(~pl.all_horizontal(pl.col(c) == 0 for c in band_columns))
 
-    if "timestamp" in df.columns:
-        df["timestamp"] = pd.to_datetime(df["timestamp"], format="%Y-%m-%d")
+    if "timestamp" in out.columns:
+        ts_dtype = out.schema["timestamp"]
+        if ts_dtype == pl.String:
+            out = out.with_columns(pl.col("timestamp").str.to_datetime(strict=False))
+        elif ts_dtype == pl.Date:
+            out = out.with_columns(pl.col("timestamp").cast(pl.Datetime))
+        elif ts_dtype != pl.Datetime:
+            out = out.with_columns(pl.col("timestamp").cast(pl.Datetime, strict=False))
 
-    if "timestamp" in df.columns and df["timestamp"].isna().all():
-        df = df.drop(columns=["timestamp"])
+        if out.get_column("timestamp").null_count() == out.height:
+            out = out.drop("timestamp")
 
-    if "indexnum" in df.columns and (df["indexnum"] == 0).all():
-        df = df.drop(columns=["indexnum"])
-    elif "indexnum" in df.columns:
-        df = df.sort_values(by=["indexnum"], kind="stable")
-        df = df.reset_index(drop=True)
+    if "indexnum" in out.columns:
+        indexnum_col = out.get_column("indexnum")
+        normalized_indexnum = indexnum_col.cast(pl.Int64, strict=False).fill_null(0)
+        if out.height == 0 or bool((normalized_indexnum == 0).all()):
+            out = out.drop("indexnum")
+        else:
+            out = out.sort("indexnum")
 
-    if "indexnum" in df.columns:
-        df = df.rename(columns={"indexnum": original_index_column_name})
+    if "indexnum" in out.columns:
+        out = out.rename({"indexnum": original_index_column_name})
 
-    return df
+    return out
 
 
 def sanitize_and_prepare_input_gdf(
@@ -279,7 +300,7 @@ def download_single_sits(
     satellite: AbstractSatellite,
     reducers: set[str] | None = None,
     subsampling_max_pixels: float = 1_000,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """
     Download satellite time series for a single geometry.
 
@@ -300,7 +321,7 @@ def download_single_sits(
 
     Returns
     -------
-    pd.DataFrame
+    polars.DataFrame
         DataFrame containing satellite time series data.
 
     Raises
@@ -318,7 +339,7 @@ def download_single_sits(
         )
 
     _engine = get_engine()
-    cached_df: pd.DataFrame = pd.DataFrame()
+    cached_df = pl.DataFrame()
     gaps: list[tuple[str, str]] = [(start_date, end_date)]
 
     if _engine is not None:
@@ -327,7 +348,7 @@ def download_single_sits(
             logger.debug("Cache hit: %s %s→%s", satellite.shortName, start_date, end_date)
             return cached_df
 
-    gap_dfs: list[pd.DataFrame] = []
+    gap_dfs: list[pl.DataFrame] = []
     for gap_start, gap_end in gaps:
         ee_feature = ee.Feature(
             geometry.__geo_interface__,
@@ -337,20 +358,20 @@ def download_single_sits(
         gap_raw = ee.data.computeFeatures({"expression": ee_expression, "fileFormat": "PANDAS_DATAFRAME"})
         gap_df = prepare_output_df(gap_raw, satellite, "IGNORED")
         if _engine is not None:
-            store_sits(_engine, gap_df, geometry, gap_start, gap_end, satellite, reducers, subsampling_max_pixels)
-        if not gap_df.empty:
+            store_sits_polars(_engine, gap_df, geometry, gap_start, gap_end, satellite, reducers, subsampling_max_pixels)
+        if not gap_df.is_empty():
             gap_dfs.append(gap_df)
 
-    all_new = pd.concat(gap_dfs, ignore_index=True) if gap_dfs else pd.DataFrame()
+    all_new = pl.concat(gap_dfs, rechunk=False) if gap_dfs else pl.DataFrame()
 
-    if cached_df.empty:
+    if cached_df.is_empty():
         return all_new
-    if all_new.empty:
+    if all_new.is_empty():
         return cached_df
 
-    result = pd.concat([cached_df, all_new], ignore_index=True)
+    result = pl.concat([cached_df, all_new], rechunk=False)
     if "timestamp" in result.columns:
-        result = result.sort_values("timestamp").reset_index(drop=True)
+        result = result.sort("timestamp")
     return result
 
 
@@ -463,9 +484,9 @@ async def download_multiple_sits_async(  # noqa: C901
     max_parallel_downloads: int = ASYNC_MAX_PARALLEL_DOWNLOADS,
     max_retries_per_chunk: int = ASYNC_MAX_RETRIES_PER_CHUNK,
     force_redownload: bool = False,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     if len(gdf) == 0:
-        return pd.DataFrame()
+        return pl.DataFrame()
 
     gdf = sanitize_and_prepare_input_gdf(
         gdf,
@@ -476,7 +497,7 @@ async def download_multiple_sits_async(  # noqa: C901
     )
 
     if len(gdf) == 0:
-        return pd.DataFrame()
+        return pl.DataFrame()
 
     _engine = get_engine()
     if _engine is None:
@@ -509,9 +530,9 @@ async def download_multiple_sits_async(  # noqa: C901
 
     uncached_request_rows = gdf.loc[uncached_positions].reset_index(drop=True)
 
-    def _finalize_from_cache() -> pd.DataFrame:
+    def _finalize_from_cache() -> pl.DataFrame:
         if not cached_items:
-            return pd.DataFrame()
+            return pl.DataFrame()
 
         all_job_ids = list({jid for jids, _, _, _ in cached_items for jid in jids})
         cached_data = fetch_sits_by_job_ids(_engine, satellite, all_job_ids)
@@ -521,24 +542,22 @@ async def download_multiple_sits_async(  # noqa: C901
             sub_dfs = [cached_data[jid] for jid in job_ids if jid in cached_data]
             if not sub_dfs:
                 continue
-            combined = pd.concat(sub_dfs).drop_duplicates(subset=["timestamp"])
-            ts_start = pd.Timestamp(q_start)
-            ts_end = pd.Timestamp(q_end) + pd.Timedelta(days=1)
-            filtered = combined[(combined["timestamp"] >= ts_start) & (combined["timestamp"] < ts_end)]
-            if not filtered.empty:
+            combined = pl.concat(sub_dfs, rechunk=False).unique(subset=["timestamp"], maintain_order=True)
+            ts_start = pd.Timestamp(q_start).to_pydatetime()
+            ts_end = (pd.Timestamp(q_end) + pd.Timedelta(days=1)).to_pydatetime()
+            filtered = combined.filter(
+                (pl.col("timestamp") >= pl.lit(ts_start))
+                & (pl.col("timestamp") < pl.lit(ts_end))
+            )
+            if not filtered.is_empty():
                 pl_frames.append(
-                    pl.from_pandas(filtered).with_columns(pl.lit(orig_idx).alias(original_index_column_name))
+                    filtered.with_columns(pl.lit(orig_idx).alias(original_index_column_name))
                 )
 
         if not pl_frames:
-            return pd.DataFrame()
+            return pl.DataFrame()
 
-        return (
-            pl.concat(pl_frames, rechunk=False)
-            .sort([original_index_column_name, "timestamp"])
-            .to_pandas()
-            .reset_index(drop=True)
-        )
+        return pl.concat(pl_frames, rechunk=False).sort([original_index_column_name, "timestamp"])
 
     if uncached_request_rows.empty:
         return _finalize_from_cache()
@@ -710,17 +729,17 @@ async def download_multiple_sits_async(  # noqa: C901
         elif res.height > 0:
             pl_frames.append(res)
 
-    raw_df = pl.concat(pl_frames, rechunk=False).to_pandas() if pl_frames else pd.DataFrame()
+    raw_df = pl.concat(pl_frames, rechunk=False) if pl_frames else pl.DataFrame()
     whole_result_df = prepare_output_df(raw_df, satellite, original_index_column_name)
     cached_df = _finalize_from_cache()
-    if cached_df.empty:
+    if cached_df.is_empty():
         return whole_result_df
-    if whole_result_df.empty:
+    if whole_result_df.is_empty():
         return cached_df
 
-    result_df = pd.concat([cached_df, whole_result_df], ignore_index=True)
+    result_df = pl.concat([cached_df, whole_result_df], rechunk=False)
     if "timestamp" in result_df.columns:
-        result_df = result_df.sort_values([original_index_column_name, "timestamp"], kind="stable").reset_index(drop=True)
+        result_df = result_df.sort([original_index_column_name, "timestamp"])
     return result_df
 
 
@@ -896,7 +915,7 @@ def download_multiple_sits_chunks_gcs(
     coarse_resolution: int = 5,
     fine_resolution: int = 8,
     wait: bool = True,
-) -> None | pd.DataFrame:
+) -> None | pl.DataFrame:
     """
     Download satellite time series using Google Earth Engine tasks to Google Cloud Storage.
 
@@ -927,7 +946,7 @@ def download_multiple_sits_chunks_gcs(
 
     Returns
     -------
-    None or pd.DataFrame
+    None or polars.DataFrame
         If wait is True, returns DataFrame with combined results.
         If wait is False, returns None.
     """
@@ -1066,12 +1085,12 @@ def download_multiple_sits_chunks_gcs(
     if wait:
         task_mgr.wait()
 
-        df = pd.DataFrame()
+        dfs: list[pl.DataFrame] = []
         for file_uri in file_uris:
-            with smart_open(file_uri, "r") as f:
-                sub_df = pd.read_csv(f)
-                df = pd.concat([df, sub_df], ignore_index=True)
+            with smart_open(file_uri, "rb") as f:
+                dfs.append(pl.read_csv(f))
 
+        df = pl.concat(dfs, rechunk=False) if dfs else pl.DataFrame()
         df = prepare_output_df(df, satellite, original_index_column_name)
         return df
     else:
