@@ -2,16 +2,15 @@
 FROM ghcr.io/prefix-dev/pixi:latest AS build
 WORKDIR /app
 
-COPY pyproject.toml pixi.lock pixi.toml ./
+COPY pyproject.toml pixi.lock pixi.toml README.md ./
 
 # Stub agrigee_lite package so heavy pixi install layer caches even when source changes.
 # pip editable install only needs the directory to exist at install time.
 RUN mkdir -p agrigee_lite && touch agrigee_lite/__init__.py
 RUN pixi install --frozen -e api
 
-# Overwrite stub with real source, redo editable install (fast — deps already installed)
+# Overwrite stub with real source (entry points already registered by pixi install above)
 COPY agrigee_lite/ ./agrigee_lite/
-RUN pixi run -e api python -m pip install --no-deps --no-build-isolation -e .
 
 # Runtime stage: slim image with only the env + source
 FROM debian:bookworm-slim
