@@ -190,6 +190,39 @@ class MultipleSitsRequest(BaseModel):
     force_redownload: bool = False
 
 
+class MultipleSitsFileParams(BaseModel):
+    """Non-file parameters for ``POST /sits/multiple/file``, passed as a JSON string in the ``params`` form field."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "satellite": {"name": "Sentinel2", "params": {}},
+                "reducers": None,
+                "start_date_column": "start_date",
+                "end_date_column": "end_date",
+                "original_index_column": "original_index",
+                "subsampling_max_pixels": 1000,
+                "chunksize": SITS_CHUNKSIZE,
+                "max_parallel_downloads": ASYNC_MAX_PARALLEL_DOWNLOADS,
+                "max_retries_per_chunk": ASYNC_MAX_RETRIES_PER_CHUNK,
+                "force_redownload": False,
+            }
+        }
+    )
+
+    satellite: SatelliteSpec
+    reducers: list[str] | None = None
+    start_date_column: str = "start_date"
+    end_date_column: str = "end_date"
+    original_index_column: str = "original_index"
+    subsampling_max_pixels: float = 1_000
+    chunksize: int = SITS_CHUNKSIZE
+    max_parallel_downloads: int = ASYNC_MAX_PARALLEL_DOWNLOADS
+    max_retries_per_chunk: int = ASYNC_MAX_RETRIES_PER_CHUNK
+    force_redownload: bool = False
+    crs: str | None = "EPSG:4326"
+
+
 # ---------------------------------------------------------------------------
 # Job responses
 # ---------------------------------------------------------------------------

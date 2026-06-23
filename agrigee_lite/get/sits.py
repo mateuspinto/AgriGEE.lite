@@ -580,7 +580,7 @@ async def download_multiple_sits_async(  # noqa: C901
 
     _engine = get_engine()
     if _engine is None:
-        raise RuntimeError
+        raise RuntimeError("Cache not initialized. Call init_cache() before using download_multiple_sits_async.")
 
     cached_items: list[tuple[list[int], Any, str, str]] = []
     uncached_positions: list[int] = []
@@ -786,7 +786,7 @@ async def download_multiple_sits_async(  # noqa: C901
         loop.add_signal_handler(signal.SIGINT, _cancel_all)
         loop.add_signal_handler(signal.SIGTERM, _cancel_all)
         _signals_registered = True
-    except (NotImplementedError, ValueError):
+    except (NotImplementedError, ValueError, RuntimeError):
         pass
 
     connector = aiohttp.TCPConnector(limit=max(max_parallel_downloads, AIOHTTP_CONNECTOR_LIMIT))
@@ -822,7 +822,7 @@ async def download_multiple_sits_async(  # noqa: C901
     if whole_result_df.is_empty():
         return cached_df
 
-    result_df = pl.concat([cached_df, whole_result_df], rechunk=False)
+    result_df = pl.concat([cached_df, whole_result_df], how="diagonal_relaxed", rechunk=False)
     if "timestamp" in result_df.columns:
         result_df = result_df.sort([original_index_column_name, "timestamp"])
     return result_df

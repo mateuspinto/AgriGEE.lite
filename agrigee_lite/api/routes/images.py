@@ -82,9 +82,9 @@ async def submit_images_job(request: ImagesRequest) -> JobResponse:
     job_hash = _images_job_hash(request)
     existing = job_store.get(job_hash)
     if existing is not None:
-        if request.force_redownload and existing.status == JobStatus.COMPLETED:
+        if existing.status == JobStatus.FAILED or (request.force_redownload and existing.status == JobStatus.COMPLETED):
             job_store.delete(job_hash)
-        elif existing.status != JobStatus.FAILED:
+        else:
             return JobResponse(id=existing.id, type=existing.type, status=existing.status, result=existing.result)
     job = job_store.create(JobType.IMAGES, job_id=job_hash)
     asyncio.create_task(_run_images_job(job.id, request))

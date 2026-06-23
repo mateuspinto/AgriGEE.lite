@@ -55,7 +55,9 @@ from agrigee_lite.ee_utils import _install_uvloop, ee_quick_start
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from agrigee_lite.api._jobs import job_store
+    from agrigee_lite.cache import init_cache
     ee_quick_start()
+    init_cache()
     job_store.load_from_db()
     yield
 
