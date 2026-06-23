@@ -56,12 +56,17 @@ docs-publish: ## Publish documentation to GitHub Pages
 .PHONY: api
 api: ## Start the API server with uvicorn (production)
 	@echo "🚀 Starting AgriGEE.lite API"
-	@pixi run -e api agl_api --host 0.0.0.0 --port 8000
+	@set -a && [ -f .env ] && . ./.env; set +a && pixi run -e api agl_api --host 0.0.0.0 --port 8000
 
 .PHONY: api-debug
 api-debug: ## Start the API in debug mode with fastapi dev (hot-reload, no uvicorn)
 	@echo "🚀 Starting AgriGEE.lite API in debug mode"
-	@pixi run -e api fastapi dev agrigee_lite/api/_app.py --host 127.0.0.1 --port 8000
+	@set -a && [ -f .env ] && . ./.env; set +a && pixi run -e api fastapi dev agrigee_lite/api/_app.py --host 127.0.0.1 --port 8000
+
+.PHONY: cache
+cache: ## Clear the AgriGEE.lite cache (SITS DB + image files)
+	@echo "🚀 Clearing AgriGEE.lite cache"
+	@pixi run python -c "from agrigee_lite.cache import clear_cache; clear_cache()"
 
 .PHONY: help
 help:

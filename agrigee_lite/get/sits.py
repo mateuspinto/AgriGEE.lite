@@ -332,11 +332,19 @@ def sanitize_and_prepare_input_gdf(
 
     pct_none = 100 * count_none / prepared.height
     if pct_none > 0:
-        logger.debug("%.2f%% of the data do not intersect the satellite period.", pct_none)
+        logger.warning("%.2f%% of the data do not intersect the satellite period.", pct_none)
 
     pct_partial = 100 * count_partial / prepared.height
     if pct_partial > 0:
         logger.debug("%.2f%% of the data partially intersect the satellite period.", pct_partial)
+
+    if count_none == prepared.height:
+        sat_start = satellite.startDate
+        sat_end = satellite.endDate
+        raise ValueError(
+            f"None of the requested periods intersect the satellite's temporal range "
+            f"({sat_start} to {sat_end})."
+        )
 
     filtered = _wrap_normalized_geo_frame(
         _filter_normalized_geo_frame(prepared, ~pl.col("_mask_no_intersection")).drop(

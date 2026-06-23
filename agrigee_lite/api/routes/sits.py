@@ -2,7 +2,8 @@ import asyncio
 
 import geopandas as gpd
 import pandas as pd
-from fastapi import APIRouter
+import polars as pl
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from shapely.geometry import shape
 
@@ -14,31 +15,55 @@ from agrigee_lite.get.sits import download_multiple_sits_async, download_single_
 router = APIRouter(prefix="/sits", tags=["sits"])
 
 
+def _sits_to_columnar(df: pl.DataFrame) -> dict[str, list]:
+    """Transpose SITS DataFrame to column-oriented format for API responses.
+
+    Timestamps are formatted as YYYY-MM-DD strings; float band values are
+    rounded to 4 decimal places.
+    """
+    out = df.clone()
+
+    if "timestamp" in out.columns:
+        out = out.with_columns(pl.col("timestamp").dt.strftime("%Y-%m-%d"))
+
+    float_cols = [c for c, t in zip(out.columns, out.dtypes) if t in (pl.Float32, pl.Float64)]
+    if float_cols:
+        out = out.with_columns([pl.col(c).round(4) for c in float_cols])
+
+    return out.to_dict(as_series=False)
+
+
 # ---------------------------------------------------------------------------
 # Single geometry — synchronous; fast enough for one row
 # ---------------------------------------------------------------------------
 
 
 @router.post("/single", response_class=JSONResponse)
-async def get_single_sits(request: SitsRequest) -> list[dict]:
+async def get_single_sits(request: SitsRequest) -> dict[str, list]:
     """
     Download a satellite time series for a single geometry.
 
     Runs synchronously in a thread pool (GEE's ``computeFeatures`` HTTP call).
-    Returns the time series as a JSON array of records.
+    Returns the time series as a column-oriented JSON object: each key is a
+    band/field name and its value is an array of observations in time order.
+    Timestamps are formatted as ``YYYY-MM-DD``; band values are rounded to 4
+    decimal places.
     """
     satellite = build_satellite(request.satellite.name, request.satellite.params)
     geometry = shape(request.geometry.model_dump())
-    df = await asyncio.to_thread(
-        download_single_sits,
-        geometry,
-        request.start_date,
-        request.end_date,
-        satellite,
-        set(request.reducers) if request.reducers else None,
-        request.subsampling_max_pixels,
-    )
-    return df.to_dicts()
+    try:
+        df = await asyncio.to_thread(
+            download_single_sits,
+            geometry,
+            request.start_date,
+            request.end_date,
+            satellite,
+            set(request.reducers) if request.reducers else None,
+            request.subsampling_max_pixels,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _sits_to_columnar(df)
 
 
 # ---------------------------------------------------------------------------
@@ -47,8 +72,7 @@ async def get_single_sits(request: SitsRequest) -> list[dict]:
 
 
 async def _run_multiple_sits_job(job_id: str, request: MultipleSitsRequest) -> None:
-    job = job_store.get(job_id)
-    job.status = JobStatus.RUNNING
+    job_store.update_status(job_id, JobStatus.RUNNING)
     try:
         satellite = build_satellite(request.satellite.name, request.satellite.params)
         gdf = gpd.GeoDataFrame.from_features(request.feature_collection.features)
@@ -68,11 +92,31 @@ async def _run_multiple_sits_job(job_id: str, request: MultipleSitsRequest) -> N
             max_retries_per_chunk=request.max_retries_per_chunk,
             force_redownload=request.force_redownload,
         )
-        job.result = df.to_dicts()
-        job.status = JobStatus.COMPLETED
+        job = job_store.get(job_id)
+        if job is not None:
+            job.result = df
+        job_store.update_status(job_id, JobStatus.COMPLETED)
     except Exception as exc:
-        job.error = str(exc)
-        job.status = JobStatus.FAILED
+        job_store.update_status(job_id, JobStatus.FAILED, error=str(exc))
+
+
+def _sits_job_hash(request: MultipleSitsRequest) -> str:
+    import hashlib
+    import json
+
+    data = {
+        "feature_collection": request.feature_collection.model_dump(),
+        "satellite": request.satellite.model_dump(),
+        "reducers": sorted(request.reducers) if request.reducers else None,
+        "start_date_column": request.start_date_column,
+        "end_date_column": request.end_date_column,
+        "original_index_column": request.original_index_column,
+        "subsampling_max_pixels": request.subsampling_max_pixels,
+        "chunksize": request.chunksize,
+        "max_parallel_downloads": request.max_parallel_downloads,
+        "max_retries_per_chunk": request.max_retries_per_chunk,
+    }
+    return hashlib.sha1(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()  # noqa: S324
 
 
 @router.post("/multiple", response_class=JSONResponse, status_code=202)
@@ -85,7 +129,18 @@ async def submit_multiple_sits_job(request: MultipleSitsRequest) -> JobResponse:
 
     The input GeoDataFrame is encoded as a GeoJSON FeatureCollection.
     Each Feature must carry ``start_date`` and ``end_date`` properties.
+
+    Requests with identical parameters share the same ``job_id``. If the job
+    already completed, it is returned immediately. Pass ``force_redownload=true``
+    to discard the prior result and start fresh.
     """
-    job = job_store.create(JobType.SITS)
+    job_hash = _sits_job_hash(request)
+    existing = job_store.get(job_hash)
+    if existing is not None:
+        if request.force_redownload and existing.status == JobStatus.COMPLETED:
+            job_store.delete(job_hash)
+        elif existing.status != JobStatus.FAILED:
+            return JobResponse(id=existing.id, type=existing.type, status=existing.status)
+    job = job_store.create(JobType.SITS, job_id=job_hash)
     asyncio.create_task(_run_multiple_sits_job(job.id, request))
     return JobResponse(id=job.id, type=job.type, status=job.status)

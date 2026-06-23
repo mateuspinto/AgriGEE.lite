@@ -1,7 +1,7 @@
 import io
 import zipfile
 
-import pandas as pd
+import polars as pl
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response, StreamingResponse
 
@@ -11,19 +11,33 @@ from agrigee_lite.api._models import JobResponse
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
+def _safe_result(job_type: JobType | None, result: object) -> object:
+    """Return result for status endpoints; exclude large SITS DataFrames."""
+    if job_type == JobType.SITS:
+        return None
+    return result
+
+
 @router.get("", response_model=list[JobResponse])
 async def list_jobs() -> list[JobResponse]:
     """List all submitted jobs and their current status."""
-    return [JobResponse(id=j.id, type=j.type, status=j.status, result=j.result, error=j.error) for j in job_store.all()]
+    return [
+        JobResponse(id=j.id, type=j.type, status=j.status, result=_safe_result(j.type, j.result), error=j.error)
+        for j in job_store.all()
+    ]
 
 
 @router.get("/{job_id}", response_model=JobResponse)
 async def get_job(job_id: str) -> JobResponse:
-    """Get status and result (when complete) for a single job."""
+    """Get status and result (when complete) for a single job.
+
+    SITS job results are not included here — use ``GET /jobs/{job_id}/download``
+    to retrieve the full time-series as a Parquet file.
+    """
     job = job_store.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
-    return JobResponse(id=job.id, type=job.type, status=job.status, result=job.result, error=job.error)
+    return JobResponse(id=job.id, type=job.type, status=job.status, result=_safe_result(job.type, job.result), error=job.error)
 
 
 @router.delete("/{job_id}", status_code=204)
@@ -79,9 +93,9 @@ async def download_job_result(job_id: str) -> Response:
 
     # -------------------------------------------------------------------- sits
     if job.type == JobType.SITS:
-        df = pd.DataFrame(job.result)
+        df: pl.DataFrame = job.result
         buf = io.BytesIO()
-        df.to_parquet(buf, index=False, engine="pyarrow", compression="brotli")
+        df.write_parquet(buf, compression="brotli")
         buf.seek(0)
 
         return StreamingResponse(

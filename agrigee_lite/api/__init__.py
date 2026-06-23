@@ -36,6 +36,9 @@ and run multiple uvicorn workers or deploy behind a load balancer.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
 try:
     import fastapi as _fastapi  # noqa: F401
     import uvicorn as _uvicorn  # noqa: F401
@@ -46,6 +49,15 @@ from fastapi import FastAPI
 
 from agrigee_lite.api._satellites import REGISTRY
 from agrigee_lite.api.routes import router
+from agrigee_lite.ee_utils import _install_uvloop, ee_quick_start
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    from agrigee_lite.api._jobs import job_store
+    ee_quick_start()
+    job_store.load_from_db()
+    yield
 
 
 def create_app() -> FastAPI:
@@ -56,6 +68,7 @@ def create_app() -> FastAPI:
             "Long-running jobs return 202 Accepted; poll `/jobs/{job_id}` for status."
         ),
         version="1.0.0",
+        lifespan=_lifespan,
     )
 
     @app.get("/satellites", tags=["meta"])
@@ -75,6 +88,7 @@ def serve(host: str = "127.0.0.1", port: int = 8000, reload: bool = False) -> No
     """Launch the uvicorn server. Used as the ``agl_api`` CLI entry point."""
     import uvicorn
 
+    _install_uvloop()
     uvicorn.run(
         "agrigee_lite.api:create_app",
         factory=True,

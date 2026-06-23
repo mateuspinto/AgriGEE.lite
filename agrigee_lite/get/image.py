@@ -23,6 +23,38 @@ from agrigee_lite.misc import create_dict_hash, log_dict_function_call_summary
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite, SingleImageSatellite
 
 
+def _compute_images_cache_dir(
+    satellite: AbstractSatellite,
+    start_date: str,
+    end_date: str,
+    centroid_x: float,
+    centroid_y: float,
+    invalid_images_threshold: float,
+    image_indices: list[int] | None,
+    max_retries_per_chunk: int,
+    crs: str | None,
+) -> pathlib.Path:
+    """Compute the deterministic cache directory for a set of image download params.
+
+    Reproduces the dict that ``log_dict_function_call_summary`` would capture when
+    called from inside ``download_multiple_images_async``, so hashes stay stable.
+    """
+    metadata_dict: dict[str, Any] = {
+        "download_multiple_images_async": {
+            "invalid_images_threshold": str(invalid_images_threshold),
+            "image_indices": str(image_indices),
+            "max_retries_per_chunk": str(max_retries_per_chunk),
+            "crs": str(crs),
+        }
+    }
+    metadata_dict |= satellite.log_dict()
+    metadata_dict["start_date"] = start_date
+    metadata_dict["end_date"] = end_date
+    metadata_dict["centroid_x"] = centroid_x
+    metadata_dict["centroid_y"] = centroid_y
+    return pathlib.Path.home() / ".cache" / "agrigee_lite" / "images" / create_dict_hash(metadata_dict)
+
+
 def _as_date_str(value: pd.Timestamp | str) -> str:
     return str(value)[:10]
 
@@ -271,20 +303,17 @@ async def download_multiple_images_async(
     ee_feature = ee.Feature(ee_geometry, {"s": start_date, "e": end_date, "0": 1})
     ee_expression = satellite.imageCollection(ee_feature)
 
-    metadata_dict: dict[str, Any] = {}
-    metadata_dict |= log_dict_function_call_summary([
-        "geometry",
-        "start_date",
-        "end_date",
-        "satellite",
-        "max_parallel_downloads",
-        "force_redownload",
-    ])
-    metadata_dict |= satellite.log_dict()
-    metadata_dict["start_date"] = start_date
-    metadata_dict["end_date"] = end_date
-    metadata_dict["centroid_x"] = geometry_wgs84.centroid.x
-    metadata_dict["centroid_y"] = geometry_wgs84.centroid.y
+    output_path = _compute_images_cache_dir(
+        satellite=satellite,
+        start_date=start_date,
+        end_date=end_date,
+        centroid_x=geometry_wgs84.centroid.x,
+        centroid_y=geometry_wgs84.centroid.y,
+        invalid_images_threshold=invalid_images_threshold,
+        image_indices=image_indices,
+        max_retries_per_chunk=max_retries_per_chunk,
+        crs=crs,
+    )
 
     collection_size = await asyncio.to_thread(ee_expression.size().getInfo)
     if collection_size == 0:
@@ -298,8 +327,6 @@ async def download_multiple_images_async(
     if not image_names:
         print("No valid image indices provided.")
         return []
-
-    output_path = pathlib.Path.home() / ".cache" / "agrigee_lite" / "images" / f"{create_dict_hash(metadata_dict)}"
     output_path.mkdir(parents=True, exist_ok=True)
 
     if force_redownload:

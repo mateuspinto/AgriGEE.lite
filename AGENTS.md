@@ -51,6 +51,17 @@ pixi run pyright
 pixi run pytest
 ```
 
+## Docker Hub
+
+Image: `mateuspinto/agrigee-lite` — Docker Hub user `mateuspinto` (already logged in on dev machine).
+
+Version bump + push workflow:
+1. Bump `version` in `pyproject.toml` (semver: patch for bugfixes, minor for features, major for breaking changes)
+2. Build: `docker build --platform linux/amd64 -t mateuspinto/agrigee-lite:<version> -t mateuspinto/agrigee-lite:latest .`
+3. Push: `docker push mateuspinto/agrigee-lite:<version> && docker push mateuspinto/agrigee-lite:latest`
+
+If build fails with "parent snapshot does not exist", run `docker builder prune -f` first.
+
 Add or update docs + tests when changing behaviour. Keep PRs small and reversible.
 
 ├── misc.py                  h3_clustering, simplify_gdf, hash utils

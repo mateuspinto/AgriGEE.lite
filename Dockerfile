@@ -1,5 +1,6 @@
 # Build stage: pixi manages all deps (conda-forge + PyPI)
-FROM ghcr.io/prefix-dev/pixi:latest AS build
+# linux/amd64 only — pixi.toml platforms = ["linux-64"]
+FROM --platform=linux/amd64 ghcr.io/prefix-dev/pixi:latest AS build
 WORKDIR /app
 
 COPY pyproject.toml pixi.lock pixi.toml README.md ./
@@ -13,7 +14,7 @@ RUN pixi install --frozen -e api
 COPY agrigee_lite/ ./agrigee_lite/
 
 # Runtime stage: slim image with only the env + source
-FROM debian:bookworm-slim
+FROM --platform=linux/amd64 debian:bookworm-slim
 WORKDIR /app
 
 COPY --from=build /app/.pixi/envs/api /app/.pixi/envs/api
@@ -22,17 +23,10 @@ COPY agrigee_lite/ ./agrigee_lite/
 ENV PATH="/app/.pixi/envs/api/bin:$PATH"
 
 # ---------------------------------------------------------------------------
-# GEE credentials
-# Mount the service account JSON via volume and point GEE_KEY at the path.
-# Example:
+# GEE credentials — pass at runtime, never bake into image:
 #   docker run -v /host/sa.json:/secrets/sa.json:ro \
 #              -e GEE_KEY=/secrets/sa.json ...
-# For multiple service accounts, set GEE_KEY_MULTIPLE_ACCOUNTS to a
-# comma-separated list of mounted JSON paths.
-# ---------------------------------------------------------------------------
-ENV GEE_KEY=""
-ENV GEE_KEY_MULTIPLE_ACCOUNTS=""
-
+#   GEE_KEY_MULTIPLE_ACCOUNTS: comma-separated paths for multiple accounts
 # ---------------------------------------------------------------------------
 # Server
 # ---------------------------------------------------------------------------
@@ -57,7 +51,7 @@ ENV AGRIGEE_EE_HIGH_VOLUME_ENDPOINT="https://earthengine-highvolume.googleapis.c
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${AGL_PORT}/health')"
 
 CMD ["sh", "-c", "agl_api --host ${AGL_HOST} --port ${AGL_PORT}"]

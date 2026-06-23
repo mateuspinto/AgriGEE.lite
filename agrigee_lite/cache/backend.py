@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import pathlib
+import threading
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
@@ -33,11 +34,12 @@ _PG_DB_NAME = "agrigeelite"
 
 _duck_conn: duckdb.DuckDBPyConnection | None = None
 _pg_engine: sa.Engine | None = None
+_duck_write_lock = threading.Lock()
 
 CacheEngine = duckdb.DuckDBPyConnection | sa.Engine
 
-_DUCK_SYSTEM = {"geometries", "sits_jobs"}
-_PG_SYSTEM = {"geometries", "sits_jobs", "spatial_ref_sys", "geometry_columns"}
+_DUCK_SYSTEM = {"geometries", "sits_jobs", "api_jobs"}
+_PG_SYSTEM = {"geometries", "sits_jobs", "api_jobs", "spatial_ref_sys", "geometry_columns"}
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +302,18 @@ def _ensure_schema_duck(conn: duckdb.DuckDBPyConnection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_jobs_geom ON sits_jobs(geometry_id, satellite_short_name, params_hash)"
     )
 
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS api_jobs (
+            id         TEXT PRIMARY KEY,
+            type       TEXT,
+            status     TEXT NOT NULL,
+            error      TEXT,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_api_jobs_status ON api_jobs(status)")
+
 
 def _ensure_sat_table_duck(conn: duckdb.DuckDBPyConnection, table_name: str, band_cols: list[str]) -> None:
     if not band_cols:
@@ -484,70 +498,71 @@ def _store_sits_duck(
     gtype = _geom_type_str(geometry)
     h3_coarse, h3_fine = _compute_h3_for_point(rx, ry)
 
-    conn.begin()
-    try:
-        conn.execute(
-            """
-            INSERT INTO geometries (geom_hash, geometry, repr_point_x, repr_point_y, geom_type, h3_coarse, h3_fine)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (geom_hash) DO NOTHING
-            """,
-            [geom_hash, geometry.wkb, rx, ry, gtype, h3_coarse, h3_fine],
-        )
-        geom_id_row = conn.execute("SELECT id FROM geometries WHERE geom_hash = ?", [geom_hash]).fetchone()
-        assert geom_id_row is not None
-        geom_id: int = int(geom_id_row[0])
+    with _duck_write_lock:
+        conn.begin()
+        try:
+            conn.execute(
+                """
+                INSERT INTO geometries (geom_hash, geometry, repr_point_x, repr_point_y, geom_type, h3_coarse, h3_fine)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (geom_hash) DO NOTHING
+                """,
+                [geom_hash, geometry.wkb, rx, ry, gtype, h3_coarse, h3_fine],
+            )
+            geom_id_row = conn.execute("SELECT id FROM geometries WHERE geom_hash = ?", [geom_hash]).fetchone()
+            assert geom_id_row is not None
+            geom_id: int = int(geom_id_row[0])
 
-        conn.execute(
-            """
-            INSERT INTO sits_jobs
-              (job_hash, geometry_id, satellite_short_name, params_hash, reducers,
-               subsampling_max_pixels, start_date, end_date, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (geometry_id, satellite_short_name, params_hash, start_date, end_date) DO NOTHING
-            """,
-            [
-                job_hash,
-                geom_id,
-                satellite.shortName,
-                params_hash,
-                json.dumps(sorted(reducers)) if reducers else None,
-                subsampling_max_pixels,
-                start_date,
-                end_date,
-                datetime.now(UTC).isoformat(),
-            ],
-        )
-        job_id_row = conn.execute(
-            """SELECT id FROM sits_jobs WHERE geometry_id = ? AND satellite_short_name = ?
-               AND params_hash = ? AND start_date = ? AND end_date = ?""",
-            [geom_id, satellite.shortName, params_hash, start_date, end_date],
-        ).fetchone()
-        assert job_id_row is not None
-        job_id: int = int(job_id_row[0])
+            conn.execute(
+                """
+                INSERT INTO sits_jobs
+                  (job_hash, geometry_id, satellite_short_name, params_hash, reducers,
+                   subsampling_max_pixels, start_date, end_date, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (geometry_id, satellite_short_name, params_hash, start_date, end_date) DO NOTHING
+                """,
+                [
+                    job_hash,
+                    geom_id,
+                    satellite.shortName,
+                    params_hash,
+                    json.dumps(sorted(reducers)) if reducers else None,
+                    subsampling_max_pixels,
+                    start_date,
+                    end_date,
+                    datetime.now(UTC).isoformat(),
+                ],
+            )
+            job_id_row = conn.execute(
+                """SELECT id FROM sits_jobs WHERE geometry_id = ? AND satellite_short_name = ?
+                   AND params_hash = ? AND start_date = ? AND end_date = ?""",
+                [geom_id, satellite.shortName, params_hash, start_date, end_date],
+            ).fetchone()
+            assert job_id_row is not None
+            job_id: int = int(job_id_row[0])
 
-        already = conn.execute(f'SELECT 1 FROM "{table_name}" WHERE job_id = ? LIMIT 1', [job_id]).fetchone()
-        if already:
+            already = conn.execute(f'SELECT 1 FROM "{table_name}" WHERE job_id = ? LIMIT 1', [job_id]).fetchone()
+            if already:
+                conn.commit()
+                return job_id
+
+            present_band_cols = [c for c in band_cols if c in df.columns]
+            ts_col = "timestamp" if "timestamp" in df.columns else None
+            col_names = ", ".join(["job_id", "timestamp", *[f'"{c}"' for c in present_band_cols]])
+            ph = ", ".join(["?"] * (2 + len(present_band_cols)))
+
+            rows: list[list[Any]] = []
+            for raw in df.to_dict("records"):
+                ts_val = str(raw[ts_col]) if ts_col and pd.notna(raw[ts_col]) else None
+                rows.append([job_id, ts_val, *[None if pd.isna(raw[c]) else float(raw[c]) for c in present_band_cols]])
+
+            if rows:
+                conn.executemany(f'INSERT INTO "{table_name}" ({col_names}) VALUES ({ph})', rows)
+
             conn.commit()
-            return job_id
-
-        present_band_cols = [c for c in band_cols if c in df.columns]
-        ts_col = "timestamp" if "timestamp" in df.columns else None
-        col_names = ", ".join(["job_id", "timestamp", *[f'"{c}"' for c in present_band_cols]])
-        ph = ", ".join(["?"] * (2 + len(present_band_cols)))
-
-        rows: list[list[Any]] = []
-        for raw in df.to_dict("records"):
-            ts_val = str(raw[ts_col]) if ts_col and pd.notna(raw[ts_col]) else None
-            rows.append([job_id, ts_val, *[None if pd.isna(raw[c]) else float(raw[c]) for c in present_band_cols]])
-
-        if rows:
-            conn.executemany(f'INSERT INTO "{table_name}" ({col_names}) VALUES ({ph})', rows)
-
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
+        except Exception:
+            conn.rollback()
+            raise
 
     return job_id
 
@@ -575,74 +590,75 @@ def _store_sits_duck_polars(
     gtype = _geom_type_str(geometry)
     h3_coarse, h3_fine = _compute_h3_for_point(rx, ry)
 
-    conn.begin()
-    try:
-        conn.execute(
-            """
-            INSERT INTO geometries (geom_hash, geometry, repr_point_x, repr_point_y, geom_type, h3_coarse, h3_fine)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (geom_hash) DO NOTHING
-            """,
-            [geom_hash, geometry.wkb, rx, ry, gtype, h3_coarse, h3_fine],
-        )
-        geom_id_row = conn.execute("SELECT id FROM geometries WHERE geom_hash = ?", [geom_hash]).fetchone()
-        assert geom_id_row is not None
-        geom_id: int = int(geom_id_row[0])
-
-        conn.execute(
-            """
-            INSERT INTO sits_jobs
-              (job_hash, geometry_id, satellite_short_name, params_hash, reducers,
-               subsampling_max_pixels, start_date, end_date, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (geometry_id, satellite_short_name, params_hash, start_date, end_date) DO NOTHING
-            """,
-            [
-                job_hash,
-                geom_id,
-                satellite.shortName,
-                params_hash,
-                json.dumps(sorted(reducers)) if reducers else None,
-                subsampling_max_pixels,
-                start_date,
-                end_date,
-                datetime.now(UTC).isoformat(),
-            ],
-        )
-        job_id_row = conn.execute(
-            """SELECT id FROM sits_jobs WHERE geometry_id = ? AND satellite_short_name = ?
-               AND params_hash = ? AND start_date = ? AND end_date = ?""",
-            [geom_id, satellite.shortName, params_hash, start_date, end_date],
-        ).fetchone()
-        assert job_id_row is not None
-        job_id: int = int(job_id_row[0])
-
-        already = conn.execute(f'SELECT 1 FROM "{table_name}" WHERE job_id = ? LIMIT 1', [job_id]).fetchone()
-        if already:
-            conn.commit()
-            return job_id
-
-        present_band_cols = [c for c in band_cols if c in df.columns]
-        obs_pl = (
-            df
-            .select(["timestamp", *present_band_cols])
-            .with_columns(pl.lit(job_id).alias("job_id"))
-            .cast({"timestamp": pl.Utf8})
-        )
-        col_order = ["job_id", "timestamp", *present_band_cols]
-        obs_pl = obs_pl.select(col_order)
-        col_sql = ", ".join(f'"{column}"' for column in col_order)
-
-        conn.register("_obs_tmp", obs_pl.to_arrow())
+    with _duck_write_lock:
+        conn.begin()
         try:
-            conn.execute(f'INSERT INTO "{table_name}" ({col_sql}) SELECT {col_sql} FROM _obs_tmp')
-        finally:
-            conn.unregister("_obs_tmp")
+            conn.execute(
+                """
+                INSERT INTO geometries (geom_hash, geometry, repr_point_x, repr_point_y, geom_type, h3_coarse, h3_fine)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (geom_hash) DO NOTHING
+                """,
+                [geom_hash, geometry.wkb, rx, ry, gtype, h3_coarse, h3_fine],
+            )
+            geom_id_row = conn.execute("SELECT id FROM geometries WHERE geom_hash = ?", [geom_hash]).fetchone()
+            assert geom_id_row is not None
+            geom_id: int = int(geom_id_row[0])
 
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
+            conn.execute(
+                """
+                INSERT INTO sits_jobs
+                  (job_hash, geometry_id, satellite_short_name, params_hash, reducers,
+                   subsampling_max_pixels, start_date, end_date, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (geometry_id, satellite_short_name, params_hash, start_date, end_date) DO NOTHING
+                """,
+                [
+                    job_hash,
+                    geom_id,
+                    satellite.shortName,
+                    params_hash,
+                    json.dumps(sorted(reducers)) if reducers else None,
+                    subsampling_max_pixels,
+                    start_date,
+                    end_date,
+                    datetime.now(UTC).isoformat(),
+                ],
+            )
+            job_id_row = conn.execute(
+                """SELECT id FROM sits_jobs WHERE geometry_id = ? AND satellite_short_name = ?
+                   AND params_hash = ? AND start_date = ? AND end_date = ?""",
+                [geom_id, satellite.shortName, params_hash, start_date, end_date],
+            ).fetchone()
+            assert job_id_row is not None
+            job_id: int = int(job_id_row[0])
+
+            already = conn.execute(f'SELECT 1 FROM "{table_name}" WHERE job_id = ? LIMIT 1', [job_id]).fetchone()
+            if already:
+                conn.commit()
+                return job_id
+
+            present_band_cols = [c for c in band_cols if c in df.columns]
+            obs_pl = (
+                df
+                .select(["timestamp", *present_band_cols])
+                .with_columns(pl.lit(job_id).alias("job_id"))
+                .cast({"timestamp": pl.Utf8})
+            )
+            col_order = ["job_id", "timestamp", *present_band_cols]
+            obs_pl = obs_pl.select(col_order)
+            col_sql = ", ".join(f'"{column}"' for column in col_order)
+
+            conn.register("_obs_tmp", obs_pl.to_arrow())
+            try:
+                conn.execute(f'INSERT INTO "{table_name}" ({col_sql}) SELECT {col_sql} FROM _obs_tmp')
+            finally:
+                conn.unregister("_obs_tmp")
+
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     return job_id
 
@@ -724,6 +740,22 @@ def _ensure_sits_jobs_table_pg(conn: sa.Connection) -> None:
             "CREATE INDEX IF NOT EXISTS idx_jobs_geom ON sits_jobs (geometry_id, satellite_short_name, params_hash)"
         )
     )
+
+
+def _ensure_api_jobs_table_pg(conn: sa.Connection) -> None:
+    conn.execute(
+        sa.text("""
+        CREATE TABLE IF NOT EXISTS api_jobs (
+            id         TEXT PRIMARY KEY,
+            type       TEXT,
+            status     TEXT NOT NULL,
+            error      TEXT,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL
+        )
+    """)
+    )
+    conn.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_api_jobs_status ON api_jobs (status)"))
 
 
 def _ensure_satellite_table_pg(conn: sa.Connection, table_name: str, band_columns: list[str]) -> None:
@@ -1131,6 +1163,84 @@ def store_sits_polars(
 
 
 # ---------------------------------------------------------------------------
+# API job persistence
+# ---------------------------------------------------------------------------
+
+
+def ensure_api_jobs_table(engine: CacheEngine) -> None:
+    """Create api_jobs table if it does not exist. Idempotent."""
+    if isinstance(engine, duckdb.DuckDBPyConnection):
+        with _duck_write_lock:
+            engine.execute("""
+                CREATE TABLE IF NOT EXISTS api_jobs (
+                    id         TEXT PRIMARY KEY,
+                    type       TEXT,
+                    status     TEXT NOT NULL,
+                    error      TEXT,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL
+                )
+            """)
+            engine.execute("CREATE INDEX IF NOT EXISTS idx_api_jobs_status ON api_jobs(status)")
+    else:
+        with engine.begin() as conn:
+            _ensure_api_jobs_table_pg(conn)
+
+
+def create_api_job(engine: CacheEngine, job_id: str, job_type: str | None, status: str, now: str) -> None:
+    if isinstance(engine, duckdb.DuckDBPyConnection):
+        with _duck_write_lock:
+            engine.execute(
+                "INSERT INTO api_jobs (id, type, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                [job_id, job_type, status, now, now],
+            )
+    else:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO api_jobs (id, type, status, created_at, updated_at)"
+                    " VALUES (:id, :type, :status, :now, :now2)"
+                ),
+                {"id": job_id, "type": job_type, "status": status, "now": now, "now2": now},
+            )
+
+
+def update_api_job(engine: CacheEngine, job_id: str, status: str, error: str | None, now: str) -> None:
+    if isinstance(engine, duckdb.DuckDBPyConnection):
+        with _duck_write_lock:
+            engine.execute(
+                "UPDATE api_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
+                [status, error, now, job_id],
+            )
+    else:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "UPDATE api_jobs SET status = :status, error = :error, updated_at = :now WHERE id = :id"
+                ),
+                {"status": status, "error": error, "now": now, "id": job_id},
+            )
+
+
+def delete_api_job(engine: CacheEngine, job_id: str) -> None:
+    if isinstance(engine, duckdb.DuckDBPyConnection):
+        with _duck_write_lock:
+            engine.execute("DELETE FROM api_jobs WHERE id = ?", [job_id])
+    else:
+        with engine.begin() as conn:
+            conn.execute(sa.text("DELETE FROM api_jobs WHERE id = :id"), {"id": job_id})
+
+
+def list_api_jobs(engine: CacheEngine) -> list[dict[str, Any]]:
+    if isinstance(engine, duckdb.DuckDBPyConnection):
+        rows = engine.execute("SELECT id, type, status, error FROM api_jobs").fetchall()
+    else:
+        with engine.connect() as conn:
+            rows = conn.execute(sa.text("SELECT id, type, status, error FROM api_jobs")).fetchall()
+    return [{"id": r[0], "type": r[1], "status": r[2], "error": r[3]} for r in rows]
+
+
+# ---------------------------------------------------------------------------
 # Initialisation
 # ---------------------------------------------------------------------------
 
@@ -1241,6 +1351,7 @@ def init_cache(db_path: pathlib.Path = DEFAULT_DB_PATH) -> CacheEngine:
             _ensure_postgis_extension(conn)
             _ensure_geometries_table_pg(conn)
             _ensure_sits_jobs_table_pg(conn)
+            _ensure_api_jobs_table_pg(conn)
             for sat in satellites:
                 _ensure_satellite_table_pg(conn, sat.shortName, _get_band_columns(sat))
         _pg_engine = engine_pg

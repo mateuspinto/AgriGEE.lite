@@ -134,8 +134,8 @@ class SitsRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "geometry": _SAMPLE_GEOMETRY,
-                "start_date": "2017-10-01",
-                "end_date": "2018-10-01",
+                "start_date": "2019-10-01",
+                "end_date": "2020-10-01",
                 "satellite": {"name": "Sentinel2", "params": {}},
                 "reducers": None,
                 "subsampling_max_pixels": 1000,
