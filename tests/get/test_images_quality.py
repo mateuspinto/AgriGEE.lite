@@ -41,6 +41,14 @@ _IMAGES_PARAMS: list[tuple[AbstractSatellite, str | None, str | None]] = [
 _SINGLE_IMAGE_SATELLITES: list[SingleImageSatellite] = [
     agl.sat.ANADEM(),
     agl.sat.CopernicusDEM(),
+    agl.sat.NASADEM(),
+    agl.sat.SRTM(),
+    agl.sat.CGIARSRTM(),
+    agl.sat.ASTERDEM(),
+    agl.sat.ALOSWorld3D(),
+    agl.sat.MERITDEM(),
+    agl.sat.GMTED2010(),
+    agl.sat.GTOPO30(),
     agl.sat.WRBSoilClasses(),
 ]
 
