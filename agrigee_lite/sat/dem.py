@@ -512,7 +512,8 @@ class NASADEM(SingleImageSatellite):
     ):
         if bands is None:
             bands = ["elevation", "slope", "aspect"]
-
+        if not bands:
+            raise ValueError("bands must contain at least one of: 'elevation', 'slope', 'aspect'")
         super().__init__()
 
         self.imageName: str = "NASA/NASADEM_HGT/001"
