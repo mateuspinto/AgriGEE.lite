@@ -151,11 +151,21 @@ class PolarisSoilTexture(SingleImageSatellite):
         border_pixels_to_erode: float = 1,
         min_area_to_keep_border: int = 50_000,
     ):
+        allowed_bands = {"clay", "sand", "silt", "usda_soil_class"}
+
         if bands is None:
             bands = ["clay", "sand", "silt", "usda_soil_class"]
 
-        super().__init__()
+        if not bands:
+            raise ValueError(f"bands must contain at least one of {sorted(allowed_bands)}")
 
+        invalid = [b for b in bands if b not in allowed_bands]
+        if invalid:
+            raise ValueError(
+                f"Unknown band(s) for PolarisSoilTexture: {invalid}. Valid bands are {sorted(allowed_bands)}"
+            )
+
+        super().__init__
         self.imageNames: dict[str, str] = {
             "clay": "projects/sat-io/open-datasets/polaris/clay_mean/clay_0_5",
             "sand": "projects/sat-io/open-datasets/polaris/sand_mean/sand_0_5",
