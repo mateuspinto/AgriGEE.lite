@@ -93,6 +93,7 @@ AgriGEE.lite is organized into three main modules:
 | [Mapbiomas Brazil](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | 37 Land Usage Land Cover Classes | 1985-01-01 | 2024-12-31 | Brazil | 30 | 1 year |  |
 | [ANADEM](https://hge-iph.github.io/anadem/) | Slope, Elevation, Aspect | (single image) | (single image) | South America | 30** | (single image) |  |
 | [SoilGrids classes](https://soilgrids.org/) | WRB Soil Classes (30 categories) | (single image) | (single image) | Worldwide | 250 | (single image) | |
+| POLARIS Soil Texture | Clay, Sand, Silt (0-5 cm), USDA Soil Class (12 categories) | (single image) | (single image) | Continental USA (CONUS) | 30 | (single image) | |
 | Two Satellite Fusion ***** | Intersect common observations from two satellites | (depends on input satellites) | (depends on input satellites) | (depends on input satellites) | (finest of the two satellites) | (depends on input satellites) | |
 
 ### Observations
