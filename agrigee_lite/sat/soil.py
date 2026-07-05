@@ -165,7 +165,7 @@ class PolarisSoilTexture(SingleImageSatellite):
                 f"Unknown band(s) for PolarisSoilTexture: {invalid}. Valid bands are {sorted(allowed_bands)}"
             )
 
-        super().__init__
+        super().__init__()
         self.imageNames: dict[str, str] = {
             "clay": "projects/sat-io/open-datasets/polaris/clay_mean/clay_0_5",
             "sand": "projects/sat-io/open-datasets/polaris/sand_mean/sand_0_5",

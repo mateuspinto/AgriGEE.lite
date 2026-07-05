@@ -250,6 +250,52 @@ async def _fetch_and_download_image(
             return chunk_index, False
 
 
+
+async def _download_single_image_zip_async(
+    satellite: SingleImageSatellite,
+    ee_feature: ee.Feature,
+    ee_geometry: ee.Geometry,
+    output_path: pathlib.Path,
+    force_redownload: bool,
+    max_retries_per_chunk: int,
+) -> list[str]:
+    """Download a static (time-independent) dataset as a single ZIP.
+
+    Static datasets have no time dimension, so the collection-resolution
+    machinery does not apply: resolve one download URL for the satellite's
+    single image and save it as ``<shortName>.zip`` in the cache dir.
+    """
+    image_name = satellite.shortName
+    file_path = output_path / f"{image_name}.zip"
+
+    if file_path.exists():
+        if not force_redownload:
+            return [image_name]
+        file_path.unlink()
+
+    output_path.mkdir(parents=True, exist_ok=True)
+    img = satellite.image(ee_feature).clip(ee_geometry)
+
+    async with aiohttp.ClientSession() as session:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(max_retries_per_chunk),
+            wait=wait_exponential(multiplier=1, min=1, max=30),
+        ):
+            with attempt:
+                url = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        img.getDownloadURL,
+                        # Composited images (e.g. mosaic()) lose their source projection and
+                        # default to 1-degree scale on export — always pass the native scale.
+                        {"name": image_name, "region": ee_geometry, "scale": satellite.pixelSize},
+                    ),
+                    timeout=180,
+                )
+                await _download_url_to_path(session, url, file_path)
+
+    return [image_name]
+
+
 async def download_multiple_images_async(
     geometry: Polygon | MultiPolygon,
     start_date: pd.Timestamp | str,
@@ -301,6 +347,27 @@ async def download_multiple_images_async(
     geometry_wgs84 = transform_geometry(geometry, crs)
     ee_geometry = ee.Geometry(geometry_wgs84.__geo_interface__)
     ee_feature = ee.Feature(ee_geometry, {"s": start_date, "e": end_date, "0": 1})
+    if isinstance(satellite, SingleImageSatellite):
+        output_path = _compute_images_cache_dir(
+            satellite=satellite,
+            start_date=start_date,
+            end_date=end_date,
+            centroid_x=geometry_wgs84.centroid.x,
+            centroid_y=geometry_wgs84.centroid.y,
+            invalid_images_threshold=invalid_images_threshold,
+            image_indices=image_indices,
+            max_retries_per_chunk=max_retries_per_chunk,
+            crs=crs,
+        )
+        return await _download_single_image_zip_async(
+            satellite=satellite,
+            ee_feature=ee_feature,
+            ee_geometry=ee_geometry,
+            output_path=output_path,
+            force_redownload=force_redownload,
+            max_retries_per_chunk=max_retries_per_chunk,
+        )
+
     ee_expression = satellite.imageCollection(ee_feature)
 
     output_path = _compute_images_cache_dir(
