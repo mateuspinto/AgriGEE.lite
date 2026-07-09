@@ -286,7 +286,7 @@ async def _download_single_image_zip_async(
                     asyncio.to_thread(
                         img.getDownloadURL,
                         # Composited images (e.g. mosaic()) lose their source projection and
-                        # default to 1-degree scale on export � always pass the native scale.
+                        # default to 1-degree scale on export always pass the native scale.
                         {"name": image_name, "region": ee_geometry, "scale": satellite.pixelSize},
                     ),
                     timeout=180,
@@ -326,7 +326,7 @@ async def download_multiple_images_async(
     satellite : AbstractSatellite
         Satellite configuration.
     invalid_images_threshold : float, default 0.5
-        Quality filter — see :func:`download_multiple_images`.
+        Quality filter â see :func:`download_multiple_images`.
     max_parallel_downloads : int, default 40
         Maximum simultaneous downloads.
     force_redownload : bool, default False
