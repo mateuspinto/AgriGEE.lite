@@ -41,6 +41,15 @@ publish: ## Publish a release to PyPI.
 .PHONY: build-and-publish
 build-and-publish: build publish ## Build and publish.
 
+.PHONY: publish-docker
+publish-docker: ## Build and push the Docker image (tags: <version> + latest)
+	$(eval VERSION := $(shell pixi run python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"))
+	@echo "🚀 Building mateuspinto/agrigee-lite:$(VERSION)"
+	docker build --platform linux/amd64 -t mateuspinto/agrigee-lite:$(VERSION) -t mateuspinto/agrigee-lite:latest .
+	@echo "🚀 Pushing mateuspinto/agrigee-lite:$(VERSION) and :latest"
+	docker push mateuspinto/agrigee-lite:$(VERSION)
+	docker push mateuspinto/agrigee-lite:latest
+
 .PHONY: docs-test
 docs-test: ## Test if documentation can be built without warnings or errors
 	@pixi run mkdocs build -s
