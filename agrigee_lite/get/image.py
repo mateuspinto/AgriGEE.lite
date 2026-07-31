@@ -41,16 +41,17 @@ def _compute_images_cache_dir(
     Reproduces the dict that ``log_dict_function_call_summary`` would capture when
     called from inside ``download_multiple_images_async``, so hashes stay stable.
     """
-    metadata_dict: dict[str, Any] = {
-        "download_multiple_images_async": {
-            "invalid_images_threshold": str(invalid_images_threshold),
-            "image_indices": str(image_indices),
-            "max_retries_per_chunk": str(max_retries_per_chunk),
-            "crs": str(crs),
-            "scale": str(scale),
-            "dimensions": str(dimensions),
-        }
+    inner: dict[str, str] = {
+        "invalid_images_threshold": str(invalid_images_threshold),
+        "image_indices": str(image_indices),
+        "max_retries_per_chunk": str(max_retries_per_chunk),
+        "crs": str(crs),
     }
+    if scale is not None:
+        inner["scale"] = str(float(scale))
+    if dimensions is not None:
+        inner["dimensions"] = str(dimensions)
+    metadata_dict: dict[str, Any] = {"download_multiple_images_async": inner}
     metadata_dict |= satellite.log_dict()
     metadata_dict["start_date"] = start_date
     metadata_dict["end_date"] = end_date
