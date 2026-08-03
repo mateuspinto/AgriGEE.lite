@@ -33,20 +33,25 @@ def _compute_images_cache_dir(
     image_indices: list[int] | None,
     max_retries_per_chunk: int,
     crs: str | None,
+    scale: float | None = None,
+    dimensions: int | str | None = None,
 ) -> pathlib.Path:
     """Compute the deterministic cache directory for a set of image download params.
 
     Reproduces the dict that ``log_dict_function_call_summary`` would capture when
     called from inside ``download_multiple_images_async``, so hashes stay stable.
     """
-    metadata_dict: dict[str, Any] = {
-        "download_multiple_images_async": {
-            "invalid_images_threshold": str(invalid_images_threshold),
-            "image_indices": str(image_indices),
-            "max_retries_per_chunk": str(max_retries_per_chunk),
-            "crs": str(crs),
-        }
+    inner: dict[str, str] = {
+        "invalid_images_threshold": str(invalid_images_threshold),
+        "image_indices": str(image_indices),
+        "max_retries_per_chunk": str(max_retries_per_chunk),
+        "crs": str(crs),
     }
+    if scale is not None:
+        inner["scale"] = str(float(scale))
+    if dimensions is not None:
+        inner["dimensions"] = str(dimensions)
+    metadata_dict: dict[str, Any] = {"download_multiple_images_async": inner}
     metadata_dict |= satellite.log_dict()
     metadata_dict["start_date"] = start_date
     metadata_dict["end_date"] = end_date
@@ -70,6 +75,8 @@ def download_multiple_images(
     image_indices: list[int] | None = None,
     max_retries_per_chunk: int = ASYNC_MAX_RETRIES_PER_CHUNK,
     crs: str | None = None,
+    scale: float | None = None,
+    dimensions: int | str | None = None,
 ) -> list[str]:
     """Download raw satellite images (as GeoTIFF ZIPs) for a geometry and date range.
 
@@ -103,6 +110,15 @@ def download_multiple_images(
         without downloading everything.
     max_retries_per_chunk : int, default 5
         Maximum retry attempts per image download.
+    scale : float or None, optional
+        Resolution in meters/pixel passed to ``getDownloadURL``.  When set,
+        Earth Engine resamples the output to this scale before download.
+        Mutually exclusive with ``dimensions``; if both are provided,
+        ``scale`` takes precedence.  Defaults to ``None`` (native scale).
+    dimensions : int or str or None, optional
+        Target output size passed to ``getDownloadURL``, e.g. ``512`` or
+        ``"512x512"``.  Ignored when ``scale`` is also provided.  Defaults
+        to ``None`` (native scale).
 
     Returns
     -------
@@ -129,6 +145,8 @@ def download_multiple_images(
                 image_indices=image_indices,
                 max_retries_per_chunk=max_retries_per_chunk,
                 crs=crs,
+                scale=scale,
+                dimensions=dimensions,
             )
         )
 
@@ -221,6 +239,8 @@ async def _fetch_and_download_image(
     output_dir: pathlib.Path,
     semaphore: asyncio.Semaphore,
     max_retries_per_chunk: int,
+    scale: float | None = None,
+    dimensions: int | str | None = None,
 ) -> tuple[int, bool]:
     """Resolve a single GEE download URL and save its ZIP payload to disk."""
     async with semaphore:
@@ -233,10 +253,13 @@ async def _fetch_and_download_image(
                     img = ee.Image(
                         ee_expression.filter(ee.Filter.eq("system:index", image_indexes[chunk_index])).first()
                     )
+                    params: dict[str, Any] = {"name": image_names[chunk_index], "region": ee_geometry}
+                    if scale is not None:
+                        params["scale"] = scale
+                    elif dimensions is not None:
+                        params["dimensions"] = dimensions
                     url = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            img.getDownloadURL, {"name": image_names[chunk_index], "region": ee_geometry}
-                        ),
+                        asyncio.to_thread(img.getDownloadURL, params),
                         timeout=180,
                     )
                     file_path = output_dir / f"{image_names[chunk_index]}.zip"
@@ -307,6 +330,8 @@ async def download_multiple_images_async(
     image_indices: list[int] | None = None,
     max_retries_per_chunk: int = ASYNC_MAX_RETRIES_PER_CHUNK,
     crs: str | None = None,
+    scale: float | None = None,
+    dimensions: int | str | None = None,
 ) -> list[str]:
     """Async version of :func:`download_multiple_images`.
 
@@ -335,6 +360,15 @@ async def download_multiple_images_async(
         Restrict to specific collection positions.
     max_retries_per_chunk : int, default 5
         Maximum retry attempts per image download.
+    scale : float or None, optional
+        Resolution in meters/pixel passed to ``getDownloadURL``.  When set,
+        Earth Engine resamples the output to this scale before download.
+        Mutually exclusive with ``dimensions``; if both are provided,
+        ``scale`` takes precedence.  Defaults to ``None`` (native scale).
+    dimensions : int or str or None, optional
+        Target output size passed to ``getDownloadURL``, e.g. ``512`` or
+        ``"512x512"``.  Ignored when ``scale`` is also provided.  Defaults
+        to ``None`` (native scale).
 
     Returns
     -------
@@ -358,6 +392,8 @@ async def download_multiple_images_async(
             image_indices=image_indices,
             max_retries_per_chunk=max_retries_per_chunk,
             crs=crs,
+            scale=scale,
+            dimensions=dimensions,
         )
         return await _download_single_image_zip_async(
             satellite=satellite,
@@ -380,6 +416,8 @@ async def download_multiple_images_async(
         image_indices=image_indices,
         max_retries_per_chunk=max_retries_per_chunk,
         crs=crs,
+        scale=scale,
+        dimensions=dimensions,
     )
 
     collection_size = await asyncio.to_thread(ee_expression.size().getInfo)
@@ -424,6 +462,8 @@ async def download_multiple_images_async(
                     output_dir=output_path,
                     semaphore=semaphore,
                     max_retries_per_chunk=max_retries_per_chunk,
+                    scale=scale,
+                    dimensions=dimensions,
                 )
             )
             for i in pending_chunks

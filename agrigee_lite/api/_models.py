@@ -105,6 +105,8 @@ class ImagesRequest(BaseModel):
                 "max_parallel_downloads": ASYNC_MAX_PARALLEL_DOWNLOADS,
                 "force_redownload": False,
                 "image_indices": [0],
+                "scale": None,
+                "dimensions": None,
             }
         }
     )
@@ -117,6 +119,22 @@ class ImagesRequest(BaseModel):
     max_parallel_downloads: int = Field(ASYNC_MAX_PARALLEL_DOWNLOADS, ge=1)
     force_redownload: bool = False
     image_indices: list[int] | None = None
+    scale: float | None = Field(
+        None,
+        gt=0,
+        description=(
+            "Resolution in meters/pixel passed to getDownloadURL. "
+            "When set, Earth Engine resamples to this scale before download. "
+            "Mutually exclusive with dimensions; scale takes precedence when both are provided."
+        ),
+    )
+    dimensions: int | str | None = Field(
+        None,
+        description=(
+            "Target output size passed to getDownloadURL, e.g. 512 or '512x512'. "
+            "Ignored when scale is also provided."
+        ),
+    )
 
 
 class ImagesResult(BaseModel):

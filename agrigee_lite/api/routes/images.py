@@ -26,6 +26,8 @@ async def _run_images_job(job_id: str, request: ImagesRequest) -> None:
             max_parallel_downloads=request.max_parallel_downloads,
             force_redownload=request.force_redownload,
             image_indices=request.image_indices,
+            scale=request.scale,
+            dimensions=request.dimensions,
         )
         from agrigee_lite.config import ASYNC_MAX_RETRIES_PER_CHUNK
 
@@ -39,6 +41,8 @@ async def _run_images_job(job_id: str, request: ImagesRequest) -> None:
             image_indices=request.image_indices,
             max_retries_per_chunk=ASYNC_MAX_RETRIES_PER_CHUNK,
             crs=None,
+            scale=request.scale,
+            dimensions=request.dimensions,
         ))
         job = job_store.get(job_id)
         if job is not None:
@@ -63,6 +67,8 @@ def _images_job_hash(request: ImagesRequest) -> str:
         image_indices=request.image_indices,
         max_retries_per_chunk=ASYNC_MAX_RETRIES_PER_CHUNK,
         crs=None,
+        scale=request.scale,
+        dimensions=request.dimensions,
     ).name
 
 
