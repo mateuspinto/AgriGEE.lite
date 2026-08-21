@@ -73,6 +73,7 @@ The core package currently keeps `geopandas` as a required dependency for compat
 | `visualization` | `matplotlib`, `plotly` | `agl.vis` plotting functions |
 | `tasks` | `smart_open[gcs]` | Cloud task recovery via GCS |
 | `api` | `fastapi[standard]`, `uvicorn[standard]` | REST API server (`agl_api`) |
+| `mcp` | `fastapi[standard]`, `uvicorn[standard]`, `fastmcp` | MCP server for LLM agents (`agl_mcp`) |
 | `postgis` | `psycopg2-binary` | PostGIS database backend for the SITS cache |
 
 Install any combination of extras:
@@ -150,6 +151,36 @@ The database `agrigeelite` is created automatically if it does not exist.
 | `GET` | `/jobs/{job_id}` | Get status and result of a job |
 | `DELETE` | `/jobs/{job_id}` | Delete a completed or failed job |
 | `GET` | `/jobs/{job_id}/download` | Download result as Parquet (SITS) or ZIP (images) |
+
+## MCP server
+
+AgriGEE.lite also ships an optional **MCP** ([Model Context Protocol](https://modelcontextprotocol.io)) server, so an LLM agent (e.g. Claude Code) can call every REST endpoint above directly as a tool, instead of shelling out to curl. It's built with [FastMCP](https://gofastmcp.com)'s FastAPI-to-MCP converter, which reads the same app's OpenAPI spec and calls it in-process (no separate `agl_api` process needed).
+
+```bash
+agl_mcp                                # stdio transport — for `claude mcp add` / Claude Desktop
+agl_mcp --transport http --port 8001   # or serve it over HTTP
+```
+
+Register it with Claude Code:
+
+```bash
+claude mcp add agrigee-lite -- agl_mcp
+```
+
+Two endpoints get special handling instead of a literal 1:1 conversion:
+
+- `GET /jobs/{job_id}/download` (binary ZIP/Parquet) is exposed as an MCP **resource template**, not a tool, so the raw bytes survive instead of being mangled as text.
+- `POST /sits/multiple/file` (multipart upload) is replaced by a `submit_sits_job_from_file` tool that reads the Parquet straight off the local disk the agent is already running on, since MCP tool arguments are JSON and can't carry a file upload.
+
+### Sidecar mode (running next to `agl_api`)
+
+The Docker image runs `agl_api` and `agl_mcp` together, but `agl_mcp` runs in **sidecar mode** there (`--api-base-url`), proxying every call over real HTTP to `agl_api` instead of owning Earth Engine/the cache/the job store itself:
+
+```bash
+agl_mcp --transport http --port 8001 --api-base-url http://127.0.0.1:8000   # or $AGL_API_BASE_URL
+```
+
+This isn't just an optimization — the DuckDB cache file only tolerates one process holding a connection at a time, and job state lives in whichever process's in-memory job store created it. Two independent `init_cache()` calls in the same container deadlock on that file lock, and even without the lock, a job submitted through a standalone MCP server's own state would be invisible to `agl_api`'s `/jobs` endpoint. Omit `--api-base-url` (the default) for the local `claude mcp add` use case, where `agl_mcp` is the only process touching the cache.
 
 ## High-Performance Async Downloads
 
@@ -365,6 +396,7 @@ If you're an artist interested in creating a new mascot design, we'd love to mak
 - [x] **Cloud Recovery**: smart_open[gcs] integration for automatic data recovery
 - [x] **Advanced Processing**: Configurable cloud masking, Landsat pan-sharpening
 - [x] **REST API**: FastAPI server with async job system, Swagger UI, and downloadable results
+- [x] **MCP server**: FastMCP-based server exposing the REST API as tools for LLM agents
 - [x] **SITS Cache**: DuckDB (default) and PostGIS backends for caching downloaded time series
 
 ### 🚧 In Development

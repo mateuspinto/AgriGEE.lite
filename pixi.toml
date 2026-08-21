@@ -69,6 +69,9 @@ smart-open = { version = ">=7.1.0", extras = ["gcs"] }
 fastapi = { version = ">=0.115.0", extras = ["standard"] }
 uvicorn = { version = ">=0.34.0", extras = ["standard"] }
 
+[feature.mcp.pypi-dependencies]
+fastmcp = ">=3.0.0"
+
 [feature.postgis.pypi-dependencies]
 psycopg2-binary = ">=2.9.0"
 
@@ -77,4 +80,5 @@ default = { features = ["dev"], solve-group = "default" }
 visualization = { features = ["visualization"], solve-group = "default" }
 tasks-extra = { features = ["tasks-extra"], solve-group = "tasks-extra" }
 api = { features = ["api"], solve-group = "default" }
-all-features = { features = ["visualization", "api", "postgis", "dev"], solve-group = "default" }
+mcp = { features = ["api", "mcp"], solve-group = "default" }
+all-features = { features = ["visualization", "api", "mcp", "postgis", "dev"], solve-group = "default" }

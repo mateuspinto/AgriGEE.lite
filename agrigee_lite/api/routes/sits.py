@@ -42,7 +42,7 @@ def _sits_to_columnar(df: pl.DataFrame) -> dict[str, list]:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/single", response_class=JSONResponse)
+@router.post("/single", response_class=JSONResponse, operation_id="get_single_sits")
 async def get_single_sits(request: SitsRequest) -> dict[str, list]:
     """
     Download a satellite time series for a single geometry.
@@ -159,7 +159,7 @@ def _sits_job_hash(request: MultipleSitsRequest) -> str:
     return hashlib.sha1(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()  # noqa: S324
 
 
-@router.post("/multiple", response_class=JSONResponse, status_code=202)
+@router.post("/multiple", response_class=JSONResponse, status_code=202, operation_id="submit_multiple_sits_job")
 async def submit_multiple_sits_job(request: MultipleSitsRequest) -> JobResponse:
     """
     Submit a multi-geometry SITS download job.
@@ -208,7 +208,7 @@ def _sits_file_job_hash(
     return hashlib.sha1(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()  # noqa: S324
 
 
-@router.post("/multiple/file", response_class=JSONResponse, status_code=202)
+@router.post("/multiple/file", response_class=JSONResponse, status_code=202, operation_id="submit_multiple_sits_job_file")
 async def submit_multiple_sits_job_file(
     file: UploadFile = File(..., description="Parquet file with geometry, start_date, and end_date columns"),
     satellite: str = Form('{"name": "Sentinel2", "params": {}}', description='JSON SatelliteSpec, e.g. {"name": "Landsat8", "params": {}}'),

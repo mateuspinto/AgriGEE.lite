@@ -18,7 +18,7 @@ def _safe_result(job_type: JobType | None, result: object) -> object:
     return result
 
 
-@router.get("", response_model=list[JobResponse])
+@router.get("", response_model=list[JobResponse], operation_id="list_jobs")
 async def list_jobs() -> list[JobResponse]:
     """List all submitted jobs and their current status."""
     return [
@@ -27,7 +27,7 @@ async def list_jobs() -> list[JobResponse]:
     ]
 
 
-@router.get("/{job_id}", response_model=JobResponse)
+@router.get("/{job_id}", response_model=JobResponse, operation_id="get_job")
 async def get_job(job_id: str) -> JobResponse:
     """Get status and result (when complete) for a single job.
 
@@ -40,7 +40,7 @@ async def get_job(job_id: str) -> JobResponse:
     return JobResponse(id=job.id, type=job.type, status=job.status, result=_safe_result(job.type, job.result), error=job.error)
 
 
-@router.delete("/{job_id}", status_code=204)
+@router.delete("/{job_id}", status_code=204, operation_id="delete_job")
 async def delete_job(job_id: str) -> None:
     """Remove a completed or failed job from the store."""
     job = job_store.get(job_id)
@@ -51,7 +51,7 @@ async def delete_job(job_id: str) -> None:
     job_store.delete(job_id)
 
 
-@router.get("/{job_id}/download")
+@router.get("/{job_id}/download", operation_id="download_job_result")
 async def download_job_result(job_id: str) -> Response:
     """
     Download the result of a completed job.

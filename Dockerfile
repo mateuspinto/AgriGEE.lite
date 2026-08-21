@@ -8,7 +8,7 @@ COPY pyproject.toml pixi.lock pixi.toml README.md ./
 # Stub agrigee_lite package so heavy pixi install layer caches even when source changes.
 # pip editable install only needs the directory to exist at install time.
 RUN mkdir -p agrigee_lite && touch agrigee_lite/__init__.py
-RUN pixi install --frozen -e api
+RUN pixi install --frozen -e mcp
 
 # Overwrite stub with real source (entry points already registered by pixi install above)
 COPY agrigee_lite/ ./agrigee_lite/
@@ -17,10 +17,10 @@ COPY agrigee_lite/ ./agrigee_lite/
 FROM --platform=linux/amd64 debian:bookworm-slim
 WORKDIR /app
 
-COPY --from=build /app/.pixi/envs/api /app/.pixi/envs/api
+COPY --from=build /app/.pixi/envs/mcp /app/.pixi/envs/mcp
 COPY agrigee_lite/ ./agrigee_lite/
 
-ENV PATH="/app/.pixi/envs/api/bin:$PATH"
+ENV PATH="/app/.pixi/envs/mcp/bin:$PATH"
 
 # ---------------------------------------------------------------------------
 # GEE credentials — pass at runtime, never bake into image:
@@ -32,6 +32,7 @@ ENV PATH="/app/.pixi/envs/api/bin:$PATH"
 # ---------------------------------------------------------------------------
 ENV AGL_HOST="0.0.0.0"
 ENV AGL_PORT="8000"
+ENV AGL_MCP_PORT="8001"
 
 # ---------------------------------------------------------------------------
 # Performance tuning — all optional, defaults match config.py
@@ -49,9 +50,15 @@ ENV AGRIGEE_AIOHTTP_TIMEOUT_SECONDS="600"
 ENV AGRIGEE_USE_UVLOOP="true"
 ENV AGRIGEE_EE_HIGH_VOLUME_ENDPOINT="https://earthengine-highvolume.googleapis.com"
 
-EXPOSE 8000
+EXPOSE 8000 8001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${AGL_PORT}/health')"
 
-CMD ["sh", "-c", "agl_api --host ${AGL_HOST} --port ${AGL_PORT}"]
+# Runs the REST API and the MCP server side by side. The MCP server runs in
+# sidecar mode (--api-base-url), proxying to the API over HTTP instead of
+# opening its own Earth Engine/cache/job-store state — the DuckDB cache file
+# only tolerates one process at a time, and job state must live in a single
+# place for `get_job`/`download_job_result` to see what other tools created.
+# `wait -n` exits as soon as either process dies so the container restarts cleanly.
+CMD ["bash", "-c", "agl_api --host ${AGL_HOST} --port ${AGL_PORT} & agl_mcp --transport http --host ${AGL_HOST} --port ${AGL_MCP_PORT} --api-base-url http://127.0.0.1:${AGL_PORT} & wait -n"]

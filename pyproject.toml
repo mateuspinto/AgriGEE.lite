@@ -1,6 +1,6 @@
 [project]
 name = "agrigee_lite"
-version = "3.2.1"
+version = "3.3.0"
 description = "Because using satellite data should not be rocket science."
 authors = [{ name = "Mateus Pinto da Silva", email = "mateus.p.silva@ufv.br" }]
 readme = "README.md"
@@ -37,6 +37,7 @@ classifiers = [
 visualization = ["matplotlib>=3.10.1", "plotly>=6.2.0"]
 tasks = ["smart_open[gcs]>=7.1.0"]
 api = ["fastapi[standard]>=0.115.0", "uvicorn[standard]>=0.34.0"]
+mcp = ["fastapi[standard]>=0.115.0", "uvicorn[standard]>=0.34.0", "fastmcp>=3.0.0"]
 postgis = ["psycopg2-binary>=2.9.0"]
 all = [
     "matplotlib>=3.10.1",
@@ -44,11 +45,13 @@ all = [
     "smart_open[gcs]>=7.1.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
+    "fastmcp>=3.0.0",
     "psycopg2-binary>=2.9.0",
 ]
 
 [project.scripts]
 agl_api = "agrigee_lite.api:main"
+agl_mcp = "agrigee_lite.mcp:main"
 test_service_account = "agrigee_lite.check_service_account:main"
 
 [project.urls]
@@ -149,7 +152,7 @@ typeCheckingMode = "standard"
 
 # Paths
 include = ["agrigee_lite"]
-exclude = ["**/__pycache__", "**/*.pyc", ".pixi", "dist", "build", "agrigee_lite/api"]
+exclude = ["**/__pycache__", "**/*.pyc", ".pixi", "dist", "build", "agrigee_lite/api", "agrigee_lite/mcp.py"]
 
 # Strictness overrides — tightened from "standard" defaults
 reportMissingImports = true

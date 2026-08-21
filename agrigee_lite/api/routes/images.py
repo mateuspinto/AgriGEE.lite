@@ -72,7 +72,7 @@ def _images_job_hash(request: ImagesRequest) -> str:
     ).name
 
 
-@router.post("", response_class=JSONResponse, status_code=202)
+@router.post("", response_class=JSONResponse, status_code=202, operation_id="submit_images_job")
 async def submit_images_job(request: ImagesRequest) -> JobResponse:
     """
     Submit an image download job.

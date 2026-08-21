@@ -73,12 +73,12 @@ def create_app() -> FastAPI:
         lifespan=_lifespan,
     )
 
-    @app.get("/satellites", tags=["meta"])
+    @app.get("/satellites", tags=["meta"], operation_id="list_satellites")
     async def list_satellites() -> list[str]:
         """List all available satellite names accepted by the download endpoints."""
         return sorted(REGISTRY)
 
-    @app.get("/health", tags=["meta"])
+    @app.get("/health", tags=["meta"], operation_id="health_check")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
