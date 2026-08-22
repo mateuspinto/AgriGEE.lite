@@ -1936,8 +1936,8 @@ packages:
   timestamp: 1784221492234
 - pypi: ./
   name: agrigee-lite
-  version: 3.3.0
-  sha256: a859e4f898be1524d33659efe26b330f38e3367014044b9f80ecfa952fbdd922
+  version: 3.3.1
+  sha256: 0e7b9733df176a52fe99862d849b891bfd325ad15893e2a3e56bb77c19aeba2d
   requires_dist:
   - earthengine-api>=1.5.7
   - ee-s1-ard>=1.0.5

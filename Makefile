@@ -36,7 +36,7 @@ clean-build: ## Clean build artifacts
 .PHONY: publish
 publish: ## Publish a release to PyPI.
 	@echo "🚀 Publishing."
-	@pixi run twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
+	@pixi run twine upload dist/*
 
 .PHONY: build-and-publish
 build-and-publish: build publish ## Build and publish.
