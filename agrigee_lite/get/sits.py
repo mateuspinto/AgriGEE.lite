@@ -322,6 +322,7 @@ def sanitize_and_prepare_input_gdf(
                 (pl.col(start_date_column_name) >= pl.lit(sat_start))
                 & (pl.col(end_date_column_name) <= pl.lit(sat_end))
             ).alias("_mask_total_intersection"),
+            (pl.col(start_date_column_name) == pl.col(end_date_column_name)).alias("_mask_zero_width"),
         ),
         normalized,
     )
@@ -329,6 +330,7 @@ def sanitize_and_prepare_input_gdf(
     count_none = int(prepared.get_column("_mask_no_intersection").sum())
     count_total = int(prepared.get_column("_mask_total_intersection").sum())
     count_partial = prepared.height - count_none - count_total
+    count_zero_width = int(prepared.get_column("_mask_zero_width").sum())
 
     pct_none = 100 * count_none / prepared.height
     if pct_none > 0:
@@ -338,6 +340,15 @@ def sanitize_and_prepare_input_gdf(
     if pct_partial > 0:
         logger.debug("%.2f%% of the data partially intersect the satellite period.", pct_partial)
 
+    if count_zero_width > 0:
+        pct_zero_width = 100 * count_zero_width / prepared.height
+        logger.warning(
+            "%d row(s) (%.2f%%) have start_date == end_date and were dropped: Earth Engine's date "
+            "filter treats the end date as exclusive, so a zero-width range is not supported.",
+            count_zero_width,
+            pct_zero_width,
+        )
+
     if count_none == prepared.height:
         sat_start = satellite.startDate
         sat_end = satellite.endDate
@@ -346,9 +357,10 @@ def sanitize_and_prepare_input_gdf(
             f"({sat_start} to {sat_end})."
         )
 
+    drop_mask = pl.col("_mask_no_intersection") | pl.col("_mask_zero_width")
     filtered = _wrap_normalized_geo_frame(
-        _filter_normalized_geo_frame(prepared, ~pl.col("_mask_no_intersection")).drop(
-            "_mask_no_intersection", "_mask_total_intersection"
+        _filter_normalized_geo_frame(prepared, ~drop_mask).drop(
+            "_mask_no_intersection", "_mask_total_intersection", "_mask_zero_width"
         ),
         prepared,
     )
@@ -422,6 +434,15 @@ def download_single_sits(
         if not gaps:
             logger.debug("Cache hit: %s %s→%s", satellite.shortName, start_date, end_date)
             return cached_df
+
+    for zero_width_start, zero_width_end in gaps:
+        if zero_width_start == zero_width_end:
+            raise ValueError(  # noqa: TRY003
+                f"Cannot query {satellite.shortName} for {zero_width_start}: the date window to fetch "
+                "has zero width (start date equals end date). Earth Engine's date filter treats the end "
+                "date as exclusive, so a single-day window is not supported; request a range spanning "
+                "at least two days."
+            )
 
     gap_dfs: list[pl.DataFrame] = []
     for gap_start, gap_end in gaps:
