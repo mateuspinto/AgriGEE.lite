@@ -1,3 +1,4 @@
+from agrigee_lite.sat.chirps import ChirpsAnnualRainfall
 from agrigee_lite.sat.dem import (
     AHN2Interpolated,
     AHN2NonInterpolated,
@@ -36,7 +37,7 @@ from agrigee_lite.sat.dem import (
 from agrigee_lite.sat.embeddings import SatelliteEmbedding
 from agrigee_lite.sat.hls import HLSLandsat, HLSSentinel2
 from agrigee_lite.sat.landsat import Landsat5, Landsat7, Landsat8, Landsat9
-from agrigee_lite.sat.mapbiomas import MapBiomas
+from agrigee_lite.sat.mapbiomas import MapBiomas, MapBiomasPastureVigor
 from agrigee_lite.sat.modis import Modis8Days, ModisDaily
 from agrigee_lite.sat.naip import NAIP
 from agrigee_lite.sat.palsar import PALSAR2ScanSAR
@@ -61,6 +62,7 @@ __all__ = [
     "AustraliaDEMS",
     "CGIARSRTM",
     "CanadaCDEM",
+    "ChirpsAnnualRainfall",
     "CopernicusDEM",
     "CryoSat2Antarctica",
     "ETOPO1",
@@ -78,6 +80,7 @@ __all__ = [
     "Landsat9",
     "MERITDEM",
     "MapBiomas",
+    "MapBiomasPastureVigor",
     "Modis8Days",
     "ModisDaily",
     "NAIP",

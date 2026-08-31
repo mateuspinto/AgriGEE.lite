@@ -273,6 +273,8 @@ AgriGEE.lite is organized into three main modules:
 | JAXOS PalSAR 1/2 | HH, HV - L Band | 2014-08-04 | (still operational) | Worldwide | 25** | 15 days | GRD |
 | [Satellite Embeddings V1](https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_SATELLITE_EMBEDDING_V1_ANNUAL?hl=pt-br#bands) | 64-dimensional embedding | 2017-01-01 | 2024-01-01 | Worldwide | 10 | 1 year |  |
 | [Mapbiomas Brazil](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | 37 Land Usage Land Cover Classes | 1985-01-01 | 2024-12-31 | Brazil | 30 | 1 year |  |
+| [Mapbiomas Brazil Pasture Vigor](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | Low, Medium, High pasture vigor fractions | 2000-01-01 | 2024-12-31 | Brazil (mapped pasture only) | 30 | 1 year |  |
+| [CHIRPS v2.0](https://www.chc.ucsb.edu/data/chirps) | Annual accumulated rainfall (mm) | 1981-01-01 | (still operational) | 50S-50N | 5566 | 1 year |  |
 | [ANADEM](https://hge-iph.github.io/anadem/) | Slope, Elevation, Aspect | (single image) | (single image) | South America | 30** | (single image) |  |
 | [Copernicus DEM GLO30](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_DEM_GLO30) | Elevation, Slope, Aspect | (single image) | (single image) | Worldwide | 30 | (single image) |  |
 | [SoilGrids classes](https://soilgrids.org/) | WRB Soil Classes (30 categories) | (single image) | (single image) | Worldwide | 250 | (single image) | |
@@ -396,7 +398,8 @@ If you're an artist interested in creating a new mascot design, we'd love to mak
 ### ✅ Completed Features
 - [x] **Optical Satellites**: Sentinel-2, Landsat 5/7/8/9 support
 - [x] **Radar Sensors**: Sentinel-1 GRD, ALOS-2 PALSAR-2
-- [x] **Derived Products**: MapBiomas Brazil, MODIS Terra/Aqua
+- [x] **Derived Products**: MapBiomas Brazil (land cover, pasture vigor), MODIS Terra/Aqua
+- [x] **Climate**: CHIRPS v2.0 annual rainfall
 - [x] **Time Series**: Satellite Image Time Series (SITS) with aggregations
 - [x] **Downloads**: Online and task-based download methods with async aiohttp integration
 - [x] **Visualizations**: matplotlib-based plotting for images and time series

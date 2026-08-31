@@ -7,4 +7,4 @@ server's — see also the embedded satellite date table in _satellite_dates.py,
 which is only valid when client and server versions agree.
 """
 
-__version__ = "3.4.3"
+__version__ = "3.5.0"
