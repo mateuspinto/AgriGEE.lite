@@ -174,3 +174,154 @@ class MapBiomas(DataSourceSatellite):
 
     def __repr__(self) -> str:
         return self.shortName
+
+
+class MapBiomasPastureVigor(DataSourceSatellite):
+    """MapBiomas Brazil Collection 10 pasture vigor — annual pasture condition from 2000 to 2024, 30 m resolution.
+
+    The MapBiomas Pasture module classifies every pasture pixel by its
+    vegetative vigour trend into three condition classes: low, medium and
+    high vigour.  Low vigour marks pastures with reduced forage production
+    and evidence of severe (potentially biological) degradation.
+
+    For each year in the requested date range, ``compute()`` returns one row
+    with the fraction of pasture pixels in each class:
+
+    - ``lowVigor`` — fraction of pasture pixels with low vigour (0–1).
+    - ``mediumVigor`` — fraction with medium vigour (0–1).
+    - ``highVigor`` — fraction with high vigour (0–1).
+
+    The three fractions sum to 1 and are computed over the pasture pixels of
+    that year only, so the dominant condition class is the ``argmax`` of the
+    three.  Years in which the geometry holds no pasture pixel at all are
+    omitted from the result instead of being reported as zeros, and
+    ``validPixelsCount`` carries the pasture pixel count the fractions were
+    computed over.
+
+    Years outside the product's coverage (2000–2024) are clipped away, so a
+    wider date range simply yields the available years.
+
+    The ``classes`` attribute maps the source raster codes (1, 2, 3) to
+    ``{"label", "color"}`` dicts, for building legends.  The colours are an
+    AgriGEE.lite red–yellow–green ramp, not an official MapBiomas palette.
+
+    Parameters
+    ----------
+    border_pixels_to_erode : float, default 1
+        Inward buffer in pixel-widths before extraction.  Helps remove
+        classification noise near geometry edges.
+    min_area_to_keep_border : int, default 50_000
+        Skip border erosion for geometries smaller than this area (m²).
+
+    Notes
+    -----
+    Coverage is Brazil only, and only where MapBiomas maps pasture — pixels
+    that were cropland, forest or anything else in a given year are masked
+    out of that year's band.  This makes the product a useful external
+    second opinion on a pasture degradation diagnosis, and a cheap check on
+    whether an area was pasture in the first place.
+    """
+
+    def __init__(
+        self,
+        border_pixels_to_erode: float = 1,
+        min_area_to_keep_border: int = 50_000,
+    ) -> None:
+        super().__init__()
+        self.imageAsset: str = (
+            "projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3"
+        )
+        self.pixelSize: int = 30
+        self.firstYear: int = 2000
+        self.lastYear: int = 2024
+        self.startDate = "2000-01-01"
+        self.endDate = "2024-12-31"
+        self.shortName = "mapbiomaspasturevigor"
+        self.selectedBands = [
+            ("", "10_lowVigor"),
+            ("", "11_mediumVigor"),
+            ("", "12_highVigor"),
+        ]
+
+        self.classes = {
+            1: {"label": "Low Vigor", "color": "#d73027"},
+            2: {"label": "Medium Vigor", "color": "#fee08b"},
+            3: {"label": "High Vigor", "color": "#1a9850"},
+        }
+
+        self.minAreaToKeepBorder = min_area_to_keep_border
+        self.borderPixelsToErode = border_pixels_to_erode
+        self.toDownloadSelectors = ["10_lowVigor", "11_mediumVigor", "12_highVigor"]
+
+    def compute(
+        self,
+        ee_feature: ee.Feature,
+        subsampling_max_pixels: float | None = None,
+        reducers: set[str] | None = None,
+    ) -> ee.FeatureCollection:
+        ee_geometry = ee_feature.geometry()
+
+        if self.borderPixelsToErode != 0:
+            ee_geometry = ee_safe_remove_borders(
+                ee_geometry, round(self.borderPixelsToErode * self.pixelSize), self.minAreaToKeepBorder
+            )
+            ee_feature = ee_feature.setGeometry(ee_geometry)
+
+        vigor_image = ee.Image(self.imageAsset)
+
+        subsampling_max_pixels_: float = subsampling_max_pixels if subsampling_max_pixels is not None else 1e8
+        max_pixels = ee_get_number_of_pixels(ee_geometry, subsampling_max_pixels_, self.pixelSize)
+
+        indexnum = ee.Feature(ee_feature).get("0")
+        years = self._years_in_coverage(ee.Feature(ee_feature))
+
+        def _feat_for_year(year: ee.Number) -> ee.Feature:
+            year_str = ee.Number(year).toInt().format()
+            band_in = ee.String("classification_").cat(year_str)
+            img = vigor_image.select([band_in], [year_str])
+
+            histogram = ee.Dictionary(
+                img.reduceRegion(
+                    reducer=ee.Reducer.frequencyHistogram(),
+                    geometry=ee_geometry,
+                    scale=self.pixelSize,
+                    maxPixels=max_pixels,
+                    bestEffort=True,
+                ).get(year_str)
+            )
+
+            counts = [ee.Number(histogram.get(str(class_id), 0)) for class_id in self.classes]
+            pasture_pixels = counts[0].add(counts[1]).add(counts[2])
+
+            stats = {
+                "00_indexnum": indexnum,
+                "01_timestamp": ee.String(year_str).cat("-01-01"),
+                "99_validPixelsCount": pasture_pixels,
+            }
+            for selector, count in zip(self.toDownloadSelectors, counts, strict=True):
+                stats[selector] = ee.Algorithms.If(pasture_pixels.gt(0), count.divide(pasture_pixels), 0)
+
+            return ee.Feature(None, stats)
+
+        features = ee.FeatureCollection(years.map(_feat_for_year))
+        return features.filter(ee.Filter.gt("99_validPixelsCount", 0))
+
+    def _years_in_coverage(self, ee_feature: ee.Feature) -> ee.List:
+        """Return the requested years clipped to the product's coverage, empty when they do not overlap."""
+        first_year = ee.Number(self.firstYear)
+        last_year = ee.Number(self.lastYear)
+
+        start_year = ee.Number(ee.Date(ee_feature.get("s")).get("year")).max(first_year).min(last_year)
+        end_year = ee.Number(ee.Date(ee_feature.get("e")).get("year")).min(last_year).max(first_year)
+
+        requested_start = ee.Number(ee.Date(ee_feature.get("s")).get("year"))
+        requested_end = ee.Number(ee.Date(ee_feature.get("e")).get("year"))
+        overlaps = requested_start.lte(last_year).And(requested_end.gte(first_year))
+
+        return ee.List(ee.Algorithms.If(overlaps, ee.List.sequence(start_year, end_year), ee.List([])))
+
+    def __str__(self) -> str:
+        return self.shortName
+
+    def __repr__(self) -> str:
+        return self.shortName
