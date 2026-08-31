@@ -61,10 +61,12 @@ For more comprehensive examples, see the examples folder.
 ### Core library
 
 ```bash
-pip install agrigee_lite
+uv pip install agrigee_lite
 ```
 
 The core package currently keeps `geopandas` as a required dependency for compatibility-oriented input paths, while `geopolars` is used as the internal geospatial engine.
+
+**Use `uv`, not plain `pip`, to install this package.** `geopolars==0.1.0a4` on PyPI ships a non-PEP-440-compliant dependency specifier (`pyarrow>=4.0.*`), which pip 24.1+ refuses outright ("Please use pip<24.1 if you need to use this version") — a plain `pip install agrigee_lite` fails on any current pip. This is a bug in the published `geopolars` package itself. `uv`'s resolver tolerates it and installs cleanly; `pip<24.1` also works as a fallback.
 
 ### Optional extras
 
@@ -80,13 +82,13 @@ Install any combination of extras:
 
 ```bash
 # API only
-pip install "agrigee_lite[api]"
+uv pip install "agrigee_lite[api]"
 
 # API + PostGIS backend
-pip install "agrigee_lite[api,postgis]"
+uv pip install "agrigee_lite[api,postgis]"
 
 # Everything
-pip install "agrigee_lite[visualization,tasks,api,postgis]"
+uv pip install "agrigee_lite[visualization,tasks,api,postgis]"
 ```
 
 ## REST API
@@ -116,6 +118,10 @@ agl_api.serve(host="0.0.0.0", port=8080)
 
 Interactive docs are available at `http://127.0.0.1:8000/docs` (Swagger UI) once the server is running.
 
+### Live monitoring dashboard
+
+A self-contained dashboard at `http://127.0.0.1:8000/monitor` shows what the server is doing in real time: every download attempt, cache hit, completed job and error, color-coded (green = success, red = error, amber = warning, blue = debug) and updating in place via Server-Sent Events — no page reload, no JS framework. It's available whenever `agl_api` is running, including in the Docker image, where it's reachable on the mapped API port (`8000` by default).
+
 ### Database backend for the SITS cache
 
 The SITS cache stores previously downloaded time series to avoid redundant GEE requests.
@@ -143,6 +149,7 @@ The database `agrigeelite` is created automatically if it does not exist.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health` | Health check |
+| `GET` | `/monitor` | Live dashboard: downloads, cache hits, errors (auto-updating) |
 | `GET` | `/satellites` | List all available satellite names |
 | `POST` | `/sits/single` | Download SITS for a single geometry (synchronous) |
 | `POST` | `/sits/multiple` | Submit a multi-geometry SITS job (202 → job_id) |

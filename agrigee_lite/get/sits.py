@@ -10,7 +10,6 @@ from typing import Any, cast
 
 import aiohttp
 import ee
-import geopandas as gpd
 import pandas as pd
 import pandera.pandas as pa
 import polars as pl
@@ -24,9 +23,9 @@ from agrigee_lite._geo_compat import (
     geometry_value_to_shapely,
     get_crs,
     normalize_geodataframe,
+    to_geopandas_geodataframe,
     transform_geometry,
     wrap_geopolars_frame,
-    to_geopandas_geodataframe,
 )
 from agrigee_lite.cache.backend import (
     CacheEngine,
@@ -461,6 +460,15 @@ def download_single_sits(
             gap_dfs.append(gap_df)
 
     all_new = pl.concat(gap_dfs, rechunk=False) if gap_dfs else pl.DataFrame()
+    if not all_new.is_empty():
+        logger.info(
+            "Downloaded %d new %s observations (%s→%s).",
+            all_new.height,
+            satellite.shortName,
+            start_date,
+            end_date,
+            extra={"agl_category": "success"},
+        )
 
     if cached_df.is_empty():
         return all_new
@@ -784,14 +792,25 @@ async def download_multiple_sits_async(  # noqa: C901
                 stats["ok"] += 1
             except RetryError:
                 stats["err"] += 1
-                logger.debug("Chunk %d failed after %d attempts.", chunk_id, max_retries_per_chunk, exc_info=True)
+                logger.warning(
+                    "Chunk %d failed after %d attempts.",
+                    chunk_id,
+                    max_retries_per_chunk,
+                    exc_info=True,
+                    extra={"agl_category": "error"},
+                )
                 return pl.DataFrame()
             except Exception:
                 stats["err"] += 1
-                logger.debug("Chunk %d failed with unexpected error.", chunk_id, exc_info=True)
+                logger.warning(
+                    "Chunk %d failed with unexpected error.", chunk_id, exc_info=True, extra={"agl_category": "error"}
+                )
                 return pl.DataFrame()
             else:
                 await store_queue.put((chunk_df, sub))
+                logger.debug(
+                    "Chunk %d downloaded (%d rows).", chunk_id, chunk_df.height, extra={"agl_category": "success"}
+                )
                 return chunk_df
             finally:
                 stats["done"] += 1
@@ -1062,7 +1081,7 @@ def download_multiple_sits_chunks_gcs(
     from smart_open import open as smart_open  # pyright: ignore[reportMissingImports]
 
     if len(gdf) == 0:
-        logging.warning("Empty GeoDataFrame, nothing to download")
+        logger.warning("Empty GeoDataFrame, nothing to download")
         return None
 
     def download_multiple_sits_task_gcs(

@@ -36,8 +36,9 @@ and run multiple uvicorn workers or deploy behind a load balancer.
 
 from __future__ import annotations
 
+import importlib.metadata
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 try:
     import fastapi as _fastapi  # noqa: F401
@@ -47,9 +48,15 @@ except ImportError as exc:
 
 from fastapi import FastAPI
 
+from agrigee_lite.api._monitor import install_monitor_handler
 from agrigee_lite.api._satellites import REGISTRY
 from agrigee_lite.api.routes import router
 from agrigee_lite.ee_utils import _install_uvloop, ee_quick_start
+
+# Installed package version — surfaced via GET /version so clients that keep
+# their own copy of server-side data (e.g. agrigee_lite_client's satellite
+# date table) can detect drift instead of silently trusting a stale copy.
+_SERVER_VERSION = importlib.metadata.version("agrigee_lite")
 
 
 @asynccontextmanager
@@ -63,13 +70,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    install_monitor_handler()
+
     app = FastAPI(
         title="AgriGEE.lite API",
         description=(
             "REST API for downloading satellite imagery and time series via Google Earth Engine. "
-            "Long-running jobs return 202 Accepted; poll `/jobs/{job_id}` for status."
+            "Long-running jobs return 202 Accepted; poll `/jobs/{job_id}` for status. "
+            "See `/monitor` for a live dashboard of downloads, cache hits and errors."
         ),
-        version="1.0.0",
+        version=_SERVER_VERSION,
         lifespan=_lifespan,
     )
 
@@ -81,6 +91,12 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["meta"], operation_id="health_check")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/version", tags=["meta"], operation_id="get_version")
+    async def get_version() -> dict[str, str]:
+        """Installed agrigee_lite version — lets a client detect drift against
+        any server-side data it keeps its own copy of."""
+        return {"version": _SERVER_VERSION}
 
     app.include_router(router)
     return app

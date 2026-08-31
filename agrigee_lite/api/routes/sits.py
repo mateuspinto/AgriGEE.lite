@@ -1,6 +1,8 @@
 import asyncio
 import io
 import json
+import logging
+import pathlib
 
 import geopandas as gpd
 import pandas as pd
@@ -17,6 +19,19 @@ from agrigee_lite.get.sits import download_multiple_sits_async, download_single_
 from agrigee_lite.misc import create_gdf_hash
 
 router = APIRouter(prefix="/sits", tags=["sits"])
+logger = logging.getLogger(__name__)
+
+
+def sits_job_result_path(job_id: str) -> pathlib.Path:
+    """Where a completed SITS job's Parquet result lives on disk.
+
+    Writing the DataFrame here (instead of only keeping it in
+    ``job.result``) is what lets a completed job survive a server restart —
+    ``job.result`` only ever stores this path, not the DataFrame itself.
+    """
+    jobs_dir = pathlib.Path.home() / ".cache" / "agrigee_lite" / "sits_jobs"
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    return jobs_dir / f"{job_id}.parquet"
 
 
 def _sits_to_columnar(df: pl.DataFrame) -> dict[str, list]:
@@ -66,6 +81,7 @@ async def get_single_sits(request: SitsRequest) -> dict[str, list]:
             request.subsampling_max_pixels,
         )
     except ValueError as exc:
+        logger.warning("Single SITS request rejected: %s", exc, extra={"agl_category": "error"})
         raise HTTPException(status_code=400, detail=str(exc))
     return _sits_to_columnar(df)
 
@@ -92,6 +108,13 @@ async def _run_multiple_sits_job_core(
     crs: str | None = None,
 ) -> None:
     job_store.update_status(job_id, JobStatus.RUNNING)
+    logger.info(
+        "SITS job %s started: %d geometries, satellite=%s.",
+        job_id,
+        len(gdf),
+        satellite_name,
+        extra={"agl_category": "info"},
+    )
     try:
         satellite = build_satellite(satellite_name, satellite_params)
         gdf[start_date_column] = pd.to_datetime(gdf[start_date_column])
@@ -110,12 +133,15 @@ async def _run_multiple_sits_job_core(
             force_redownload=force_redownload,
             crs=crs,
         )
-        job = job_store.get(job_id)
-        if job is not None:
-            job.result = df
-        job_store.update_status(job_id, JobStatus.COMPLETED)
+        result_path = sits_job_result_path(job_id)
+        df.write_parquet(result_path, compression="brotli")
+        job_store.update_status(job_id, JobStatus.COMPLETED, result={"parquet_path": str(result_path)})
+        logger.info(
+            "SITS job %s completed: %d rows.", job_id, df.height, extra={"agl_category": "success"}
+        )
     except Exception as exc:
         job_store.update_status(job_id, JobStatus.FAILED, error=str(exc) or repr(exc))
+        logger.exception("SITS job %s failed.", job_id, extra={"agl_category": "error"})
 
 
 async def _run_multiple_sits_job(job_id: str, request: MultipleSitsRequest) -> None:

@@ -1,0 +1,71 @@
+[project]
+name = "agrigee_lite_client"
+version = "3.4.3"
+description = "Thin HTTP client for the AgriGEE.lite REST API — no Earth Engine, no GDAL, no DuckDB."
+authors = [{ name = "Mateus Pinto da Silva", email = "mateus.p.silva@ufv.br" }]
+readme = "README.md"
+keywords = ['python']
+requires-python = ">=3.10,<4.0"
+dependencies = [
+    "geopolars==0.1.0a4",
+    "shapely>=2.0.0",
+    "httpx>=0.27.0",
+]
+classifiers = [
+    "Intended Audience :: Developers",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.optional-dependencies]
+# Test-only tooling — never required to install or use the client itself.
+# geopandas here is deliberate: it's how tests verify the hand-rolled
+# GeoParquet metadata is spec-compliant (see SPECS.md §5.1), not something
+# the package imports at runtime.
+dev = ["pytest>=8.0.0", "geopandas>=1.0.1", "ruff>=0.11.0"]
+
+[project.urls]
+Homepage = "https://mateuspinto.github.io/agrigee_lite/"
+Repository = "https://github.com/mateuspinto/agrigee_lite"
+Documentation = "https://mateuspinto.github.io/agrigee_lite/"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agrigee_lite_client"]
+
+[tool.pyright]
+# This subproject has no pixi env of its own (it's a plain pip package);
+# reuse the monorepo's all-features env, which is a superset of its runtime
+# + dev deps. Declared here so pyright doesn't fall back to the root
+# pyproject.toml's [tool.pyright] (venv "default" lacks httpx/geopolars).
+venvPath = "../.pixi/envs"
+venv = "all-features"
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+include = ["agrigee_lite_client", "tests"]
+exclude = ["**/__pycache__"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+fix = true
+
+[tool.ruff.lint]
+select = [
+    "YTT", "S", "B", "A", "C4", "T10", "SIM", "I", "C90", "E", "W", "F", "PGH", "UP", "RUF", "TRY",
+]
+ignore = ["E501", "E731"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.ruff.format]
+preview = true

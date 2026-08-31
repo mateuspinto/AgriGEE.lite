@@ -750,11 +750,13 @@ def _ensure_api_jobs_table_pg(conn: sa.Connection) -> None:
             type       TEXT,
             status     TEXT NOT NULL,
             error      TEXT,
+            result     TEXT,
             created_at TIMESTAMPTZ NOT NULL,
             updated_at TIMESTAMPTZ NOT NULL
         )
     """)
     )
+    conn.execute(sa.text("ALTER TABLE api_jobs ADD COLUMN IF NOT EXISTS result TEXT"))
     conn.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_api_jobs_status ON api_jobs (status)"))
 
 
@@ -1168,7 +1170,14 @@ def store_sits_polars(
 
 
 def ensure_api_jobs_table(engine: CacheEngine) -> None:
-    """Create api_jobs table if it does not exist. Idempotent."""
+    """Create api_jobs table if it does not exist. Idempotent.
+
+    ``result`` is a JSON blob pointing at where the actual payload lives
+    (e.g. ``{"parquet_path": ...}`` for SITS, ``{"cache_dir": ..., "dates": [...]}``
+    for images) — never the payload itself, so this stays a cheap column even
+    for large results. ``ADD COLUMN IF NOT EXISTS`` migrates databases created
+    before this column existed.
+    """
     if isinstance(engine, duckdb.DuckDBPyConnection):
         with _duck_write_lock:
             engine.execute("""
@@ -1177,10 +1186,12 @@ def ensure_api_jobs_table(engine: CacheEngine) -> None:
                     type       TEXT,
                     status     TEXT NOT NULL,
                     error      TEXT,
+                    result     TEXT,
                     created_at TIMESTAMPTZ NOT NULL,
                     updated_at TIMESTAMPTZ NOT NULL
                 )
             """)
+            engine.execute("ALTER TABLE api_jobs ADD COLUMN IF NOT EXISTS result TEXT")
             engine.execute("CREATE INDEX IF NOT EXISTS idx_api_jobs_status ON api_jobs(status)")
     else:
         with engine.begin() as conn:
@@ -1205,20 +1216,24 @@ def create_api_job(engine: CacheEngine, job_id: str, job_type: str | None, statu
             )
 
 
-def update_api_job(engine: CacheEngine, job_id: str, status: str, error: str | None, now: str) -> None:
+def update_api_job(
+    engine: CacheEngine, job_id: str, status: str, error: str | None, now: str, result: str | None = None
+) -> None:
+    """``result`` is a pre-serialized JSON string (or None) — see ensure_api_jobs_table."""
     if isinstance(engine, duckdb.DuckDBPyConnection):
         with _duck_write_lock:
             engine.execute(
-                "UPDATE api_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
-                [status, error, now, job_id],
+                "UPDATE api_jobs SET status = ?, error = ?, result = ?, updated_at = ? WHERE id = ?",
+                [status, error, result, now, job_id],
             )
     else:
         with engine.begin() as conn:
             conn.execute(
                 sa.text(
-                    "UPDATE api_jobs SET status = :status, error = :error, updated_at = :now WHERE id = :id"
+                    "UPDATE api_jobs SET status = :status, error = :error, result = :result,"
+                    " updated_at = :now WHERE id = :id"
                 ),
-                {"status": status, "error": error, "now": now, "id": job_id},
+                {"status": status, "error": error, "result": result, "now": now, "id": job_id},
             )
 
 
@@ -1233,11 +1248,11 @@ def delete_api_job(engine: CacheEngine, job_id: str) -> None:
 
 def list_api_jobs(engine: CacheEngine) -> list[dict[str, Any]]:
     if isinstance(engine, duckdb.DuckDBPyConnection):
-        rows = engine.execute("SELECT id, type, status, error FROM api_jobs").fetchall()
+        rows = engine.execute("SELECT id, type, status, error, result FROM api_jobs").fetchall()
     else:
         with engine.connect() as conn:
-            rows = conn.execute(sa.text("SELECT id, type, status, error FROM api_jobs")).fetchall()
-    return [{"id": r[0], "type": r[1], "status": r[2], "error": r[3]} for r in rows]
+            rows = conn.execute(sa.text("SELECT id, type, status, error, result FROM api_jobs")).fetchall()
+    return [{"id": r[0], "type": r[1], "status": r[2], "error": r[3], "result": r[4]} for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -1304,6 +1319,7 @@ def init_cache(db_path: pathlib.Path = DEFAULT_DB_PATH) -> CacheEngine:
 
     from agrigee_lite.sat import (
         ANADEM,
+        NAIP,
         CopernicusDEM,
         HLSLandsat,
         HLSSentinel2,
@@ -1314,7 +1330,6 @@ def init_cache(db_path: pathlib.Path = DEFAULT_DB_PATH) -> CacheEngine:
         MapBiomas,
         Modis8Days,
         ModisDaily,
-        NAIP,
         PALSAR2ScanSAR,
         SatelliteEmbedding,
         Sentinel1GRD,

@@ -63,3 +63,6 @@ ASYNC_AIMD_INITIAL_DOWNLOADS = _env_int(
     ASYNC_MAX_PARALLEL_DOWNLOADS,
     minimum=1,
 )
+
+# Monitor dashboard: how many recent log entries to keep in memory (GET /monitor).
+MONITOR_MAX_LOG_ENTRIES = _env_int("AGRIGEE_MONITOR_MAX_LOG_ENTRIES", 500, minimum=50, maximum=10_000)

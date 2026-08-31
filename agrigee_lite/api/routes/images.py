@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -10,10 +11,19 @@ from agrigee_lite.api._satellites import build_satellite
 from agrigee_lite.get.image import _compute_images_cache_dir, download_multiple_images_async
 
 router = APIRouter(prefix="/images", tags=["images"])
+logger = logging.getLogger(__name__)
 
 
 async def _run_images_job(job_id: str, request: ImagesRequest) -> None:
     job_store.update_status(job_id, JobStatus.RUNNING)
+    logger.info(
+        "Images job %s started: satellite=%s, %s→%s.",
+        job_id,
+        request.satellite.name,
+        request.start_date,
+        request.end_date,
+        extra={"agl_category": "info"},
+    )
     try:
         satellite = build_satellite(request.satellite.name, request.satellite.params)
         geometry = shape(request.geometry.model_dump())
@@ -44,12 +54,14 @@ async def _run_images_job(job_id: str, request: ImagesRequest) -> None:
             scale=request.scale,
             dimensions=request.dimensions,
         ))
-        job = job_store.get(job_id)
-        if job is not None:
-            job.result = ImagesResult(dates=dates, cache_dir=cache_dir).model_dump()
-        job_store.update_status(job_id, JobStatus.COMPLETED)
+        result = ImagesResult(dates=dates, cache_dir=cache_dir).model_dump()
+        job_store.update_status(job_id, JobStatus.COMPLETED, result=result)
+        logger.info(
+            "Images job %s completed: %d dates.", job_id, len(dates), extra={"agl_category": "success"}
+        )
     except Exception as exc:
         job_store.update_status(job_id, JobStatus.FAILED, error=str(exc))
+        logger.exception("Images job %s failed.", job_id, extra={"agl_category": "error"})
 
 
 def _images_job_hash(request: ImagesRequest) -> str:

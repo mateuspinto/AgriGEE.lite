@@ -11,6 +11,7 @@ from shapely import MultiPolygon, Point, Polygon
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 from tqdm.std import tqdm
 
+from agrigee_lite._geo_compat import transform_geometry
 from agrigee_lite.config import (
     AIOHTTP_CONNECTOR_LIMIT,
     AIOHTTP_TIMEOUT_SECONDS,
@@ -18,9 +19,10 @@ from agrigee_lite.config import (
     ASYNC_MAX_RETRIES_PER_CHUNK,
 )
 from agrigee_lite.ee_utils import ee_img_to_numpy
-from agrigee_lite._geo_compat import transform_geometry
-from agrigee_lite.misc import create_dict_hash, log_dict_function_call_summary
+from agrigee_lite.misc import create_dict_hash
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite, SingleImageSatellite
+
+logger = logging.getLogger(__name__)
 
 
 def _compute_images_cache_dir(
@@ -184,9 +186,17 @@ def download_single_image(
         image_clipped = image.clip(ee_geometry)
         image_np = ee_img_to_numpy(image_clipped, ee_geometry, satellite.pixelSize)
     except Exception:
-        logging.exception(f"Failed to download single image for satellite {satellite.shortName}")
+        logger.exception(
+            "Failed to download single image for satellite %s", satellite.shortName, extra={"agl_category": "error"}
+        )
         return np.array([])
 
+    logger.info(
+        "Downloaded single image for satellite %s (shape=%s)",
+        satellite.shortName,
+        image_np.shape,
+        extra={"agl_category": "success"},
+    )
     return image_np
 
 
@@ -264,12 +274,26 @@ async def _fetch_and_download_image(
                     )
                     file_path = output_dir / f"{image_names[chunk_index]}.zip"
                     await _download_url_to_path(session, url, file_path)
+            logger.debug(
+                "Downloaded image %s (chunk %d).",
+                image_names[chunk_index],
+                chunk_index,
+                extra={"agl_category": "success"},
+            )
             return chunk_index, True  # noqa: TRY300
         except RetryError:
-            logging.exception("Image chunk %d failed after %d attempts.", chunk_index, max_retries_per_chunk)
+            logger.warning(
+                "Image chunk %d failed after %d attempts.",
+                chunk_index,
+                max_retries_per_chunk,
+                exc_info=True,
+                extra={"agl_category": "error"},
+            )
             return chunk_index, False
         except Exception:
-            logging.exception("Image chunk %d failed with unexpected error.", chunk_index)
+            logger.warning(
+                "Image chunk %d failed with unexpected error.", chunk_index, exc_info=True, extra={"agl_category": "error"}
+            )
             return chunk_index, False
 
 

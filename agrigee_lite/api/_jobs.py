@@ -10,6 +10,7 @@ the server died are reset to FAILED.
 """
 
 import enum
+import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -42,6 +43,11 @@ class Job:
     type: JobType | None = None
     status: JobStatus = JobStatus.PENDING
     result: Any = None
+    """Must stay JSON-serializable — persisted as-is and reloaded on restart
+    (see JobStore.update_status/load_from_db). A pointer to where the real
+    payload lives on disk (e.g. {"parquet_path": ...}), never the payload
+    itself, so completed jobs survive a server restart without keeping large
+    results in memory."""
     error: str | None = None
 
 
@@ -85,6 +91,7 @@ class JobStore:
                 type=JobType(row["type"]) if row["type"] else None,
                 status=status,
                 error=error,
+                result=json.loads(row["result"]) if row["result"] else None,
             )
             self._jobs[job.id] = job
 
@@ -108,15 +115,24 @@ class JobStore:
     def all(self) -> list[Job]:
         return list(self._jobs.values())
 
-    def update_status(self, job_id: str, status: JobStatus, error: str | None = None) -> None:
+    def update_status(
+        self, job_id: str, status: JobStatus, error: str | None = None, result: dict[str, Any] | None = None
+    ) -> None:
+        """Set status/error, and optionally attach a JSON-serializable result
+        pointer (SITS/images completion — see Job.result) that survives a
+        server restart."""
         job = self._jobs.get(job_id)
         if job is None:
             return
         job.status = status
         job.error = error
+        if result is not None:
+            job.result = result
         engine = get_engine()
         if engine is not None:
-            update_api_job(engine, job_id, status.value, error, _now())
+            update_api_job(
+                engine, job_id, status.value, error, _now(), json.dumps(job.result) if job.result else None
+            )
 
     def delete(self, job_id: str) -> bool:
         existed = self._jobs.pop(job_id, None) is not None

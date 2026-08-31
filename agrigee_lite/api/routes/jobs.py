@@ -1,14 +1,19 @@
 import io
+import pathlib
 import zipfile
 
-import polars as pl
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from agrigee_lite.api._jobs import JobStatus, JobType, job_store
 from agrigee_lite.api._models import JobResponse
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+_MISSING_RESULT_DETAIL = (
+    "Job result is unavailable (it predates result persistence, or its cached file was removed) — "
+    "resubmit the request."
+)
 
 
 def _safe_result(job_type: JobType | None, result: object) -> object:
@@ -42,12 +47,18 @@ async def get_job(job_id: str) -> JobResponse:
 
 @router.delete("/{job_id}", status_code=204, operation_id="delete_job")
 async def delete_job(job_id: str) -> None:
-    """Remove a completed or failed job from the store."""
+    """Remove a completed or failed job from the store.
+
+    Also removes the SITS result Parquet file from disk, if any — otherwise
+    it would linger in the cache forever (see sits_job_result_path).
+    """
     job = job_store.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found.")
     if job.status == JobStatus.RUNNING:
         raise HTTPException(status_code=409, detail="Cannot delete a running job.")
+    if job.type == JobType.SITS and job.result:
+        pathlib.Path(job.result["parquet_path"]).unlink(missing_ok=True)
     job_store.delete(job_id)
 
 
@@ -72,7 +83,8 @@ async def download_job_result(job_id: str) -> Response:
 
     # ------------------------------------------------------------------ images
     if job.type == JobType.IMAGES:
-        import pathlib
+        if not job.result:
+            raise HTTPException(status_code=404, detail=_MISSING_RESULT_DETAIL)
 
         cache_dir = pathlib.Path(job.result["cache_dir"])
         zip_files = sorted(cache_dir.glob("*.zip"))
@@ -93,15 +105,17 @@ async def download_job_result(job_id: str) -> Response:
 
     # -------------------------------------------------------------------- sits
     if job.type == JobType.SITS:
-        df: pl.DataFrame = job.result
-        buf = io.BytesIO()
-        df.write_parquet(buf, compression="brotli")
-        buf.seek(0)
+        if not job.result:
+            raise HTTPException(status_code=404, detail=_MISSING_RESULT_DETAIL)
 
-        return StreamingResponse(
-            buf,
+        result_path = pathlib.Path(job.result["parquet_path"])
+        if not result_path.exists():
+            raise HTTPException(status_code=404, detail="SITS result file is missing from cache — resubmit the request.")
+
+        return FileResponse(
+            result_path,
             media_type="application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{job_id}_sits.parquet"'},
+            filename=f"{job_id}_sits.parquet",
         )
 
     raise HTTPException(status_code=400, detail="This job type does not support file download.")

@@ -67,6 +67,8 @@ from agrigee_lite.ee_utils import _install_uvloop, ee_quick_start
 _ROUTE_MAPS = [
     RouteMap(methods=["POST"], pattern=r"/sits/multiple/file$", mcp_type=MCPType.EXCLUDE),
     RouteMap(methods=["GET"], pattern=r"/download$", mcp_type=MCPType.RESOURCE_TEMPLATE),
+    # The HTML dashboard and its SSE stream are for humans in a browser, not MCP tool calls.
+    RouteMap(methods=["GET"], pattern=r"/monitor", mcp_type=MCPType.EXCLUDE),
 ]
 
 
