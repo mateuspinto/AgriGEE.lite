@@ -2,12 +2,12 @@ import asyncio
 import json
 import os
 from datetime import date, datetime
+from typing import cast
 
 import ee
 import numpy as np
 import pandas as pd
 import pyproj
-from typing import cast
 from shapely.geometry import mapping
 from shapely.ops import transform
 
@@ -835,3 +835,45 @@ def login_with_service_account_n(n: int) -> str:
         key_data = json.load(f)
 
     return str(key_data.get("project_id", "unknown"))
+
+
+def ee_years_in_coverage(ee_feature: ee.Feature, first_year: int, last_year: int) -> ee.List:
+    """
+    Clip a feature's requested years to a product's coverage window.
+
+    Annual data sources (MapBiomas modules, CHIRPS yearly totals) publish one
+    band per calendar year over a fixed window. A request wider than that
+    window should yield the years that do exist rather than fail, and a
+    request that misses the window entirely should yield nothing rather than
+    a clamped year that was never asked for.
+
+    Parameters
+    ----------
+    ee_feature : ee.Feature
+        Feature carrying ``"s"`` (start date) and ``"e"`` (end date) string
+        properties, as built by the download functions.
+    first_year, last_year : int
+        Inclusive bounds of the product's coverage.
+
+    Returns
+    -------
+    ee.List
+        Ascending list of years to evaluate, empty when the requested period
+        does not overlap the coverage window at all.
+
+    Examples
+    --------
+    >>> # A 1990-2030 request against a 2000-2025 product yields 2000..2025
+    >>> years = ee_years_in_coverage(feature, 2000, 2025)
+    """
+    first = ee.Number(first_year)
+    last = ee.Number(last_year)
+
+    requested_start = ee.Number(ee.Date(ee_feature.get("s")).get("year"))
+    requested_end = ee.Number(ee.Date(ee_feature.get("e")).get("year"))
+
+    start_year = requested_start.max(first).min(last)
+    end_year = requested_end.min(last).max(first)
+
+    overlaps = requested_start.lte(last).And(requested_end.gte(first))
+    return ee.List(ee.Algorithms.If(overlaps, ee.List.sequence(start_year, end_year), ee.List([])))
