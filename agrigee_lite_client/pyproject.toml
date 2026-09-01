@@ -1,6 +1,6 @@
 [project]
 name = "agrigee_lite_client"
-version = "3.5.0"
+version = "3.6.0"
 description = "Thin HTTP client for the AgriGEE.lite REST API — no Earth Engine, no GDAL, no DuckDB."
 authors = [{ name = "Mateus Pinto da Silva", email = "mateus.p.silva@ufv.br" }]
 readme = "README.md"

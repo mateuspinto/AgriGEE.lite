@@ -274,6 +274,15 @@ AgriGEE.lite is organized into three main modules:
 | [Satellite Embeddings V1](https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_SATELLITE_EMBEDDING_V1_ANNUAL?hl=pt-br#bands) | 64-dimensional embedding | 2017-01-01 | 2024-01-01 | Worldwide | 10 | 1 year |  |
 | [Mapbiomas Brazil](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | 37 Land Usage Land Cover Classes | 1985-01-01 | 2024-12-31 | Brazil | 30 | 1 year |  |
 | [Mapbiomas Brazil Pasture Vigor](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | Low, Medium, High pasture vigor fractions | 2000-01-01 | 2024-12-31 | Brazil (mapped pasture only) | 30 | 1 year |  |
+| [Mapbiomas Brazil C11](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | 37 Land Usage Land Cover Classes | 1985-01-01 | 2025-12-31 | Brazil | 30 | 1 year | Collection 11 |
+| [Mapbiomas Brazil C11 Pasture Vigor](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | Low, Medium, High pasture vigor fractions | 2000-01-01 | 2025-12-31 | Brazil (mapped pasture only) | 30 | 1 year | Collection 11 |
+| [Mapbiomas Second Crop (safrinha)](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | Corn, Cotton, Other Temporary, None fractions | 2000-01-01 | 2025-12-31 | Brazil (10 states only)******* | 30 | 1 year | Collection 11 |
+| [Mapbiomas Crop Cycles](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | One, Two, Three+ cycles fractions | 2017-01-01 | 2025-12-31 | Brazil | 10 | 1 year | Collection 11 |
+| [Mapbiomas Mean Crop Cycles](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | Mean cycles per year, 2017-2025 | (single image) | (single image) | Brazil | 10 | (single image) | Collection 11 |
+| [Mapbiomas Pasture Age](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | Mean pasture age, aged/undated fractions | 1985-01-01 | 2025-12-31 | Brazil (mapped pasture only) | 30 | 1 year | Collection 11 |
+| [Mapbiomas Irrigation](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | Central Pivot, Other, Irrigated Rice fractions | 1985-01-01 | 2025-12-31 | Brazil (irrigated area only) | 30 | 1 year | Collection 11 |
+| [Mapbiomas Mining](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | Modal mined substance code******** | 1985-01-01 | 2025-12-31 | Brazil (mining area only) | 30 | 1 year | Collection 11 |
+| [Mapbiomas Deforestation & Secondary Vegetation](https://brasil.mapbiomas.org/colecoes-mapbiomas/) | Modal class code******** | 1987-01-01 | 2025-12-31 | Brazil | 30 | 1 year | Collection 11 |
 | [CHIRPS v2.0](https://www.chc.ucsb.edu/data/chirps) | Annual accumulated rainfall (mm) | 1981-01-01 | (still operational) | 50S-50N | 5566 | 1 year |  |
 | [ANADEM](https://hge-iph.github.io/anadem/) | Slope, Elevation, Aspect | (single image) | (single image) | South America | 30** | (single image) |  |
 | [Copernicus DEM GLO30](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_DEM_GLO30) | Elevation, Slope, Aspect | (single image) | (single image) | Worldwide | 30 | (single image) |  |
@@ -288,6 +297,8 @@ AgriGEE.lite is organized into three main modules:
 - ****Sentinel 1 was a twin satellite, one of which went out of service due to a malfunction. Therefore, the revisit time varies greatly depending on the desired geolocation.
 - *****Two Satellite Fusion is a meta-satellite that combines data from exactly two optical satellites (e.g., Landsat 8 + Sentinel-2). It automatically finds common observation dates, harmonizes the datasets, and creates synchronized time series with bands from both satellites distinguished by prefixes.
 - ******HLS (Harmonized Landsat Sentinel-2) provides atmospherically corrected surface reflectance data harmonized across Landsat-8/9 and Sentinel-2 missions. The 2-3 day revisit time is achieved by combining observations from both satellite constellations.
+- *******The MapBiomas second crop module maps only BA, GO, MA, MG, MS, MT, PI, PR, SP and TO. Its cotton subclass is narrower still, mapped only in MT, MS, GO, MA, TO, PI and BA — elsewhere cotton is folded into other temporary crops.
+- ********MapBiomas has not published the legend for the mined substance and deforestation/secondary vegetation products, so these return the source's raw class codes and their `classes` attribute is empty.
 
 ## Available indices
 

@@ -38,6 +38,17 @@ from agrigee_lite.sat.embeddings import SatelliteEmbedding
 from agrigee_lite.sat.hls import HLSLandsat, HLSSentinel2
 from agrigee_lite.sat.landsat import Landsat5, Landsat7, Landsat8, Landsat9
 from agrigee_lite.sat.mapbiomas import MapBiomas, MapBiomasPastureVigor
+from agrigee_lite.sat.mapbiomas_c11 import (
+    MapBiomasC11,
+    MapBiomasCropCycles,
+    MapBiomasCropCyclesMean,
+    MapBiomasDeforestationSecondaryVegetation,
+    MapBiomasIrrigation,
+    MapBiomasMining,
+    MapBiomasPastureAge,
+    MapBiomasPastureVigorC11,
+    MapBiomasSecondCrop,
+)
 from agrigee_lite.sat.modis import Modis8Days, ModisDaily
 from agrigee_lite.sat.naip import NAIP
 from agrigee_lite.sat.palsar import PALSAR2ScanSAR
@@ -80,7 +91,16 @@ __all__ = [
     "Landsat9",
     "MERITDEM",
     "MapBiomas",
+    "MapBiomasC11",
+    "MapBiomasCropCycles",
+    "MapBiomasCropCyclesMean",
+    "MapBiomasDeforestationSecondaryVegetation",
+    "MapBiomasIrrigation",
+    "MapBiomasMining",
+    "MapBiomasPastureAge",
     "MapBiomasPastureVigor",
+    "MapBiomasPastureVigorC11",
+    "MapBiomasSecondCrop",
     "Modis8Days",
     "ModisDaily",
     "NAIP",
