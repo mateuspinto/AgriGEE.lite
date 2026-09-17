@@ -45,6 +45,7 @@ from agrigee_lite.config import (
     ASYNC_MAX_URL_WORKERS,
     SITS_CHUNKSIZE,
 )
+from agrigee_lite.ee_priority import EE_FETCH_GATE
 from agrigee_lite.ee_utils import (
     ee_gdf_to_feature_collection,
     ee_get_tasks_status,
@@ -770,7 +771,9 @@ async def download_multiple_sits_async(  # noqa: C901
         return frame
 
     async def fetch_with_retry(session: aiohttp.ClientSession, chunk_id: int) -> pl.DataFrame:
-        async with semaphore:
+        # High priority: a concurrent imagery job never gets to hold up the
+        # time series this chunk belongs to (see agrigee_lite/ee_priority.py).
+        async with EE_FETCH_GATE.priority(high_priority=True), semaphore:
             start = chunk_id * chunksize
             positions = list(range(start, min(start + chunksize, uncached_request_rows.height)))
             sub = _take_normalized_geo_rows(uncached_request_rows, positions)
