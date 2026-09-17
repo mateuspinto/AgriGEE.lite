@@ -38,6 +38,15 @@ This example demonstrates the library's core philosophy: **spatial data analysis
 
 ### Advanced Capabilities
 
+SITS and imagery downloads share a priority gate controlled by
+`AGRIGEE_EE_INTERACTIVE_CONCURRENCY`. Waiting SITS chunks take precedence over
+waiting imagery chunks. Both paths acquire their per-job semaphore before the
+global gate, so a locally blocked backlog does not reserve global capacity.
+Already-running imagery is not preempted.
+
+Offline regression for admission order (no Earth Engine credentials or geo stack):
+`python -m pytest --noconftest -q tests/test_fetch_admission.py`.
+
 You can also download temporal aggregations, such as spatial median aggregations of vegetation indices from multiple satellites:
 
 ![{Multiple satellites EVI2 time series}](https://github.com/user-attachments/assets/dccd7d52-6047-4734-8d83-e6ea4de35808)
