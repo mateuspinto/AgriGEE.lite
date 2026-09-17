@@ -256,7 +256,7 @@ async def _fetch_and_download_image(
     """Resolve a single GEE download URL and save its ZIP payload to disk."""
     # Low priority: yields the shared gate to any waiting SITS chunk fetch
     # (see agrigee_lite/ee_priority.py) — imagery is secondary/best-effort.
-    async with EE_FETCH_GATE.priority(high_priority=False), semaphore:
+    async with semaphore, EE_FETCH_GATE.priority(high_priority=False):
         try:
             async for attempt in AsyncRetrying(
                 stop=stop_after_attempt(max_retries_per_chunk),
