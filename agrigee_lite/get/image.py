@@ -18,6 +18,7 @@ from agrigee_lite.config import (
     ASYNC_MAX_PARALLEL_DOWNLOADS,
     ASYNC_MAX_RETRIES_PER_CHUNK,
 )
+from agrigee_lite.ee_priority import EE_FETCH_GATE
 from agrigee_lite.ee_utils import ee_img_to_numpy
 from agrigee_lite.misc import create_dict_hash
 from agrigee_lite.sat.abstract_satellite import AbstractSatellite, SingleImageSatellite
@@ -253,7 +254,9 @@ async def _fetch_and_download_image(
     dimensions: int | str | None = None,
 ) -> tuple[int, bool]:
     """Resolve a single GEE download URL and save its ZIP payload to disk."""
-    async with semaphore:
+    # Low priority: yields the shared gate to any waiting SITS chunk fetch
+    # (see agrigee_lite/ee_priority.py) — imagery is secondary/best-effort.
+    async with EE_FETCH_GATE.priority(high_priority=False), semaphore:
         try:
             async for attempt in AsyncRetrying(
                 stop=stop_after_attempt(max_retries_per_chunk),

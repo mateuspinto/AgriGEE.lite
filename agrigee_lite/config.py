@@ -37,6 +37,9 @@ HIGH_VOLUME_ENDPOINT = os.getenv("AGRIGEE_EE_HIGH_VOLUME_ENDPOINT", "https://ear
 EE_ENDPOINT_MODE = "highvolume"
 
 # Quota visibility knobs.
+# EE_INTERACTIVE_CONCURRENCY also sizes agrigee_lite.ee_priority.EE_FETCH_GATE,
+# the shared gate SITS and imagery fetches acquire around each GEE call
+# (SITS always gets priority over imagery there).
 EE_INTERACTIVE_CONCURRENCY = _env_int("AGRIGEE_EE_INTERACTIVE_CONCURRENCY", 40, minimum=1)
 EE_QPS = _env_int("AGRIGEE_EE_QPS", 100, minimum=1)
 EE_BATCH_CONCURRENCY = _env_int("AGRIGEE_EE_BATCH_CONCURRENCY", 2, minimum=1)

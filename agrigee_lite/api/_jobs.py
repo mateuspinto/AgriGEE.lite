@@ -96,17 +96,39 @@ class JobStore:
             self._jobs[job.id] = job
 
     def create(self, job_type: JobType | None = None, job_id: str | None = None) -> Job:
-        job = Job(id=job_id or str(uuid.uuid4()), type=job_type)
-        self._jobs[job.id] = job
+        """Create a new job, or hand back an existing one for the same id.
+
+        Callers (submit_multiple_sits_job, submit_images_job) pass a
+        content-hash as ``job_id`` and only reach here after their own
+        ``job_store.get(job_id)`` returned None — but that check-then-create
+        is not atomic across two requests hashing to the same id (a client
+        retry racing the original submission, or a submission racing a
+        DELETE of a job that just completed). ``create_api_job`` reports
+        whether it actually won the insert; when it didn't, this reuses
+        whatever is there instead of ever letting DuckDB see a conflicting
+        INSERT (see create_api_job's docstring for why that used to crash
+        the whole process).
+        """
+        resolved_id = job_id or str(uuid.uuid4())
         engine = get_engine()
         if engine is not None:
-            create_api_job(
+            inserted = create_api_job(
                 engine,
-                job.id,
+                resolved_id,
                 job_type.value if job_type else None,
-                job.status.value,
+                JobStatus.PENDING.value,
                 _now(),
             )
+            if not inserted:
+                existing = self._jobs.get(resolved_id)
+                if existing is not None:
+                    return existing
+                # Lost the race but this process hadn't seen the winner yet
+                # (e.g. right after a restart, before load_from_db ran).
+                self.load_from_db()
+                return self._jobs[resolved_id]
+        job = Job(id=resolved_id, type=job_type)
+        self._jobs[job.id] = job
         return job
 
     def get(self, job_id: str) -> Job | None:

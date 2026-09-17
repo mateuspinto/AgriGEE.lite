@@ -1198,22 +1198,38 @@ def ensure_api_jobs_table(engine: CacheEngine) -> None:
             _ensure_api_jobs_table_pg(conn)
 
 
-def create_api_job(engine: CacheEngine, job_id: str, job_type: str | None, status: str, now: str) -> None:
+def create_api_job(engine: CacheEngine, job_id: str, job_type: str | None, status: str, now: str) -> bool:
+    """Insert a new job row, returning whether *this* call actually created it.
+
+    Uses ``ON CONFLICT (id) DO NOTHING`` instead of a plain ``INSERT`` so a
+    duplicate ``job_id`` (the caller's own content-hash dedup racing itself —
+    see JobStore.create) never reaches DuckDB as a PRIMARY KEY constraint
+    violation. That violation used to escalate into an unrecoverable
+    ``duckdb.duckdb.FatalException`` (an internal assertion failure while
+    DuckDB rolled back the failed INSERT's transaction) which aborts the
+    whole process — not just the one request — taking down every in-flight
+    job with it. Returning False on a conflict lets the caller reuse the
+    existing row instead of ever attempting the unsafe INSERT.
+    """
     if isinstance(engine, duckdb.DuckDBPyConnection):
         with _duck_write_lock:
-            engine.execute(
-                "INSERT INTO api_jobs (id, type, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            result = engine.execute(
+                "INSERT INTO api_jobs (id, type, status, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING RETURNING id",
                 [job_id, job_type, status, now, now],
             )
+            return result.fetchone() is not None
     else:
         with engine.begin() as conn:
-            conn.execute(
+            result = conn.execute(
                 sa.text(
                     "INSERT INTO api_jobs (id, type, status, created_at, updated_at)"
                     " VALUES (:id, :type, :status, :now, :now2)"
+                    " ON CONFLICT (id) DO NOTHING RETURNING id"
                 ),
                 {"id": job_id, "type": job_type, "status": status, "now": now, "now2": now},
             )
+            return result.fetchone() is not None
 
 
 def update_api_job(
